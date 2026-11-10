@@ -8,6 +8,7 @@ import { jobsRouter } from "./jobs"
 import { notesRouter } from "./notes"
 import { profileRouter } from "./profile"
 import { publicRouter } from "./public"
+import { extensionRouter, tokensRouter } from "./tokens"
 
 const admin = {
   ...adminRouter,
@@ -24,6 +25,8 @@ export const appRouter = {
   jobs: jobsRouter,
   applications: applicationsRouter,
   jobSources: jobSourcesRouter,
+  tokens: tokensRouter,
+  extension: extensionRouter,
   admin,
 }
 

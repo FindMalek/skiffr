@@ -1,7 +1,6 @@
 /**
- * Headers every api response carries unless a handler already set its own. There is no CORS on purpose:
- * browsers reach the api through the apps' same-origin proxies, and server-side or REST clients do not
- * need it. Add an allow list here if you open `/v1` to other origins.
+ * Headers every api response carries unless a handler already set its own. Web apps reach the api through their
+ * same-origin proxies, so the only CORS is the extension's (see `cors.ts`).
  */
 export function withSecurityHeaders(response: Response, opts: { https: boolean }): Response {
   // Redirects and fetched responses can have immutable headers, so copy them.

@@ -1,5 +1,6 @@
 import { browser } from "wxt/browser"
 import { defineBackground } from "wxt/utils/define-background"
+import { isTestConnectionMessage, testConnection } from "@/lib/connection"
 import { siteKey } from "@/lib/detect/ats"
 import { createFrameTracker, type FrameTracker } from "@/lib/detect/frames"
 import {
@@ -115,6 +116,16 @@ export default defineBackground(() => {
   browser.tabs.onRemoved.addListener((tabId) => void frames().reset(tabId))
   browser.commands.onCommand.addListener((command) => {
     if (command === "fill") return requestFill()
+  })
+  browser.runtime.onMessage.addListener((message, sender) => {
+    // Extension pages only: a content script reports its web page's url as sender.url and never gets to use the token.
+    if (
+      isTestConnectionMessage(message) &&
+      sender.id === browser.runtime.id &&
+      sender.url?.startsWith(browser.runtime.getURL("/"))
+    ) {
+      return testConnection()
+    }
   })
   void setBadge("")
   void hideStorageFromContentScripts()

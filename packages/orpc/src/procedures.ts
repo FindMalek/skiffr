@@ -1,9 +1,11 @@
 import { ORPCError, os } from "@orpc/server"
+import type { Session } from "@skiffr/auth"
 import type { Context } from "./context"
+import type { TokenAuth } from "./lib/tokens"
 
 export const o = os.$context<Context>()
 
-/** Unexpected errors are logged with the procedure path; ORPCErrors are answers, not failures. Every call is rate limited per route and caller first. */
+/** Unexpected errors are logged with the procedure path; ORPCErrors are answers, not failures. */
 const logErrors = o.middleware(async (options) => {
   const route = options.path.join(".")
   try {
@@ -17,15 +19,48 @@ const logErrors = o.middleware(async (options) => {
 export const publicProcedure = o.use(logErrors)
 
 /**
- * Sessions are cookies, so signed-in calls also need `x-csrf-token: orpc`, which the oRPC link sends and a
- * cross-site form can't. That covers the REST (OpenAPI) routes too, not just RPC.
+ * Procedures the extension may call with a bearer token. Everything else is session only, so a new procedure is
+ * out of a token's reach until it is listed here (account, auth and token management never are).
  */
-const requireSession = o.middleware(async ({ context, next }) => {
-  if (context.headers.get("x-csrf-token") !== "orpc") {
-    throw new ORPCError("FORBIDDEN", { message: "Missing the x-csrf-token header." })
+export const TOKEN_PROCEDURES: ReadonlySet<string> = new Set([
+  "extension.whoami",
+  "profile.get",
+  "answers.list",
+  "answers.create",
+  "answers.update",
+  "answers.recordUse",
+  "jobs.list",
+  "jobs.create",
+  "jobs.update",
+  "applications.create",
+  "applications.update",
+  "ai.mapFields",
+  "ai.draftAnswer",
+])
+
+/**
+ * Cookie sessions also need `x-csrf-token: orpc`, which the oRPC link sends and a cross-site form can't. That covers the
+ * REST (OpenAPI) routes too, not just RPC. A bearer token needs neither: a browser never attaches it by itself.
+ */
+const requireSession = o.middleware(async ({ context, path, next }) => {
+  let identity: { user: Session["user"]; token: TokenAuth | null }
+  if (context.bearer) {
+    if (context.tokenUnavailable) {
+      throw new ORPCError("SERVICE_UNAVAILABLE", { message: "The API is unavailable, try again." })
+    }
+    if (!context.token) throw new ORPCError("UNAUTHORIZED", { message: "Unauthorized." })
+    if (!TOKEN_PROCEDURES.has(path.join("."))) {
+      throw new ORPCError("FORBIDDEN", { message: "This token can't call that." })
+    }
+    identity = { user: context.token.user, token: context.token }
+  } else {
+    if (context.headers.get("x-csrf-token") !== "orpc") {
+      throw new ORPCError("FORBIDDEN", { message: "Missing the x-csrf-token header." })
+    }
+    if (!context.session) throw new ORPCError("UNAUTHORIZED", { message: "Please sign in." })
+    identity = { user: context.session.user, token: null }
   }
-  if (!context.session) throw new ORPCError("UNAUTHORIZED", { message: "Please sign in." })
-  return next({ context: { session: context.session, user: context.session.user } })
+  return next({ context: identity })
 })
 
 export const protectedProcedure = publicProcedure.use(requireSession)

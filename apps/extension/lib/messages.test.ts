@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { isFillMessage, isFormDetectedMessage } from "./messages"
+import { isFillMessage, isFormDetectedMessage, isTestConnectionMessage } from "./messages"
 
 test("messages with unknown shapes are rejected", () => {
   expect(isFillMessage({ type: "fill" })).toBe(true)
@@ -8,4 +8,6 @@ test("messages with unknown shapes are rejected", () => {
   expect(isFillMessage({ type: "fill", extra: 1 })).toBe(false)
   expect(isFormDetectedMessage({ type: "form-detected", frameId: 0 })).toBe(false)
   expect(isFormDetectedMessage(null)).toBe(false)
+  expect(isTestConnectionMessage({ type: "test-connection" })).toBe(true)
+  expect(isTestConnectionMessage({ type: "test-connection", token: "x" })).toBe(false)
 })
