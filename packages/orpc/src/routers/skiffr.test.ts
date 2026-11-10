@@ -1,13 +1,15 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test"
 import { inspect } from "node:util"
 import { PGlite } from "@electric-sql/pglite"
+import { vector } from "@electric-sql/pglite-pgvector"
 import { call } from "@orpc/server"
 import { mockModel } from "@skiffr/ai/testing"
 import type { Session } from "@skiffr/auth"
-import { type Db, user } from "@skiffr/db"
+import { answer, answerColumns, type Db, findSimilarAnswers, user } from "@skiffr/db"
 import * as schema from "@skiffr/db/schema"
 import { createTestDb } from "@skiffr/db/test-db"
 import { APICallError } from "ai"
+import { eq } from "drizzle-orm"
 import { drizzle } from "drizzle-orm/pglite"
 import { migrate } from "drizzle-orm/pglite/migrator"
 import type { Context } from "../context"
@@ -28,7 +30,7 @@ async function connect(): Promise<Db> {
     drop = test.drop
     return test.db
   }
-  const pg = drizzle(new PGlite(), { schema })
+  const pg = drizzle(new PGlite({ extensions: { vector } }), { schema })
   await migrate(pg, { migrationsFolder: DRIZZLE })
   return pg as unknown as Db
 }
@@ -230,6 +232,35 @@ test("another user's rows are not found by any update or remove", async () => {
     () => call(appRouter.jobSources.remove, { id: source.id }, asBen),
   ]
   for (const attempt of attempts) await expect(attempt()).rejects.toMatchObject({ code: "NOT_FOUND" })
+})
+
+test("a stored embedding round-trips, nearest answers come back by cosine distance and are never selected by the api", async () => {
+  const unit = (i: number, tilt = 0) => Array.from({ length: 1536 }, (_, d) => (d === i ? 1 : d === 1 ? tilt : 0))
+  const saved = await Promise.all(
+    ["Embed near", "Embed mid", "Embed far", "Embed none"].map((rawLabel) =>
+      call(appRouter.answers.create, { rawLabel, value: "x" }, ana()),
+    ),
+  )
+  const [near, mid, far, none] = saved.map((a) => a.id)
+  const stored = [
+    [near!, unit(0, 0.1)],
+    [mid!, unit(0, 1)],
+    [far!, unit(1)],
+  ] as const
+  for (const [id, embedding] of stored) await db.update(answer).set({ embedding }).where(eq(answer.id, id))
+
+  const [row] = await db.select({ embedding: answer.embedding }).from(answer).where(eq(answer.id, mid!))
+  expect(row?.embedding).toEqual(unit(0, 1))
+
+  const hits = await findSimilarAnswers(db, "ana", unit(0), 3)
+  expect(hits.map((h) => h.id)).toEqual([near!, mid!, far!])
+  expect(hits.map((h) => h.id)).not.toContain(none!)
+  expect(await findSimilarAnswers(db, "ben", unit(0), 3)).toEqual([])
+
+  const [selected] = await db.select(answerColumns).from(answer).where(eq(answer.id, near!))
+  expect(selected?.id).toBe(near!)
+  expect(Object.keys(selected!)).not.toContain("embedding")
+  expect(Object.keys(hits[0]!)).not.toContain("embedding")
 })
 
 const mapReply = JSON.stringify({

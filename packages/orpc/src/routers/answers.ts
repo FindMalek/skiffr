@@ -8,7 +8,7 @@ import {
   pageInputSchema,
 } from "@skiffr/common/schemas"
 import { normalizeLabel } from "@skiffr/common/utils"
-import { answer } from "@skiffr/db"
+import { answer, answerColumns } from "@skiffr/db"
 import { asc, eq, sql } from "drizzle-orm"
 import { z } from "zod"
 import { mine, orNotFound } from "../lib/owned"
@@ -21,7 +21,7 @@ export const answersRouter = {
     .output(z.array(answerSchema))
     .handler(({ context, input }) =>
       context.db
-        .select()
+        .select(answerColumns)
         .from(answer)
         .where(eq(answer.userId, context.user.id))
         .orderBy(asc(answer.normalizedLabel), asc(answer.id))
@@ -48,7 +48,7 @@ export const answersRouter = {
           target: [answer.userId, answer.normalizedLabel],
           set: { rawLabel: input.rawLabel, value: input.value, source: input.source, updatedAt: context.now() },
         })
-        .returning()
+        .returning(answerColumns)
       return row!
     }),
 
@@ -61,7 +61,7 @@ export const answersRouter = {
         .update(answer)
         .set({ ...patch, updatedAt: context.now() })
         .where(mine(answer, context.user.id, id))
-        .returning()
+        .returning(answerColumns)
       return orNotFound(row, "Answer")
     }),
 
@@ -83,7 +83,7 @@ export const answersRouter = {
           updatedAt: context.now(),
         })
         .where(mine(answer, context.user.id, input.id))
-        .returning()
+        .returning(answerColumns)
       return orNotFound(row, "Answer")
     }),
 
