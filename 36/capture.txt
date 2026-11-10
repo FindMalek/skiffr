@@ -1,0 +1,56 @@
+# pr 36 evidence
+
+## aggregator-test job, run 42874624842
+aggregator-test: ok   pass: success success success
+aggregator-test: ok   fail: success failure success
+aggregator-test: ok   fail: success skipped success
+aggregator-test: ok   fail: cancelled success success
+aggregator-test: ok   fail: success success failure
+aggregator-test: ok   fail: skipped
+aggregator-test: ok   fail: 
+
+## db-postgres job, pgvector/pgvector:pg17 service, run 42874624842
+db-postgres: > bun test --pass-with-no-tests
+db-postgres: (pass) saving an answer under a differently written label updates the same row [16.79ms]
+db-postgres: (pass) concurrent uses are all counted, and a correction only when the user changed the value [35.81ms]
+db-postgres: (pass) a profile is one per user, and extra fields are stored under normalized labels [10.18ms]
+db-postgres: (pass) profile fields with an empty or colliding normalized label are rejected [1.28ms]
+db-postgres: (pass) urls that aren't http(s) are rejected on jobs, sources and profile links [1.98ms]
+db-postgres: (pass) queueing the same posting twice returns the saved job [10.65ms]
+db-postgres: (pass) lists are paged and capped [7.62ms]
+db-postgres: (pass) jobs can be queued or skipped by hand but never set to applied [4.66ms]
+db-postgres: (pass) applying marks the job applied, and each funnel stage is stamped once [21.85ms]
+db-postgres: (pass) removing an application puts its job back in the queue [10.04ms]
+db-postgres: (pass) a watched careers page is saved once however the url is written, and stamped when checked [6.20ms]
+db-postgres: (pass) another user's rows are not found by any update or remove [23.16ms]
+db-postgres:  12 pass
+db-postgres:  0 fail
+db-postgres:  41 expect() calls
+db-postgres: Ran 12 tests across 1 file. [433.00ms]
+db-postgres: 2 migrations applied
+
+## ci.yml changed, so the changes job leaves affected empty and turbo runs everything
+test: ^[[36;1mpnpm test ^[[0m
+test:    • Running test in 13 packages
+test:  Tasks:    5 successful, 5 total
+test: Cached:    0 cached, 5 total
+
+## cache proof on a throwaway probe branch (save gate swapped to probe/*, main gate cannot run before merge)
+-- attempt 1, cold
+build: Cached:    0 cached, 3 total
+build: Cache saved with key: turbo-Linux-build-f5dd7fae6b148890
+build: Cache saved with key: next-Linux-f5dd7fae6b148890
+check-types: Cached:    0 cached, 12 total
+check-types: Cache saved with key: turbo-Linux-check-types-f5dd7fae6b148890
+test: Cached:    0 cached, 5 total
+test: Cache saved with key: turbo-Linux-test-f5dd7fae6b148890
+-- attempt 2, rerun of the same sha
+build: Cache restored from key: turbo-Linux-build-f5dd7fae6b148890
+build: Cache restored from key: next-Linux-f5dd7fae6b148890
+build: Cached:    3 cached, 3 total
+check-types: Cache restored from key: turbo-Linux-check-types-f5dd7fae6b148890
+check-types: Cached:    12 cached, 12 total
+test: Cache restored from key: turbo-Linux-test-f5dd7fae6b148890
+test: Cached:    5 cached, 5 total
+
+## on the pr itself caches are restore only, save steps are gated on main
