@@ -1,6 +1,6 @@
 import { normalizeLabel } from "@skiffr/common"
-import { labelsFor, readListOptions, resolveField } from "./collect"
-import { toHintedDate, toNativeDate } from "./dates"
+import { labelsFor, newCtx, readListOptions, resolveField } from "./collect"
+import { AMBIGUOUS, toHintedDate, toNativeDate } from "./dates"
 import {
   blurEl,
   cleanText,
@@ -11,6 +11,7 @@ import {
   fireKey,
   focusEl,
   isDisabled,
+  isElement,
   isRendered,
   setNativeValue,
   settle,
@@ -18,7 +19,9 @@ import {
   waitFor,
 } from "./dom"
 import { isFalsy, isTruthy, matchOption, sameValue, splitList } from "./match"
+import { parseNumber } from "./numbers"
 import { readField } from "./read"
+import { beginFill } from "./state"
 import type { CollectedField, FillResult } from "./types"
 
 export type FillValue = string | string[] | File
@@ -53,41 +56,49 @@ async function typeInto(el: HTMLElement, text: string): Promise<void> {
   }
 }
 
-function adaptText(
-  field: CollectedField,
-  text: string,
-  locale?: string,
-): { value: string; cut: boolean } | { error: string } {
+const NEVER_CUT = new Set(["email", "url", "number", "tel"])
+const DATE_INPUTS = new Set(["date", "month", "time", "datetime-local"])
+const AMBIGUOUS_DATE = "ambiguous date: send YYYY-MM-DD or pass a locale"
+
+type Adapted = { value: string; cut: boolean } | { error: string }
+
+/** Shapes the text for the input without guessing. Anything that would change meaning fails instead. */
+function adaptText(field: CollectedField, text: string, locale?: string): Adapted {
   const { type = "text", placeholder } = field.descriptor
+  const max = field.info.maxLength
   let value = text.trim()
   if (field.kind === "text") {
     if (type === "number") {
-      const digits = value.replace(/[^\d.-]/g, "")
-      if (!/^-?\d+(\.\d+)?$/.test(digits)) return { error: "value is not a number" }
-      value = digits
-    } else if (type === "date" || type === "month" || type === "time" || type === "datetime-local") {
+      const parsed = parseNumber(value, locale)
+      if ("error" in parsed) return parsed
+      value = parsed.value
+    } else if (DATE_INPUTS.has(type)) {
       const native = toNativeDate(type, value, locale)
+      if (native === AMBIGUOUS) return { error: AMBIGUOUS_DATE }
       if (!native) return { error: "value is not a date this input accepts" }
       value = native
     } else if (type === "tel") {
-      const max = field.info.maxLength
-      const digits = value.replace(/[^\d+]/g, "")
-      if (max && value.length > max) value = digits.length > max ? digits.replace(/\D/g, "").slice(-max) : digits
+      if (max && value.length > max) value = value.replace(/[^\d+]/g, "")
     } else if (placeholder) {
-      value = toHintedDate(value, placeholder, locale) ?? value
+      const hinted = toHintedDate(value, placeholder, locale)
+      if (hinted === AMBIGUOUS) return { error: AMBIGUOUS_DATE }
+      value = hinted ?? value
     }
   }
-  const max = field.info.maxLength
-  const cut = Boolean(max && value.length > max)
-  return { value: cut && max ? value.slice(0, max) : value, cut }
+  if (max && value.length > max) {
+    if (field.kind === "text" && NEVER_CUT.has(type)) return { error: "value does not fit the field's max length" }
+    return { value: value.slice(0, max), cut: true }
+  }
+  return { value, cut: false }
 }
 
 async function fillText(field: CollectedField, text: string, options: FillFieldOptions): Promise<FillResult> {
   const el = field.el as HTMLInputElement
-  const adapted = adaptText(field, text, options.locale ?? el.ownerDocument.documentElement.lang)
+  const adapted = adaptText(field, text, options.locale)
   if ("error" in adapted) return failed(field, adapted.error)
   const wanted = adapted.value
-  if (sameValue(el.value, wanted)) return { status: "unchanged", value: el.value }
+  const original = el.value
+  if (sameValue(original, wanted)) return { status: "unchanged", value: original }
 
   const commit = () => {
     fireChange(el)
@@ -103,7 +114,13 @@ async function fillText(field: CollectedField, text: string, options: FillFieldO
     commit()
     await settle()
   }
-  if (!sameValue(el.value, wanted)) return failed(field, "the page did not keep the value")
+  if (!sameValue(el.value, wanted)) {
+    focusEl(el)
+    setNativeValue(el, original)
+    fireInput(el, original, "insertReplacementText")
+    commit()
+    return failed(field, "the page did not keep the value")
+  }
   return filled(field, adapted.cut ? "cut to the field's max length" : undefined)
 }
 
@@ -139,7 +156,7 @@ async function press(input: HTMLInputElement, checked: boolean): Promise<boolean
   input.click()
   await settle()
   if (input.checked !== checked) {
-    labelsFor(input, { labels: new Map() })[0]?.click()
+    labelsFor(input, newCtx())[0]?.click()
     await settle()
   }
   return input.checked === checked
@@ -199,24 +216,67 @@ async function fillEditable(field: CollectedField, text: string): Promise<FillRe
   const el = field.el
   if (sameValue(readField(field), text)) return { status: "unchanged", value: readField(field) }
   const doc = el.ownerDocument
+  const original = el.textContent ?? ""
   focusEl(el)
   try {
     view(el).getSelection()?.selectAllChildren(el)
   } catch {}
-  let wrote = false
-  try {
-    wrote = typeof doc.execCommand === "function" && doc.execCommand("insertText", false, text)
-  } catch {}
-  if (!wrote || !sameValue(readField(field), text)) {
-    el.textContent = text
-    fireInput(el, text, "insertReplacementText")
+  // execCommand fires no beforeinput in Chrome, so editors that act on it would never see the text.
+  const proceed = el.dispatchEvent(
+    new (view(el).InputEvent)("beforeinput", {
+      inputType: "insertText",
+      data: text,
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+    }),
+  )
+  if (proceed) {
+    let wrote = false
+    try {
+      wrote = typeof doc.execCommand === "function" && doc.execCommand("insertText", false, text)
+    } catch {}
+    if (!wrote || !sameValue(readField(field), text)) {
+      el.textContent = text
+      fireInput(el, text, "insertReplacementText")
+    }
   }
   blurEl(el)
-  await settle()
-  return sameValue(readField(field), text) ? filled(field) : failed(field, "the editor did not keep the text")
+  await settle(20)
+  if (sameValue(readField(field), text)) return filled(field)
+  el.textContent = original
+  fireInput(el, original, "insertReplacementText")
+  return failed(field, "the editor did not keep the text")
 }
 
 const optionTexts = (options: HTMLElement[]) => options.map((option) => ({ text: cleanText(option.textContent) }))
+
+const OPTION = "[role=option]"
+
+/** Options inserted into the page while a combobox opens, for menus rendered into a portal with no aria link back. */
+function watchInserted(el: HTMLElement): { options: () => HTMLElement[]; stop: () => void } {
+  const found = new Set<HTMLElement>()
+  const take = (records: MutationRecord[]) => {
+    for (const record of records) {
+      for (const node of Array.from(record.addedNodes)) {
+        if (!isElement(node)) continue
+        if (node.matches(OPTION)) found.add(node)
+        for (const option of Array.from(node.querySelectorAll<HTMLElement>(OPTION))) found.add(option)
+      }
+    }
+  }
+  const observer = new (view(el).MutationObserver)(take)
+  observer.observe(el.ownerDocument, { childList: true, subtree: true })
+  return {
+    options: () => {
+      take(observer.takeRecords())
+      return [...found].filter(
+        (option) => option.isConnected && option.getAttribute("aria-disabled") !== "true" && isRendered(option),
+      )
+    },
+    stop: () => observer.disconnect(),
+  }
+}
 
 async function fillCombobox(field: CollectedField, text: string): Promise<FillResult> {
   const el = field.el
@@ -226,53 +286,55 @@ async function fillCombobox(field: CollectedField, text: string): Promise<FillRe
   if (current && (matchOption(text, [{ text: current }])?.score ?? 0) >= 0.9)
     return { status: "unchanged", value: current }
 
-  const options = () => {
-    const own = readListOptions(el)
-    return own.length > 0 || isList ? own : portalOptions(el)
-  }
-  const find = () => matchOption(text, optionTexts(options()))
-  if (!isList) {
-    focusEl(el)
-    click(el)
-    if (!(await waitFor(() => options().length > 0, 350))) {
-      fireKey(el, "keydown", "ArrowDown")
-      await waitFor(() => options().length > 0, 350)
+  const inserted = watchInserted(el)
+  try {
+    const options = () => {
+      const linked = readListOptions(el)
+      return isList ? linked : [...linked, ...inserted.options().filter((option) => !linked.includes(option))]
     }
-  }
-  let pick = find()
-  let typed = false
-  if (!pick && isInput) {
-    typed = true
-    await typeInto(el, text)
-    await waitFor(() => find() !== null, 900)
-    pick = find()
-  }
-  if (!pick) {
-    if (typed) {
-      setNativeValue(el, "")
-      fireInput(el, null, "deleteContentBackward")
+    const pickOption = (): HTMLElement | null => {
+      const list = options()
+      const hit = matchOption(text, optionTexts(list))
+      return hit ? (list[hit.index] ?? null) : null
     }
+    if (!isList) {
+      focusEl(el)
+      click(el)
+      if (!(await waitFor(() => options().length > 0, 350))) {
+        fireKey(el, "keydown", "ArrowDown")
+        await waitFor(() => options().length > 0, 350)
+      }
+    }
+    let option = pickOption()
+    let typed = false
+    if (!option && isInput) {
+      typed = true
+      await typeInto(el, text)
+      await waitFor(() => pickOption() !== null, 900)
+      option = pickOption()
+    }
+    if (!option) {
+      if (typed) {
+        setNativeValue(el, "")
+        fireInput(el, null, "deleteContentBackward")
+      }
+      closeList(el, isList)
+      return failed(field, `no option matches "${text.slice(0, 60)}"`)
+    }
+    const optionText = cleanText(option.textContent)
+    click(option)
+    await settle(30)
     closeList(el, isList)
-    return failed(field, `no option matches "${text.slice(0, 60)}"`)
+    await settle()
+    const shown = readField(field)
+    const stuck =
+      normalizeLabel(shown).includes(normalizeLabel(optionText)) ||
+      (option.isConnected &&
+        (option.getAttribute("aria-selected") === "true" || option.getAttribute("aria-checked") === "true"))
+    return stuck ? filled(field) : failed(field, "the selection did not stick")
+  } finally {
+    inserted.stop()
   }
-  const option = options()[pick.index] as HTMLElement
-  const optionText = cleanText(option.textContent)
-  click(option)
-  await settle(30)
-  closeList(el, isList)
-  await settle()
-  const shown = readField(field)
-  const stuck =
-    normalizeLabel(shown).includes(normalizeLabel(optionText)) ||
-    (option.isConnected &&
-      (option.getAttribute("aria-selected") === "true" || option.getAttribute("aria-checked") === "true"))
-  return stuck ? filled(field) : failed(field, "the selection did not stick")
-}
-
-function portalOptions(el: HTMLElement): HTMLElement[] {
-  return Array.from(el.ownerDocument.querySelectorAll<HTMLElement>("[role=option]")).filter(
-    (option) => option.getAttribute("aria-disabled") !== "true" && isRendered(option),
-  )
 }
 
 function closeList(el: HTMLElement, isList: boolean): void {
@@ -287,6 +349,7 @@ export async function fillCollected(
   value: FillValue,
   options: FillFieldOptions = {},
 ): Promise<FillResult> {
+  const done = beginFill()
   try {
     if (isDisabled(field.el)) return skipped("field is disabled")
     if (field.kind === "file") {
@@ -313,6 +376,8 @@ export async function fillCollected(
     }
   } catch (error) {
     return failed(field, error instanceof Error ? error.message : "unexpected error")
+  } finally {
+    done()
   }
 }
 

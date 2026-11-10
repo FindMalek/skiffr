@@ -1,19 +1,24 @@
+import { isPlaceholderOption } from "./collect"
 import { cleanText, textOf } from "./dom"
 import type { CollectedField } from "./types"
 
+const VALUE_NODES =
+  '[class*="single-value" i],[class*="singleValue" i],[class*="multi-value__label" i],[class*="multiValue" i] [class*="label" i]'
+const FIELDS = "input:not([type=hidden]),select,textarea"
+
+/** A combobox input is empty once a choice is made: the choice is drawn next to it, so look in the widget around the input. */
 function readCombobox(el: HTMLElement): string {
   const value = (el as HTMLInputElement).value
   if (typeof value === "string" && value.trim()) return value.trim()
   if (el.localName !== "input") return textOf(el)
-  const wrapper = el.parentElement
-  if (
-    !wrapper ||
-    wrapper.querySelector("label,[role=listbox],select,textarea") ||
-    wrapper.querySelectorAll("input").length > 1
-  )
-    return ""
-  const shown = textOf(wrapper)
-  return shown.length <= 100 ? shown : ""
+  for (let widget = el.parentElement, depth = 0; widget && depth < 6; widget = widget.parentElement, depth++) {
+    if (widget.querySelectorAll(FIELDS).length > 1) break
+    const shown = Array.from(widget.querySelectorAll<HTMLElement>(VALUE_NODES))
+      .map((node) => textOf(node))
+      .filter(Boolean)
+    if (shown.length > 0) return shown.join(", ")
+  }
+  return ""
 }
 
 /** What the control currently shows, as text. Groups and multi selects join their picks with ", ". */
@@ -23,7 +28,7 @@ export function readField(field: CollectedField): string {
     case "select": {
       const select = el as HTMLSelectElement
       return Array.from(select.selectedOptions)
-        .filter((option) => option.value !== "")
+        .filter((option) => !isPlaceholderOption(option))
         .map((option) => cleanText(option.label || option.textContent))
         .join(", ")
     }
