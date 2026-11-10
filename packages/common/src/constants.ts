@@ -9,3 +9,7 @@ export const SHORT_TEXT_MAX = 200
 export const JOB_STATUSES = ["queued", "applied", "skipped"] as const
 export const APPLICATION_STATUSES = ["applied", "responded", "interview", "offer", "rejected"] as const
 export const ANSWER_SOURCES = ["manual", "autofill", "ai", "import"] as const
+export const LIST_LIMIT_DEFAULT = 100
+export const LIST_LIMIT_MAX = 500
+export const PROFILE_FIELDS_MAX = 200
+export const JOB_SETTABLE_STATUSES = ["queued", "skipped"] as const

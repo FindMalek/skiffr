@@ -1,8 +1,8 @@
 import { z } from "zod"
-import { ANSWER_VALUE_MAX, LABEL_MAX, SHORT_TEXT_MAX, URL_MAX } from "../constants"
+import { ANSWER_VALUE_MAX, LABEL_MAX, PROFILE_FIELDS_MAX, SHORT_TEXT_MAX } from "../constants"
+import { httpUrlSchema } from "./url"
 
 const text = z.string().trim().max(SHORT_TEXT_MAX)
-const link = z.string().trim().max(URL_MAX)
 
 export const profileDataSchema = z.object({
   identity: z
@@ -16,11 +16,11 @@ export const profileDataSchema = z.object({
     .default({}),
   links: z
     .object({
-      linkedin: link.optional(),
-      github: link.optional(),
-      portfolio: link.optional(),
-      website: link.optional(),
-      other: z.array(link).max(10).default([]),
+      linkedin: httpUrlSchema.optional(),
+      github: httpUrlSchema.optional(),
+      portfolio: httpUrlSchema.optional(),
+      website: httpUrlSchema.optional(),
+      other: z.array(httpUrlSchema).max(10).default([]),
     })
     .default({ other: [] }),
   workAuth: z
@@ -51,7 +51,11 @@ export const profileDataSchema = z.object({
 })
 
 /** Normalized label → value, for form fields the typed data doesn't cover. */
-export const profileFieldsSchema = z.record(z.string().max(LABEL_MAX), z.string().max(ANSWER_VALUE_MAX))
+export const profileFieldsSchema = z
+  .record(z.string().max(LABEL_MAX), z.string().max(ANSWER_VALUE_MAX))
+  .refine((fields) => Object.keys(fields).length <= PROFILE_FIELDS_MAX, {
+    message: `At most ${PROFILE_FIELDS_MAX} extra fields.`,
+  })
 
 export const applicantProfileInputSchema = z.object({
   data: profileDataSchema.default(() => profileDataSchema.parse({})),

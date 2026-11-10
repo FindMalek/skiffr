@@ -11,3 +11,9 @@ export function normalizeLabel(label: string): string {
     .replace(/[^\p{L}\p{N}]+/gu, " ")
     .trim()
 }
+
+/** One form of a url for the unique check: lowercase host, no fragment, no trailing slash. */
+export function normalizeUrl(url: string): string {
+  const parsed = new URL(url)
+  return `${parsed.origin}${parsed.pathname.replace(/\/+$/, "")}${parsed.search}`
+}
