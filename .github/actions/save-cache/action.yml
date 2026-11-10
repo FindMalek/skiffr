@@ -1,0 +1,25 @@
+name: save-cache
+description: save the turbo and next caches restored by setup, on main only
+
+inputs:
+  setup:
+    description: toJSON(steps.<setup id>.outputs)
+    required: true
+  turbo:
+    default: "false"
+  next-cache:
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/cache/save@v6
+      if: github.ref == 'refs/heads/main' && inputs.turbo == 'true' && fromJSON(inputs.setup).turbo-hit != 'true'
+      with:
+        path: .turbo
+        key: turbo-${{ runner.os }}-${{ github.job }}-${{ fromJSON(inputs.setup).hash }}
+    - uses: actions/cache/save@v6
+      if: github.ref == 'refs/heads/main' && inputs.next-cache == 'true' && fromJSON(inputs.setup).next-hit != 'true'
+      with:
+        path: apps/*/.next/cache
+        key: next-${{ runner.os }}-${{ fromJSON(inputs.setup).hash }}

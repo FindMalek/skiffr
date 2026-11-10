@@ -18,8 +18,36 @@ env:
   # a pr checkout has no local `main`, so turbo needs the base sha to resolve --affected
   TURBO_SCM_BASE: ${{ github.event.pull_request.base.sha }}
 
-# pull requests only run tasks of changed packages and their dependents (--affected), main runs everything
+# pull requests only run tasks of changed packages and their dependents (--affected), main runs everything.
+# a pr that touches .github/actions, .github/scripts or this file runs everything with --force, so a tool bump is really tested even when main has a cache.
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      flags: ${{ steps.scope.outputs.flags }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -o pipefail
+          flag=""
+          if [ "$EVENT" = "pull_request" ]; then
+            if ! files=$(git diff --name-only "$BASE" HEAD); then
+              flag="--force"
+            elif echo "$files" | grep -Eq '^(\.github/(actions|scripts)/|\.github/workflows/ci\.yml$)'; then
+              flag="--force"
+            else
+              flag="--affected"
+            fi
+          fi
+          echo "flags=$flag" >> "$GITHUB_OUTPUT"
+
   lint:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -29,38 +57,52 @@ jobs:
       - run: pnpm lint
 
   check-types:
+    needs: changes
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: ./.github/actions/setup
+      - id: setup
+        uses: ./.github/actions/setup
         with:
           turbo: "true"
-      - run: pnpm check-types ${{ github.event_name == 'pull_request' && '--affected' || '' }}
+      - run: pnpm check-types ${{ needs.changes.outputs.flags }}
+      - uses: ./.github/actions/save-cache
+        with:
+          setup: ${{ toJSON(steps.setup.outputs) }}
+          turbo: "true"
 
   test:
+    needs: changes
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: ./.github/actions/setup
+      - id: setup
+        uses: ./.github/actions/setup
         with:
           bun: "true"
           turbo: "true"
-      - run: pnpm test ${{ github.event_name == 'pull_request' && '--affected' || '' }}
+      - run: pnpm test ${{ needs.changes.outputs.flags }}
+      - uses: ./.github/actions/save-cache
+        with:
+          setup: ${{ toJSON(steps.setup.outputs) }}
+          turbo: "true"
 
   build:
+    needs: changes
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: ./.github/actions/setup
+      - id: setup
+        uses: ./.github/actions/setup
         with:
           turbo: "true"
           next-cache: "true"
@@ -69,20 +111,69 @@ jobs:
         run: |
           cp .env.example .env
           printf 'BETTER_AUTH_SECRET=%s\nADMIN_PASSWORD=%s\n' "ci-build-secret-not-used-anywhere-0123456789" "ci-build-password" >> .env
-      - run: pnpm build ${{ github.event_name == 'pull_request' && '--affected' || '' }}
+      - run: pnpm build ${{ needs.changes.outputs.flags }}
+      - uses: ./.github/actions/save-cache
+        with:
+          setup: ${{ toJSON(steps.setup.outputs) }}
+          turbo: "true"
+          next-cache: "true"
+
+  db-postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: skiffr
+          POSTGRES_PASSWORD: skiffr
+          POSTGRES_DB: skiffr_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U skiffr"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 15
+    env:
+      TEST_DATABASE_URL: postgres://skiffr:skiffr@localhost:5432/skiffr_test
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+        with:
+          bun: "true"
+      - name: Router tests on postgres
+        run: pnpm --filter @skiffr/orpc test
+      - name: Test database was dropped
+        env:
+          PGPASSWORD: skiffr
+        run: |
+          left=$(psql -h localhost -U skiffr -d skiffr_test -tAc "select count(*) from pg_database where datname like 'skiffr_test_%'")
+          echo "$left leftover test databases"
+          [ "$left" = "0" ]
+
+  aggregator-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/scripts
+      - run: bash .github/scripts/aggregate.test.sh
 
   ci:
     name: ci
     if: always()
-    needs: [lint, check-types, test, build]
+    needs: [changes, lint, check-types, test, build, db-postgres, aggregator-test]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/scripts
       - name: All jobs passed
         env:
           RESULTS: ${{ join(needs.*.result, ' ') }}
         run: |
-          echo "results: $RESULTS"
-          for r in $RESULTS; do
-            [ "$r" = "success" ] || exit 1
-          done
+          read -ra results <<< "$RESULTS"
+          bash .github/scripts/aggregate.sh "${results[@]}"

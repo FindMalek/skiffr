@@ -82,10 +82,12 @@ skiffr/
 | `pnpm lint` | biome and oxlint |
 | `pnpm check` | biome format and fix |
 | `pnpm check-types` | typescript across the repo |
-| `pnpm test` | tests in every package |
+| `pnpm test` | tests in every package (router tests run on pglite) |
 | `pnpm db:generate` / `db:migrate` / `db:seed` / `db:studio` | drizzle |
 | `pnpm ui:add <component>` | add a shadcn component |
 | `pnpm bump-deps` | update every dependency, catalog included, to the latest version |
+
+Router tests run on pglite. Set `TEST_DATABASE_URL` to a server url whose database is named `skiffr_test*` (e.g. `postgres://skiffr:skiffr@localhost:5432/skiffr_test`) to run them on real postgres: each run creates and drops its own `skiffr_test_<random>` database.
 
 ---
 
