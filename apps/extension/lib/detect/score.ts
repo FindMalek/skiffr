@@ -1,5 +1,5 @@
 import { type AtsId, matchAts } from "./ats"
-import { type ControlInfo, collectControls, countControlCandidates, type Signal } from "./controls"
+import { type ControlInfo, collectControls, countControlCandidates, MAX_CONTROLS, type Signal } from "./controls"
 
 export type Detection = { isForm: boolean; ats: AtsId | null; confidence: number; reasons: string[] }
 
@@ -7,7 +7,8 @@ const MIN_CONTROLS = 3
 const MIN_SIGNALS = 2
 const GROUP_SELECTOR = "form, [role=dialog], dialog, [role=form]"
 const LINKEDIN_APPLY_SELECTOR = '[data-test-modal-id="easy-apply-modal"], .jobs-easy-apply-modal'
-const JOB_CONTEXT = /\b(apply|application|careers?|jobs?|positions?|openings?|resume|cv|hiring|vacanc\w*)\b/i
+const JOB_CONTEXT =
+  /\b(apply|applying|careers?|job (posting|opening|description)|positions?|openings?|resume|cv|hiring|vacanc\w*)\b/i
 
 function groupControls(doc: Document): Map<Element, ControlInfo[]> {
   const groups = new Map<Element, ControlInfo[]>()
@@ -31,7 +32,7 @@ function hasJobContext(doc: Document, url: string, group: Element): boolean {
   const submits = [...group.querySelectorAll("button, input[type=submit]")]
     .slice(0, 6)
     .map((button) => button.textContent || (button as HTMLInputElement).value || "")
-  return JOB_CONTEXT.test([path, doc.title, ...headings, ...submits].join(" "))
+  return JOB_CONTEXT.test([path.replace(/[-_/]+/g, " "), doc.title, ...headings, ...submits].join(" "))
 }
 
 function scoreGroup(doc: Document, url: string, ats: AtsId | null, group: Element, controls: ControlInfo[]) {
@@ -72,6 +73,10 @@ export function detectApplicationForm(doc: Document, url: string = doc.location?
   if (ats === "linkedin" && !doc.querySelector(LINKEDIN_APPLY_SELECTOR)) ats = null
   if (countControlCandidates(doc) < MIN_CONTROLS) {
     return { isForm: false, ats, confidence: 0, reasons: ["too few inputs on the page"] }
+  }
+
+  if (countControlCandidates(doc) > MAX_CONTROLS) {
+    return { isForm: false, ats, confidence: 0, reasons: [`too many controls to analyse (over ${MAX_CONTROLS})`] }
   }
 
   let best: Detection = { isForm: false, ats, confidence: 0, reasons: ["no form with enough fillable controls"] }

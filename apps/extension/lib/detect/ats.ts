@@ -39,3 +39,30 @@ export function matchAts(url: string): AtsId | null {
   const rule = RULES.find((item) => item.host.test(host) && (!item.path || item.path.test(parsed.pathname)))
   return rule?.id ?? null
 }
+
+const MULTI_TENANT: readonly AtsId[] = ["greenhouse", "lever", "ashby", "workable", "smartrecruiters"]
+
+export function isTrustedFrameUrl(topUrl: string, frameUrl: string): boolean {
+  try {
+    const top = new URL(topUrl)
+    const frame = new URL(frameUrl)
+    if (top.origin !== "null" && top.origin === frame.origin) return true
+  } catch {
+    return false
+  }
+  return matchAts(frameUrl) !== null
+}
+
+export function siteKey(url: string): string | null {
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    return null
+  }
+  const host = parsed.hostname.toLowerCase()
+  if (!host) return null
+  const ats = matchAts(url)
+  const tenant = parsed.pathname.split("/")[1]?.toLowerCase()
+  return ats && MULTI_TENANT.includes(ats) && tenant ? `${host}/${tenant}` : host
+}

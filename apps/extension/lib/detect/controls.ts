@@ -29,7 +29,10 @@ const COMPOUND_NAMES = new Set([
 const PHONE_TOKENS = new Set(["phone", "mobile", "tel", "telephone", "cell"])
 const RESUME_PATTERN = /resume|\bcv\b|curriculum|résumé/i
 const COVER_PATTERN = /cover[\s_-]?letter/i
-const PAYMENT_PATTERN = /card[\s_-]?number|\bcvv\b|\bcvc\b|credit[\s_-]?card|\biban\b|billing|shipping/i
+const PAYMENT_PHRASE = /\b(card number|credit card|cvv|cvc|expiry date|billing address|iban)\b/
+const MAX_LABEL_LENGTH = 60
+export const MAX_CONTROLS = 400
+const TIME_BUDGET_MS = 40
 
 type VisibilityElement = HTMLElement & { checkVisibility?: (options?: { visibilityProperty?: boolean }) => boolean }
 
@@ -89,6 +92,14 @@ function surroundingText(el: HTMLElement): string {
   return text
 }
 
+function isPaymentField(el: HTMLElement, type: string, autocomplete: string, parts: string[]): boolean {
+  if (autocomplete.startsWith("cc-")) return true
+  const names = [el.getAttribute("name") ?? "", el.id].map((part) => tokens(part).join(" "))
+  if (names.some((name) => PAYMENT_PHRASE.test(name))) return true
+  if (type === "textarea") return false
+  return parts.some((part) => part.length <= MAX_LABEL_LENGTH && PAYMENT_PHRASE.test(tokens(part).join(" ")))
+}
+
 function analyze(el: HTMLElement, type: string): ControlInfo {
   const parts = [...attributeTexts(el), ...labelTexts(el)]
   const autocomplete = (el.getAttribute("autocomplete") ?? "").toLowerCase()
@@ -108,14 +119,16 @@ function analyze(el: HTMLElement, type: string): ControlInfo {
 
   let blocker: string | null = null
   if (type === "password") blocker = "password field"
-  else if (autocomplete.startsWith("cc-") || PAYMENT_PATTERN.test(parts.join(" "))) blocker = "payment field"
+  else if (isPaymentField(el, type, autocomplete, parts)) blocker = "payment field"
   else if (type === "search") blocker = "search field"
   return { el, signals, blocker }
 }
 
 export function collectControls(root: ParentNode): ControlInfo[] {
   const controls: ControlInfo[] = []
+  const started = Date.now()
   for (const node of root.querySelectorAll<HTMLElement>(CONTROL_SELECTOR)) {
+    if (Date.now() - started > TIME_BUDGET_MS) break
     const type =
       node.tagName === "INPUT" ? ((node as HTMLInputElement).type || "text").toLowerCase() : node.tagName.toLowerCase()
     if (IGNORED_TYPES.has(type) || (node as HTMLInputElement).disabled) continue

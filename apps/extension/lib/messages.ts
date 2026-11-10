@@ -1,41 +1,28 @@
-export type FillMessage = { type: "fill"; skipTop?: boolean }
-export type FormDetectedMessage = { type: "form-detected" }
-export type ProbeFramesMessage = { type: "probe-frames" }
-export type ReportFormMessage = { type: "report-form" }
-export type FillFramesMessage = { type: "fill-frames" }
-export type SiteDisabledMessage = { type: "site-disabled" }
-export type DisableSiteMessage = { type: "disable-site" }
+import { z } from "zod"
 
-export type SiteDisabledResponse = { disabled: boolean }
+export const fillMessageSchema = z.strictObject({ type: z.literal("fill"), skipTop: z.boolean().optional() })
+export const formDetectedMessageSchema = z.strictObject({ type: z.literal("form-detected") })
+export const probeFramesMessageSchema = z.strictObject({ type: z.literal("probe-frames") })
+export const fillFramesMessageSchema = z.strictObject({ type: z.literal("fill-frames") })
+export const siteDisabledMessageSchema = z.strictObject({ type: z.literal("site-disabled") })
+export const disableSiteMessageSchema = z.strictObject({ type: z.literal("disable-site") })
+export const siteDisabledResponseSchema = z.strictObject({ disabled: z.boolean() })
 
-function hasType(value: unknown, type: string): boolean {
-  return typeof value === "object" && value !== null && (value as { type?: unknown }).type === type
+export type FillMessage = z.infer<typeof fillMessageSchema>
+export type FormDetectedMessage = z.infer<typeof formDetectedMessageSchema>
+export type ProbeFramesMessage = z.infer<typeof probeFramesMessageSchema>
+export type FillFramesMessage = z.infer<typeof fillFramesMessageSchema>
+export type SiteDisabledMessage = z.infer<typeof siteDisabledMessageSchema>
+export type DisableSiteMessage = z.infer<typeof disableSiteMessageSchema>
+export type SiteDisabledResponse = z.infer<typeof siteDisabledResponseSchema>
+
+function guard<T>(schema: z.ZodType<T>): (value: unknown) => value is T {
+  return (value): value is T => schema.safeParse(value).success
 }
 
-export function isFillMessage(value: unknown): value is FillMessage {
-  return hasType(value, "fill")
-}
-
-export function isFormDetectedMessage(value: unknown): value is FormDetectedMessage {
-  return hasType(value, "form-detected")
-}
-
-export function isProbeFramesMessage(value: unknown): value is ProbeFramesMessage {
-  return hasType(value, "probe-frames")
-}
-
-export function isReportFormMessage(value: unknown): value is ReportFormMessage {
-  return hasType(value, "report-form")
-}
-
-export function isFillFramesMessage(value: unknown): value is FillFramesMessage {
-  return hasType(value, "fill-frames")
-}
-
-export function isSiteDisabledMessage(value: unknown): value is SiteDisabledMessage {
-  return hasType(value, "site-disabled")
-}
-
-export function isDisableSiteMessage(value: unknown): value is DisableSiteMessage {
-  return hasType(value, "disable-site")
-}
+export const isFillMessage = guard(fillMessageSchema)
+export const isFormDetectedMessage = guard(formDetectedMessageSchema)
+export const isProbeFramesMessage = guard(probeFramesMessageSchema)
+export const isFillFramesMessage = guard(fillFramesMessageSchema)
+export const isSiteDisabledMessage = guard(siteDisabledMessageSchema)
+export const isDisableSiteMessage = guard(disableSiteMessageSchema)

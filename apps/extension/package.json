@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@skiffr/common": "workspace:*",
+    "zod": "catalog:",
     "react": "catalog:",
     "react-dom": "catalog:"
   },

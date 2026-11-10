@@ -1,6 +1,8 @@
 import { browser } from "wxt/browser"
 import { defineContentScript } from "wxt/utils/define-content-script"
+import { createRateLimiter } from "@/lib/detect/rate-limit"
 import { createFormWatcher } from "@/lib/detect/watch"
+import { noteFill } from "@/lib/dev-hook"
 import { handleFill } from "@/lib/fill-handler"
 import {
   type DisableSiteMessage,
@@ -8,7 +10,6 @@ import {
   type FormDetectedMessage,
   isFillMessage,
   isFormDetectedMessage,
-  isReportFormMessage,
   type ProbeFramesMessage,
   type SiteDisabledMessage,
   type SiteDisabledResponse,
@@ -18,7 +19,15 @@ import { createToastView } from "@/lib/toast/view"
 
 type NavigationTarget = { addEventListener: (type: "navigatesuccess", listener: () => void) => void }
 
+const allowFormDetected = createRateLimiter(3, 5_000)
+
+function fillHere(): void {
+  void handleFill()
+  noteFill(document)
+}
+
 function send(message: FormDetectedMessage | ProbeFramesMessage | FillFramesMessage | DisableSiteMessage): void {
+  if (message.type === "form-detected" && !allowFormDetected()) return
   browser.runtime.sendMessage(message).catch(() => {})
 }
 
@@ -27,7 +36,6 @@ export default defineContentScript({
   allFrames: true,
   main(ctx) {
     const isTop = window === window.top
-    let formHere = false
     let formInChildFrame = false
 
     let toastState = INITIAL_TOAST_STATE
@@ -46,7 +54,7 @@ export default defineContentScript({
         else if (effect === "hide") view.hide()
         else if (effect === "neverAsk") send({ type: "disable-site" })
         else {
-          void handleFill()
+          fillHere()
           if (formInChildFrame) send({ type: "fill-frames" })
         }
       }
@@ -62,7 +70,6 @@ export default defineContentScript({
       : Promise.resolve()
 
     function onFormHere(): void {
-      formHere = true
       if (isTop) void siteChecked.then(() => dispatch("detected"))
       else send({ type: "form-detected" })
     }
@@ -77,22 +84,20 @@ export default defineContentScript({
     navigation?.addEventListener("navigatesuccess", () => {
       if (location.href === lastHref) return
       lastHref = location.href
-      formHere = false
       formInChildFrame = false
       dispatch("navigated")
       watcher.start()
+      if (isTop) send({ type: "probe-frames" })
     })
 
     browser.runtime.onMessage.addListener((message: unknown) => {
       if (isFillMessage(message)) {
         if (message.skipTop && isTop) return
-        void handleFill()
+        fillHere()
         if (isTop) dispatch("filled")
       } else if (isTop && isFormDetectedMessage(message)) {
         formInChildFrame = true
         void siteChecked.then(() => dispatch("detected"))
-      } else if (!isTop && isReportFormMessage(message) && formHere) {
-        send({ type: "form-detected" })
       }
     })
 

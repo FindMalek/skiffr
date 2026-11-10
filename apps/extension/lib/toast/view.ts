@@ -5,6 +5,7 @@ export type ToastView = { show: () => void; hide: () => void }
 type ToastHandlers = { onYes: () => void; onNo: () => void; onNever: () => void; onTimeout: () => void }
 
 const AUTO_DISMISS_MS = 20_000
+const MAX_REMOUNTS = 20
 const HOST_STYLE: Record<string, string> = {
   all: "initial",
   position: "fixed",
@@ -23,10 +24,16 @@ function button(doc: Document, label: string, action: string, className = ""): H
   return el
 }
 
+// a fresh tag name per page load, so a page cannot select the toast by a fixed name
+const HOST_TAG = `x-${Math.random().toString(36).slice(2, 10).padEnd(8, "a")}`
+
 export function createToastView(doc: Document, handlers: ToastHandlers): ToastView {
   let host: HTMLElement | null = null
   let timer: ReturnType<typeof setTimeout> | undefined
   let previousFocus: Element | null = null
+  let remounts = 0
+  let observer: MutationObserver | null = null
+  let watchedRoot: Element | null = null
 
   function arm(): void {
     clearTimeout(timer)
@@ -34,7 +41,7 @@ export function createToastView(doc: Document, handlers: ToastHandlers): ToastVi
   }
 
   function build(): HTMLElement {
-    const el = doc.createElement("skiffr-toast")
+    const el = doc.createElement(HOST_TAG)
     for (const [prop, value] of Object.entries(HOST_STYLE)) el.style.setProperty(prop, value, "important")
     const root = el.attachShadow({ mode: "closed" })
     const style = doc.createElement("style")
@@ -61,10 +68,12 @@ export function createToastView(doc: Document, handlers: ToastHandlers): ToastVi
 
     const actions: Record<string, () => void> = { yes: handlers.onYes, no: handlers.onNo, never: handlers.onNever }
     toast.addEventListener("click", (event) => {
+      if (!event.isTrusted) return
       const action = (event.target as HTMLElement).closest<HTMLElement>("[data-action]")?.dataset.action
       if (action) actions[action]?.()
     })
     toast.addEventListener("keydown", (event) => {
+      if (!event.isTrusted) return
       if (event.key === "Escape") handlers.onNo()
       else if (event.key === "Enter" && event.target === toast) handlers.onYes()
       else return
@@ -81,22 +90,63 @@ export function createToastView(doc: Document, handlers: ToastHandlers): ToastVi
 
     toast.append(title, row)
     root.append(style, toast)
-    requestAnimationFrame(() => {
+    const frame =
+      doc.defaultView?.requestAnimationFrame.bind(doc.defaultView) ?? ((fn: () => void) => setTimeout(fn, 0))
+    frame(() => {
       title.textContent = "Autofill this application?"
       toast.classList.add("in")
     })
     return el
   }
 
+  // pages such as greenhouse replace <html> after load, which throws the host away with the old tree
+  function ensureMounted(): void {
+    const root = doc.documentElement
+    if (!host || !root) return
+    if (host.parentNode !== root) {
+      if (remounts >= MAX_REMOUNTS) {
+        unwatch()
+        return
+      }
+      remounts++
+      root.append(host)
+    }
+    if (root !== watchedRoot) watch(root)
+  }
+
+  function watch(root: Element): void {
+    const Observer = doc.defaultView?.MutationObserver
+    if (!Observer) return
+    observer?.disconnect()
+    observer = new Observer(ensureMounted)
+    observer.observe(doc, { childList: true })
+    observer.observe(root, { childList: true })
+    watchedRoot = root
+  }
+
+  function unwatch(): void {
+    observer?.disconnect()
+    observer = null
+    watchedRoot = null
+  }
+
   return {
     show() {
-      if (host?.isConnected) return
+      if (host) {
+        ensureMounted()
+        return
+      }
+      const root = doc.documentElement
+      if (!root) return
       host = build()
-      doc.documentElement.append(host)
+      remounts = 0
+      root.append(host)
+      watch(root)
       arm()
     },
     hide() {
       clearTimeout(timer)
+      unwatch()
       const hadFocus = host !== null && doc.activeElement === host
       host?.remove()
       host = null
