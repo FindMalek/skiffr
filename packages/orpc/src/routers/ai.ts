@@ -1,5 +1,5 @@
 import { ORPCError } from "@orpc/server"
-import { draftAnswer, mapFields } from "@skiffr/ai"
+import { AiModelError, draftAnswer, mapFields } from "@skiffr/ai"
 import {
   draftAnswerInputSchema,
   draftAnswerOutputSchema,
@@ -19,6 +19,18 @@ async function loadAi(context: Context & { user: { id: string } }) {
   return { model: context.model, profile: row }
 }
 
+/** Model errors are logged as name, kind, status, model id and request id only: the SDK's own errors carry the whole prompt, which is the applicant's data. */
+async function guarded<T>(route: string, run: () => Promise<T>): Promise<T> {
+  try {
+    return await run()
+  } catch (error) {
+    if (!(error instanceof AiModelError)) throw error
+    const { name, kind, status, modelId, requestId } = error
+    console.error(`[${route}]`, { name, kind, status, modelId, requestId })
+    throw new ORPCError("SERVICE_UNAVAILABLE", { message: "The AI is unavailable, try again." })
+  }
+}
+
 export const aiRouter = {
   mapFields: protectedProcedure
     .route({
@@ -31,7 +43,7 @@ export const aiRouter = {
     .output(mapFieldsOutputSchema)
     .handler(async ({ context, input }) => {
       const ai = await loadAi(context)
-      return { mappings: await mapFields({ ...ai, fields: input.fields }) }
+      return { mappings: await guarded("ai.mapFields", () => mapFields({ ...ai, fields: input.fields })) }
     }),
 
   draftAnswer: protectedProcedure
@@ -45,6 +57,6 @@ export const aiRouter = {
     .output(draftAnswerOutputSchema)
     .handler(async ({ context, input }) => {
       const ai = await loadAi(context)
-      return { text: await draftAnswer({ ...ai, ...input }) }
+      return guarded("ai.draftAnswer", () => draftAnswer({ ...ai, ...input }))
     }),
 }
