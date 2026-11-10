@@ -1,0 +1,8 @@
+browser: 142.0.7444.175 | scenario: chrome-142
+worker started, setAccessLevel is function
+typeof chrome.action: object
+onCommand.hasListeners(): true
+content script read of storage.local: ERR Access to storage is not allowed from this context.
+fill on chrome://version -> resolved
+badge right after: "!"
+badge after 3.6s: ""

@@ -1,0 +1,2 @@
+browser: 131.0.6778.264 | scenario: chrome-131 with minimum_chrome_version "142" in the manifest
+unpacked build is refused: the service worker never starts (no serviceworker event within 30s)

@@ -1,0 +1,8 @@
+browser: 131.0.6778.264 | scenario: chrome-131-without-minimum-version
+worker started, setAccessLevel is undefined
+typeof chrome.action: object
+onCommand.hasListeners(): true
+content script read of storage.local: {"settings":{"apiUrl":"http://x.y","token":"secret"}}
+fill on chrome://version -> resolved
+badge right after: "!"
+badge after 3.6s: ""
