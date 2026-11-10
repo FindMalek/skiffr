@@ -1,0 +1,41 @@
+{
+  "name": "@skiffr/orpc",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./client": "./src/client.ts",
+    "./errors": "./src/errors.ts",
+    "./flags": "./src/flags.tsx",
+    "./react": "./src/react.tsx",
+    "./server": "./src/server-client.ts",
+    "./proxy": "./src/proxy.ts"
+  },
+  "scripts": {
+    "check-types": "tsc --noEmit",
+    "test": "bun test --pass-with-no-tests"
+  },
+  "dependencies": {
+    "@skiffr/auth": "workspace:*",
+    "@skiffr/common": "workspace:*",
+    "@skiffr/db": "workspace:*",
+    "@orpc/client": "catalog:",
+    "@orpc/server": "catalog:",
+    "@orpc/tanstack-query": "catalog:",
+    "@tanstack/react-query": "catalog:",
+    "drizzle-orm": "catalog:",
+    "zod": "catalog:",
+    "@skiffr/storage": "workspace:*",
+    "ai": "catalog:"
+  },
+  "peerDependencies": {
+    "react": "catalog:"
+  },
+  "devDependencies": {
+    "@skiffr/config": "workspace:*",
+    "@types/bun": "catalog:",
+    "@types/react": "catalog:",
+    "typescript": "catalog:"
+  }
+}

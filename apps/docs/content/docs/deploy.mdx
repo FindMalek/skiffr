@@ -1,0 +1,31 @@
+---
+title: Deploy
+description: Ship the apps on Vercel or your own server.
+---
+
+Skiffr deploys as the api, up to four Next apps, and a postgres database. All of them read the same env keys, see [environment](/docs/environment).
+
+## Vercel
+
+Deploy `web`, `dashboard` and `docs` as separate Vercel projects from the same repo.
+
+1. import the repo and set the root directory to `apps/web`, then repeat for `apps/dashboard` and `apps/docs`
+2. add the env keys to each project
+3. host the `api` where bun or docker runs, and point `API_URL` and `API_PUBLIC_URL` at it
+
+## Docker
+
+Every app has a `Dockerfile` in `apps/<app>/`. The build context is the repo root and turbo prunes the workspace to what the app needs:
+
+```bash
+docker build -f apps/web/Dockerfile -t skiffr-web .
+docker build -f apps/dashboard/Dockerfile -t skiffr-dashboard .
+docker build -f apps/api/Dockerfile -t skiffr-api .
+docker build -f apps/docs/Dockerfile -t skiffr-docs .
+```
+
+Next apps are built with `output: "standalone"` and ship a healthcheck. Pass the env at run time.
+
+## Dokploy
+
+Create a project with a postgres database, add one application per app with build type Dockerfile, path `apps/<app>/Dockerfile` and `.` as the context, set the env keys, and attach your domains. Use the api service's internal address for `API_URL`.

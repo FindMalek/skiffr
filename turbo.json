@@ -1,0 +1,22 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "ui": "tui",
+  "globalDependencies": [".env"],
+  "globalPassThroughEnv": ["NODE_ENV"],
+  "envMode": "loose",
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "inputs": ["$TURBO_DEFAULT$", ".env*"],
+      "outputs": [".next/**", "!.next/cache/**", "!.next/dev/**", "dist/**", "out/**"]
+    },
+    "export": { "outputs": ["out/**"] },
+    "check-types": { "dependsOn": ["^check-types"] },
+    "test": {},
+    "dev": { "cache": false, "persistent": true },
+    "db:generate": { "cache": false },
+    "db:migrate": { "cache": false },
+    "db:seed": { "cache": false },
+    "db:studio": { "cache": false, "persistent": true }
+  }
+}

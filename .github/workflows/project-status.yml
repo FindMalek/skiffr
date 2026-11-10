@@ -1,0 +1,45 @@
+name: project status
+
+# Needs a repo variable PROJECT_NUMBER and a secret PROJECT_TOKEN (classic pat with `project`).
+# Optional variables: PROJECT_STATUS_FIELD (default Status), PROJECT_STATUS_REVIEW (default In review),
+# PROJECT_STATUS_DONE (default Done). Without PROJECT_NUMBER every step is skipped.
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review, closed]
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: >
+      github.event.pull_request.head.repo.full_name == github.repository
+      && (github.event.action != 'closed' || github.event.pull_request.merged)
+    env:
+      PROJECT_NUMBER: ${{ vars.PROJECT_NUMBER }}
+      GH_TOKEN: ${{ secrets.PROJECT_TOKEN }}
+    steps:
+      - name: Check the board is configured
+        id: board
+        run: |
+          if [ -z "$PROJECT_NUMBER" ] || [ -z "$GH_TOKEN" ]; then
+            echo "PROJECT_NUMBER or PROJECT_TOKEN is unset, skipping"
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v7
+        if: steps.board.outputs.enabled == 'true'
+      - name: Move linked issues
+        if: steps.board.outputs.enabled == 'true'
+        env:
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ github.event.repository.name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          STATUS_FIELD: ${{ vars.PROJECT_STATUS_FIELD || 'Status' }}
+          STATUS: ${{ github.event.pull_request.merged && (vars.PROJECT_STATUS_DONE || 'Done') || (vars.PROJECT_STATUS_REVIEW || 'In review') }}
+        run: |
+          node .github/scripts/project-status.mjs

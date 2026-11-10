@@ -1,0 +1,10 @@
+{
+  "extends": "@skiffr/config/react-library.json",
+  "compilerOptions": {
+    "paths": {
+      "@skiffr/ui/*": ["./src/*"]
+    }
+  },
+  "include": ["."],
+  "exclude": ["node_modules", "dist"]
+}

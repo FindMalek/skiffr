@@ -1,0 +1,23 @@
+---
+title: Introduction
+description: What Skiffr is made of and where to find things.
+---
+
+Skiffr is a turborepo with a landing page, a dashboard with login, and an api, wired to postgres, auth and typed rpc. These pages describe the project as it was generated. Edit them in `apps/docs/content/docs`, they are plain mdx.
+
+## What is in the repo
+
+- `apps/web`: the landing page. It only talks to the api
+- `apps/dashboard`: login and the app shell. It only talks to the api
+- `apps/api`: orpc on bun. The only app that touches the database, auth and providers
+- `apps/docs`: this site
+- `packages/*`: shared code, see [structure](/docs/structure)
+
+## Where to go next
+
+<Cards>
+  <Card title="Setup" href="/docs/setup">Install, start postgres, run the apps.</Card>
+  <Card title="Environment" href="/docs/environment">Every key in the root `.env`.</Card>
+  <Card title="Structure" href="/docs/structure">Apps, packages and the rules between them.</Card>
+  <Card title="Deploy" href="/docs/deploy">Vercel or your own server.</Card>
+</Cards>

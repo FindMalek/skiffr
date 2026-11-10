@@ -1,0 +1,35 @@
+{
+  "name": "skiffr",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "turbo dev",
+    "dev:web": "turbo dev -F web -F api",
+    "dev:dashboard": "turbo dev -F dashboard -F api",
+    "build": "turbo build",
+    "check-types": "turbo check-types",
+    "test": "turbo test",
+    "lint": "biome ci . && oxlint",
+    "check": "biome check --write .",
+    "agents": "npx --yes @intellectronica/ruler@0.3.46 apply",
+    "db:up": "docker compose --env-file .env -f docker/docker-compose.yml up -d",
+    "db:down": "docker compose --env-file .env -f docker/docker-compose.yml down",
+    "db:generate": "turbo db:generate -F @skiffr/db",
+    "db:migrate": "turbo db:migrate -F @skiffr/db",
+    "db:seed": "turbo db:seed -F @skiffr/db",
+    "db:studio": "turbo db:studio -F @skiffr/db",
+    "bump-deps": "pnpm update --recursive --latest",
+    "ui:add": "pnpm --filter @skiffr/ui exec shadcn add"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "catalog:",
+    "@shadcn/lint": "catalog:",
+    "oxlint": "catalog:",
+    "turbo": "catalog:",
+    "typescript": "catalog:"
+  },
+  "packageManager": "pnpm@10.33.4",
+  "engines": {
+    "node": ">=24"
+  }
+}

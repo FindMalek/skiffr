@@ -1,0 +1,29 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "jsPlugins": ["@shadcn/lint"],
+  "categories": { "correctness": "off" },
+  "ignorePatterns": [
+    "**/node_modules",
+    "**/.next",
+    "packages/ui/src/components/**",
+    "packages/ui/src/brand/**",
+    "packages/notification/**",
+    "apps/email/**",
+    ".agents/**",
+    ".claude/**",
+    ".opencode/**",
+    ".pi/**"
+  ],
+  "rules": {
+    "shadcn/no-raw-colors": "error",
+    "shadcn/no-arbitrary-values": "warn",
+    "shadcn/no-inline-styles": "error",
+    "shadcn/no-unknown-classes": "error"
+  },
+  "settings": {
+    "shadcn": {
+      "ui": "packages/ui/src/components",
+      "note": "Use the theme tokens in packages/ui/src/styles/theme.css instead of raw colors."
+    }
+  }
+}

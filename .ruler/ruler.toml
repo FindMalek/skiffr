@@ -1,0 +1,24 @@
+# Rules, MCP servers and skills for every coding agent. Source: .ruler/AGENTS.md
+# Regenerate with `pnpm agents`. Outputs are committed so a fresh clone works without ruler.
+default_agents = ["claude", "cursor", "opencode", "zed", "pi"]
+
+[mcp]
+enabled = true
+merge_strategy = "merge"
+
+[mcp_servers.context7]
+command = "npx"
+args = ["-y", "@upstash/context7-mcp"]
+
+[mcp_servers.shadcn]
+command = "npx"
+args = ["shadcn@latest", "mcp"]
+
+[mcp_servers.vercel]
+url = "https://mcp.vercel.com"
+
+[gitignore]
+enabled = false
+
+[backup]
+enabled = false

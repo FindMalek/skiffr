@@ -1,0 +1,39 @@
+---
+title: Setup
+description: From a fresh clone to every app running locally.
+---
+
+You need node 24, pnpm, bun and docker.
+
+```bash
+pnpm install
+pnpm db:up
+pnpm dev
+```
+
+`pnpm db:up` starts a local postgres from `docker/docker-compose.yml`. The api applies migrations on start and, when `SEED=demo`, fills an empty database with sample data.
+
+| App | Url |
+| --- | --- |
+| web | http://localhost:3000 |
+| api | http://localhost:3001 |
+| dashboard | http://localhost:3002 |
+| docs | http://localhost:3003 |
+
+Sign in to the dashboard with `ADMIN_EMAIL` and `ADMIN_PASSWORD` from `.env`. The admin is created or reset on every api start.
+
+## Working on one app
+
+```bash
+pnpm dev:web        # web and api
+pnpm dev:dashboard  # dashboard and api
+```
+
+## Before you push
+
+```bash
+pnpm lint
+pnpm check-types
+pnpm test
+pnpm build
+```

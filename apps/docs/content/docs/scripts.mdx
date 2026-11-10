@@ -1,0 +1,23 @@
+---
+title: Scripts
+description: Every command in the root package.json.
+---
+
+| Command | What it does |
+| --- | --- |
+| `pnpm dev` | all apps |
+| `pnpm dev:web` | web and api |
+| `pnpm dev:dashboard` | dashboard and api |
+| `pnpm build` | build everything with turbo |
+| `pnpm check` | biome format and fix |
+| `pnpm lint` | biome and oxlint, no fixes |
+| `pnpm check-types` | typescript across the repo |
+| `pnpm test` | tests in every package |
+| `pnpm db:up` / `db:down` | local postgres |
+| `pnpm db:generate` | write a migration from the schema |
+| `pnpm db:migrate` | apply migrations |
+| `pnpm db:seed` | seed the demo data |
+| `pnpm db:studio` | browse the database |
+| `pnpm ui:add <component>` | add a shadcn component to `packages/ui` |
+
+Run a single app with turbo, for example `pnpm turbo dev -F docs`.

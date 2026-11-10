@@ -1,0 +1,29 @@
+---
+title: Environment
+description: One root .env feeds every app.
+---
+
+There is one `.env` at the repo root. Every app loads it, and `packages/env` validates it with zod, so a bad value fails at start with a clear message. `.env.example` lists every key with its default, `.env` itself is git-ignored.
+
+## Urls
+
+| Key | What it is |
+| --- | --- |
+| `API_URL` | how the Next servers reach the api, an internal address on docker |
+| `API_PUBLIC_URL` | the api url the browser can reach |
+| `WEB_URL` | the landing page |
+| `DASHBOARD_URL` | the dashboard |
+| `DOCS_URL` | this site, read only by `apps/docs` and not part of the `packages/env` schema |
+
+## Database and auth
+
+| Key | What it is |
+| --- | --- |
+| `DATABASE_URL` | postgres connection string |
+| `POSTGRES_PORT` | host port of the local docker postgres |
+| `SEED` | `demo` fills an empty database with sample data, `none` never seeds |
+| `BETTER_AUTH_SECRET` | `openssl rand -base64 32`, generated for you |
+| `ADMIN_EMAIL`, `ADMIN_PASSWORD` | the first admin, created or reset on every api start |
+| `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | optional github sign-in |
+
+Keys for modules you left out of the project are not in `.env.example`. Adding a key means adding it to the zod schema in `packages/env` first.

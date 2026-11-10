@@ -1,0 +1,46 @@
+name: preview
+
+# Every pull request gets a Dokploy preview per app, a sticky comment and github deployments.
+# Needs repo variables DOKPLOY_URL, PREVIEW_DOMAIN, DOKPLOY_ENVIRONMENT_ID and secret DOKPLOY_TOKEN.
+# Optional: secret PREVIEW_GIT_TOKEN (private repos), secret PREVIEW_APP_ENV (extra env lines), variable PREVIEW_HTTPS.
+# Without them the job exits green with a note in the summary.
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+concurrency:
+  group: preview-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  deployments: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  deploy:
+    name: dokploy preview
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    if: github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: node .github/scripts/preview.mjs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DOKPLOY_URL: ${{ vars.DOKPLOY_URL }}
+          DOKPLOY_TOKEN: ${{ secrets.DOKPLOY_TOKEN }}
+          DOKPLOY_ENVIRONMENT_ID: ${{ vars.DOKPLOY_ENVIRONMENT_ID }}
+          PREVIEW_DOMAIN: ${{ vars.PREVIEW_DOMAIN }}
+          PREVIEW_HTTPS: ${{ vars.PREVIEW_HTTPS }}
+          PREVIEW_GIT_TOKEN: ${{ secrets.PREVIEW_GIT_TOKEN }}
+          PREVIEW_APP_ENV: ${{ secrets.PREVIEW_APP_ENV }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
