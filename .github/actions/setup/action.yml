@@ -1,0 +1,44 @@
+name: setup
+description: node, pnpm, optional bun, dependencies and the turbo cache
+
+inputs:
+  bun:
+    description: install bun (needed by the test tasks)
+    default: "false"
+  turbo:
+    description: cache .turbo (only for jobs that run turbo)
+    default: "false"
+  next-cache:
+    description: also cache the next.js build cache
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - uses: pnpm/action-setup@v6
+    - uses: actions/setup-node@v7
+      with:
+        node-version: 24
+        cache: pnpm
+    - uses: oven-sh/setup-bun@v2
+      if: inputs.bun == 'true'
+      with:
+        bun-version: 1.4.4
+    - run: pnpm install --frozen-lockfile
+      shell: bash
+    # keys hash lockfile and source trees: an unchanged tree reuses its entry, a changed one saves a single new entry
+    - id: src
+      shell: bash
+      run: echo "hash=$(git rev-parse HEAD:apps HEAD:packages HEAD:pnpm-lock.yaml HEAD:turbo.json | sha1sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
+    - uses: actions/cache@v6
+      if: inputs.turbo == 'true'
+      with:
+        path: .turbo
+        key: turbo-${{ runner.os }}-${{ github.job }}-${{ steps.src.outputs.hash }}
+        restore-keys: turbo-${{ runner.os }}-${{ github.job }}-
+    - uses: actions/cache@v6
+      if: inputs.next-cache == 'true'
+      with:
+        path: apps/*/.next/cache
+        key: next-${{ runner.os }}-${{ steps.src.outputs.hash }}
+        restore-keys: next-${{ runner.os }}-
