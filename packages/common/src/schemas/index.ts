@@ -1,5 +1,6 @@
 export * from "./account"
 export * from "./answers"
+export * from "./extension"
 export * from "./jobs"
 export * from "./notes"
 export * from "./page"
