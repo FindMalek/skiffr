@@ -27,3 +27,6 @@ export const AI_ANSWER_LENGTH_MAX = 2_000
 export const AI_ANSWER_LENGTH_DEFAULT = 600
 export const AI_GENERATED_VALUE_MAX = 300
 export const AI_REASON_MAX = 200
+export const TOKEN_NAME_MAX = 60
+export const TOKEN_EXPIRY_DAYS_MAX = 365
+export const TOKEN_PREFIX = "skp_"

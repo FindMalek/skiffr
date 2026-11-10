@@ -2,17 +2,19 @@ import { afterAll, beforeAll, expect, spyOn, test } from "bun:test"
 import { inspect } from "node:util"
 import { PGlite } from "@electric-sql/pglite"
 import { vector } from "@electric-sql/pglite-pgvector"
-import { call } from "@orpc/server"
+import { call, createRouterClient } from "@orpc/server"
 import { mockModel } from "@skiffr/ai/testing"
 import type { Session } from "@skiffr/auth"
-import { answer, answerColumns, type Db, findSimilarAnswers, user } from "@skiffr/db"
+import { answer, answerColumns, apiToken, type Db, findSimilarAnswers, user } from "@skiffr/db"
 import * as schema from "@skiffr/db/schema"
 import { createTestDb } from "@skiffr/db/test-db"
 import { APICallError } from "ai"
 import { eq } from "drizzle-orm"
 import { drizzle } from "drizzle-orm/pglite"
 import { migrate } from "drizzle-orm/pglite/migrator"
-import type { Context } from "../context"
+import { type Context, createContext } from "../context"
+import { hashToken } from "../lib/tokens"
+import { TOKEN_PROCEDURES } from "../procedures"
 import { appRouter } from "./index"
 
 const NOW = new Date("2026-11-10T10:00:00Z")
@@ -355,4 +357,108 @@ test("a prompt that is too large for the model is a clean 400 and the model is n
     code: "BAD_REQUEST",
   })
   expect(model.doGenerateCalls.length).toBe(0)
+})
+
+const DAY = 24 * 60 * 60 * 1000
+
+async function mint(owner: () => { context: Context }, expiresInDays: number | null = 30) {
+  return call(appRouter.tokens.create, { name: "laptop", expiresInDays }, owner())
+}
+
+/** A router client, not `call`: the allowlist is keyed on the procedure path, which only a router client sets. */
+async function asToken(secret: string, now = NOW) {
+  const context = await createContext(
+    { db, now: () => now } as never,
+    new Headers({ authorization: `Bearer ${secret}` }),
+  )
+  return createRouterClient(appRouter, { context })
+}
+
+test("a token's secret is returned once and only its hash is stored", async () => {
+  const created = await mint(ana)
+  expect(created.secret).toStartWith("skp_")
+  expect(created.prefix).toBe(created.secret.slice(0, 8))
+  expect(created.last4).toBe(created.secret.slice(-4))
+
+  const listed = await call(appRouter.tokens.list, undefined, ana())
+  expect(listed.find((t) => t.id === created.id)).toBeDefined()
+  expect(JSON.stringify(listed)).not.toContain(created.secret)
+
+  const [row] = await db.select().from(apiToken).where(eq(apiToken.id, created.id))
+  expect(row?.tokenHash).toBe(hashToken(created.secret))
+  expect(JSON.stringify(row)).not.toContain(created.secret)
+})
+
+test("a token works for the extension's procedures without cookies or csrf, and only sees its owner's data", async () => {
+  await call(appRouter.answers.create, { rawLabel: "Token question one", value: "ana's" }, ana())
+  await call(appRouter.answers.create, { rawLabel: "Token question two", value: "ben's" }, ben())
+  const { secret } = await mint(ana)
+
+  const rows = await (await asToken(secret)).answers.list({})
+  expect(rows.map((r) => r.value)).toContain("ana's")
+  expect(rows.map((r) => r.value)).not.toContain("ben's")
+
+  const who = await (await asToken(secret)).extension.whoami()
+  expect(who).toMatchObject({ user: { email: "ana@test.dev" }, token: { name: "laptop" } })
+})
+
+test("revoked, expired, unknown and malformed tokens all fail the same way", async () => {
+  const revoked = await mint(ana)
+  await call(appRouter.tokens.revoke, { id: revoked.id }, ana())
+  const expired = await mint(ana, 1)
+  const fresh = await mint(ana)
+  const failures = await Promise.all(
+    [
+      [revoked.secret, NOW],
+      [expired.secret, new Date(NOW.getTime() + 2 * DAY)],
+      [`skp_${"a".repeat(43)}`, NOW],
+      ["not-a-token", NOW],
+      ["", NOW],
+      [`${fresh.secret}x`, NOW],
+    ].map(async ([secret, now]) => (await asToken(secret as string, now as Date)).profile.get().catch((e) => e)),
+  )
+  for (const error of failures)
+    expect(error).toMatchObject({ code: "UNAUTHORIZED", status: 401, message: "Unauthorized." })
+})
+
+test("a token reaches exactly the allowlisted procedures", async () => {
+  const { secret } = await mint(ana)
+  const paths: string[] = []
+  const walk = (node: object, prefix: string[]) => {
+    for (const [key, child] of Object.entries(node)) {
+      if (child && typeof child === "object" && "~orpc" in child) paths.push([...prefix, key].join("."))
+      else if (child && typeof child === "object") walk(child, [...prefix, key])
+    }
+  }
+  walk(appRouter, [])
+  for (const path of TOKEN_PROCEDURES) expect(paths).toContain(path)
+
+  const blocked = paths.filter((path) => !path.startsWith("public.") && !TOKEN_PROCEDURES.has(path))
+  expect(blocked).toContain("tokens.create")
+  expect(blocked).toContain("me.update")
+  for (const path of blocked) {
+    const client: unknown = await asToken(secret)
+    const procedure = path
+      .split(".")
+      .reduce((node, key) => (node as Record<string, unknown>)[key], client) as () => Promise<unknown>
+    const error = await procedure().catch((e: unknown) => e)
+    expect(error, path).toMatchObject({ code: "FORBIDDEN" })
+  }
+})
+
+test("lastUsedAt is written at most once a minute", async () => {
+  const { id, secret } = await mint(ana)
+  const lastUsed = async () => (await db.select().from(apiToken).where(eq(apiToken.id, id)))[0]?.lastUsedAt
+  const at = (seconds: number) => new Date(NOW.getTime() + seconds * 1000)
+
+  await (await asToken(secret, at(0))).extension.whoami()
+  await (await asToken(secret, at(30))).extension.whoami()
+  expect(await lastUsed()).toEqual(at(0))
+  await (await asToken(secret, at(61))).extension.whoami()
+  expect(await lastUsed()).toEqual(at(61))
+})
+
+test("a user can only revoke their own token", async () => {
+  const { id } = await mint(ana)
+  await expect(call(appRouter.tokens.revoke, { id }, ben())).rejects.toMatchObject({ code: "NOT_FOUND" })
 })

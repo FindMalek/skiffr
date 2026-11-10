@@ -48,7 +48,12 @@ const fetch = createServer(
     }),
     model: resolveModel(env.AI_MODEL, env),
   },
-  { publicUrl: env.API_PUBLIC_URL },
+  {
+    publicUrl: env.API_PUBLIC_URL,
+    extensionOrigins: env.EXTENSION_ORIGINS?.split(",")
+      .map((origin) => origin.trim())
+      .filter(Boolean),
+  },
 )
 
 const server = Bun.serve({ port: env.PORT, hostname: "0.0.0.0", fetch })
