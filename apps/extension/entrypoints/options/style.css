@@ -14,6 +14,32 @@ form {
   gap: 1rem;
 }
 
+form p {
+  margin: 0;
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+
+form p[role="alert"] {
+  color: #b42318;
+}
+
+@media (prefers-color-scheme: dark) {
+  form p[role="alert"] {
+    color: #fda29b;
+  }
+}
+
+fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
 label {
   display: grid;
   gap: 0.25rem;
@@ -28,7 +54,15 @@ button {
   border-radius: 0.5rem;
 }
 
+input {
+  font-variant-ligatures: none;
+}
+
 button {
   cursor: pointer;
-  justify-self: start;
+}
+
+button:disabled {
+  cursor: default;
+  opacity: 0.6;
 }

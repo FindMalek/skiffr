@@ -14,7 +14,7 @@ import {
   SidebarMenuItem,
   SidebarRail,
 } from "@skiffr/ui/components/sidebar"
-import { LayoutDashboardIcon, LogOutIcon, NotebookPenIcon, SettingsIcon, UsersIcon } from "lucide-react"
+import { LayoutDashboardIcon, LogOutIcon, NotebookPenIcon, PuzzleIcon, SettingsIcon, UsersIcon } from "lucide-react"
 import type { Route } from "next"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
@@ -29,6 +29,7 @@ interface Me {
 const NAV: { href: Route; label: string; icon: typeof LayoutDashboardIcon; admin?: boolean }[] = [
   { href: "/", label: "Overview", icon: LayoutDashboardIcon },
   { href: "/notes", label: "Notes", icon: NotebookPenIcon },
+  { href: "/extension", label: "Extension", icon: PuzzleIcon },
   { href: "/users", label: "Users", icon: UsersIcon, admin: true },
   { href: "/settings", label: "Settings", icon: SettingsIcon },
 ]

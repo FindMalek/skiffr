@@ -1,5 +1,6 @@
 import { browser } from "wxt/browser"
 import { defineBackground } from "wxt/utils/define-background"
+import { isTestConnectionMessage, testConnection } from "@/lib/connection"
 import type { FillMessage } from "@/lib/messages"
 
 const BADGE_MS = 3000
@@ -42,6 +43,16 @@ async function hideStorageFromContentScripts(): Promise<void> {
 export default defineBackground(() => {
   browser.commands.onCommand.addListener((command) => {
     if (command === "fill") return requestFill()
+  })
+  browser.runtime.onMessage.addListener((message, sender) => {
+    // Extension pages only: a content script reports its web page's url as sender.url and never gets to use the token.
+    if (
+      isTestConnectionMessage(message) &&
+      sender.id === browser.runtime.id &&
+      sender.url?.startsWith(browser.runtime.getURL("/"))
+    ) {
+      return testConnection()
+    }
   })
   void setBadge("")
   void hideStorageFromContentScripts()

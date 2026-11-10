@@ -11,6 +11,8 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@orpc/client": "catalog:",
+    "@skiffr/orpc": "workspace:*",
     "@skiffr/common": "workspace:*",
     "react": "catalog:",
     "react-dom": "catalog:"

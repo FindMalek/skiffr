@@ -16,6 +16,9 @@ const schema = z.object({
   WEB_URL: z.url().default("http://localhost:3000"),
   DASHBOARD_URL: z.url().default("http://localhost:3002"),
 
+  /** Comma separated `chrome-extension://<id>` origins allowed to call /rpc and /v1 with a token; unset allows any extension. */
+  EXTENSION_ORIGINS: optional,
+
   BETTER_AUTH_SECRET: z.string().min(32),
   GITHUB_CLIENT_ID: optional,
   GITHUB_CLIENT_SECRET: optional,
