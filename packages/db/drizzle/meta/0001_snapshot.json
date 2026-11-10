@@ -1,5 +1,5 @@
 {
-  "id": "8830f2c5-c642-43b8-829f-9a62f353e083",
+  "id": "e0af3211-9226-4821-945a-39bfc782de2e",
   "prevId": "cb0e0c66-171d-4ec0-89e5-c8659d50f756",
   "version": "7",
   "dialect": "postgresql",
@@ -840,7 +840,7 @@
               "expression": "queued_at",
               "isExpression": false,
               "asc": false,
-              "nulls": "last"
+              "nulls": "first"
             }
           ],
           "isUnique": false,

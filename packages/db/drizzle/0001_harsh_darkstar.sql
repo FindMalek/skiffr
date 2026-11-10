@@ -74,4 +74,4 @@ ALTER TABLE "job" ADD CONSTRAINT "job_user_id_user_id_fk" FOREIGN KEY ("user_id"
 ALTER TABLE "job_source" ADD CONSTRAINT "job_source_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "profile" ADD CONSTRAINT "profile_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "application_user_status_idx" ON "application" USING btree ("user_id","status");--> statement-breakpoint
-CREATE INDEX "job_user_status_queued_idx" ON "job" USING btree ("user_id","status","queued_at" DESC NULLS LAST);
+CREATE INDEX "job_user_status_queued_idx" ON "job" USING btree ("user_id","status","queued_at" DESC NULLS FIRST);

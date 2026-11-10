@@ -65,7 +65,7 @@ export const job = pgTable(
   },
   (t) => [
     unique("job_user_canonical_unique").on(t.userId, t.canonicalId),
-    index("job_user_status_queued_idx").on(t.userId, t.status, t.queuedAt.desc()),
+    index("job_user_status_queued_idx").on(t.userId, t.status, t.queuedAt.desc().nullsFirst()),
   ],
 )
 
