@@ -1,8 +1,9 @@
-import { beforeAll, expect, test } from "bun:test"
+import { afterAll, beforeAll, expect, test } from "bun:test"
 import { PGlite } from "@electric-sql/pglite"
 import { call } from "@orpc/server"
 import type { Session } from "@skiffr/auth"
-import { type Db, user } from "@skiffr/db"
+import { createDb, type Db, user } from "@skiffr/db"
+import { runMigrations } from "@skiffr/db/migrate"
 import * as schema from "@skiffr/db/schema"
 import { drizzle } from "drizzle-orm/pglite"
 import { migrate } from "drizzle-orm/pglite/migrator"
@@ -12,12 +13,29 @@ import { appRouter } from "./index"
 const NOW = new Date("2026-11-10T10:00:00Z")
 let db: Db
 
-beforeAll(async () => {
+const DRIZZLE = new URL("../../../db/drizzle", import.meta.url).pathname
+
+/** TEST_DATABASE_URL runs the suite on a real postgres through the production migrator, otherwise in-process pglite. */
+async function connect(): Promise<Db> {
+  const url = process.env.TEST_DATABASE_URL
+  if (url) {
+    const real = createDb(url)
+    await runMigrations(real, DRIZZLE)
+    return real
+  }
   const pg = drizzle(new PGlite(), { schema })
-  await migrate(pg, { migrationsFolder: new URL("../../../db/drizzle", import.meta.url).pathname })
-  db = pg as unknown as Db
+  await migrate(pg, { migrationsFolder: DRIZZLE })
+  return pg as unknown as Db
+}
+
+afterAll(async () => {
+  if (process.env.TEST_DATABASE_URL) await db.close()
+})
+
+beforeAll(async () => {
+  db = await connect()
   const now = new Date()
-  await pg.insert(user).values(
+  await db.insert(user).values(
     ["ana", "ben"].map((id) => ({
       id,
       name: id,

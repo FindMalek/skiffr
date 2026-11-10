@@ -1,5 +1,5 @@
 name: setup
-description: node, pnpm, optional bun, dependencies and the turbo cache
+description: node, pnpm, optional bun, dependencies and the restored turbo cache (saved on main by save-cache)
 
 inputs:
   bun:
@@ -11,6 +11,14 @@ inputs:
   next-cache:
     description: also cache the next.js build cache
     default: "false"
+
+outputs:
+  hash:
+    value: ${{ steps.src.outputs.hash }}
+  turbo-hit:
+    value: ${{ steps.turbo.outputs.cache-hit }}
+  next-hit:
+    value: ${{ steps.next.outputs.cache-hit }}
 
 runs:
   using: composite
@@ -26,17 +34,19 @@ runs:
         bun-version: 1.4.4
     - run: pnpm install --frozen-lockfile
       shell: bash
-    # keys hash lockfile and source trees: an unchanged tree reuses its entry, a changed one saves a single new entry
+    # keys hash lockfile and source trees: an unchanged tree reuses its entry, a changed one saves a single new entry (main only)
     - id: src
       shell: bash
       run: echo "hash=$(git rev-parse HEAD:apps HEAD:packages HEAD:pnpm-lock.yaml HEAD:turbo.json | sha1sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
-    - uses: actions/cache@v6
+    - id: turbo
+      uses: actions/cache/restore@v6
       if: inputs.turbo == 'true'
       with:
         path: .turbo
         key: turbo-${{ runner.os }}-${{ github.job }}-${{ steps.src.outputs.hash }}
         restore-keys: turbo-${{ runner.os }}-${{ github.job }}-
-    - uses: actions/cache@v6
+    - id: next
+      uses: actions/cache/restore@v6
       if: inputs.next-cache == 'true'
       with:
         path: apps/*/.next/cache
