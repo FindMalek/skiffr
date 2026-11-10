@@ -48,10 +48,7 @@ export const answer = pgTable(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (t) => [
-    unique("answer_user_label_unique").on(t.userId, t.normalizedLabel),
-    index("answer_embedding_idx").using("hnsw", t.embedding.op("vector_cosine_ops")),
-  ],
+  (t) => [unique("answer_user_label_unique").on(t.userId, t.normalizedLabel)],
 )
 
 const { embedding: _embedding, ...answerPublicColumns } = getTableColumns(answer)
