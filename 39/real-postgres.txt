@@ -1,0 +1,15 @@
+real postgres: pgvector/pgvector:pg17 (PostgreSQL 17.11, vector 0.8.7), migrated with createDb + runMigrations, 5000 random vector(1536) rows for one user, then analyze
+
+findSimilarAnswers(db, "u1", q, 5) top hits (normalizedLabel, cosine distance)
+  l1124 0.9153, l11 0.9188, l1822 0.9288, l4354 0.9310, l3513 0.9327
+
+explain select id from answer where user_id='u1' and embedding is not null order by embedding <=> '[...]' limit 5
+Limit  (cost=75.82..96.15 rows=5 width=24)
+  ->  Index Scan using answer_embedding_idx on answer  (cost=75.82..20404.50 rows=5000 width=24)
+        Order By: (embedding <=> '[...]'::vector)
+        Filter: ((embedding IS NOT NULL) AND (user_id = 'u1'::text))
+
+explain select id from answer order by embedding <=> '[...]' limit 5
+Limit  (cost=75.82..96.14 rows=5 width=24)
+  ->  Index Scan using answer_embedding_idx on answer  (cost=75.82..20392.00 rows=5000 width=24)
+        Order By: (embedding <=> '[...]'::vector)
