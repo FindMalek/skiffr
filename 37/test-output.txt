@@ -1,5 +1,5 @@
-@skiffr/ai:test: cache bypass, force executing c1db8bcfc283b00c
-@skiffr/orpc:test: cache bypass, force executing 5c568912517b9d48
+@skiffr/orpc:test: cache bypass, force executing 760d663a05622b31
+@skiffr/ai:test: cache bypass, force executing 51aadb2dcdb0628d
 @skiffr/orpc:test: 
 @skiffr/orpc:test: > @skiffr/orpc@0.0.0 test /Users/findmalek/Projects/skiffr-11/packages/orpc
 @skiffr/orpc:test: > bun test --pass-with-no-tests
@@ -11,14 +11,14 @@
 @skiffr/orpc:test: bun test v1.4.2 (744846f84)
 @skiffr/ai:test: bun test v1.4.2 (744846f84)
 @skiffr/ai:test: 
-@skiffr/ai:test:  14 pass
+@skiffr/ai:test:  19 pass
 @skiffr/ai:test:  0 fail
-@skiffr/ai:test:  52 expect() calls
-@skiffr/ai:test: Ran 14 tests across 1 file. [73.00ms]
+@skiffr/ai:test:  71 expect() calls
+@skiffr/ai:test: Ran 19 tests across 1 file. [72.00ms]
 @skiffr/orpc:test: 
-@skiffr/orpc:test:  17 pass
+@skiffr/orpc:test:  18 pass
 @skiffr/orpc:test:  0 fail
-@skiffr/orpc:test:  55 expect() calls
-@skiffr/orpc:test: Ran 17 tests across 1 file. [761.00ms]
+@skiffr/orpc:test:  57 expect() calls
+@skiffr/orpc:test: Ran 18 tests across 1 file. [926.00ms]
  Tasks:    6 successful, 6 total
 Cached:    0 cached, 6 total
