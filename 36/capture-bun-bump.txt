@@ -1,0 +1,19 @@
+# bun pin bump on probe/bump-34 (throwaway, deleted)
+
+## run 2 of the cold sha: cache is warm
+test: Cache restored from key: turbo-Linux-test-360f1ded88820a7d
+test: Cached:    5 cached, 5 total
+check-types: Cache restored from key: turbo-Linux-check-types-360f1ded88820a7d
+check-types: Cached:    12 cached, 12 total
+build: Cache restored from key: turbo-Linux-build-360f1ded88820a7d
+build: Cached:    3 cached, 3 total
+
+## next push bumps bun-version 1.4.4 -> 1.4.3 in .github/actions/setup/action.yml (setup action is a turbo globalDependency)
+db-postgres:   bun-version: 1.4.3
+check-types: Cache restored from key: turbo-Linux-check-types-360f1ded88820a7d
+check-types: Cached:    0 cached, 12 total
+build: Cache restored from key: turbo-Linux-build-360f1ded88820a7d
+build: Cached:    0 cached, 3 total
+test:   bun-version: 1.4.3
+test: Cache restored from key: turbo-Linux-test-360f1ded88820a7d
+test: Cached:    0 cached, 5 total
