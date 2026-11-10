@@ -13,7 +13,7 @@ pnpm dev
 
 `pnpm db:up` starts a local postgres (`pgvector/pgvector:pg17`) from `docker/docker-compose.yml`. The api applies migrations on start and, when `SEED=demo`, fills an empty database with sample data.
 
-The pgvector image is debian based, the old `postgres:17-alpine` image used a different libc, so the compose file mounts a new volume, `skiffr-pgvector-data`, and never reuses the old one. Never point the new image at an old alpine data directory, text indexes break silently. Remove the old dev volume (it holds the old data) with `docker volume rm docker_skiffr-pg`.
+The pgvector image is debian based, the old alpine based postgres image used a different libc, so the compose file mounts a new volume, `skiffr-pgvector-data`, and never reuses the old one. Never point the new image at an old alpine data directory, text indexes break silently. Remove the old dev volume (it holds the old data) with `docker volume rm docker_skiffr-pg`.
 
 | App | Url |
 | --- | --- |

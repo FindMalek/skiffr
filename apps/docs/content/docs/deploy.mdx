@@ -30,6 +30,6 @@ Next apps are built with `output: "standalone"` and ship a healthcheck. Pass the
 
 Create a project with a postgres database on the docker image `pgvector/pgvector:pg17` (answer embeddings need the `vector` extension), add one application per app with build type Dockerfile, path `apps/<app>/Dockerfile` and `.` as the context, set the env keys, and attach your domains. Use the api service's internal address for `API_URL`.
 
-Do not swap the image of an existing database in place. The pgvector image uses a different libc than `postgres:17-alpine`, so text btree indexes silently break on the old data. Create a new postgres service with its own volume on `pgvector/pgvector:pg17` and restore with `pg_dump` / `pg_restore`, or at least run `REINDEX DATABASE` after any libc change.
+Do not swap the image of an existing database in place. The pgvector image uses a different libc than an alpine based postgres image, so text btree indexes silently break on the old data. Create a new postgres service with its own volume on `pgvector/pgvector:pg17` and restore with `pg_dump` / `pg_restore`, or at least run `REINDEX DATABASE` after any libc change.
 
 `vector` is not a trusted extension, so `CREATE EXTENSION vector` needs a superuser. If the app's database user is not one, run it once as superuser, the migration's `IF NOT EXISTS` is then a no-op.
