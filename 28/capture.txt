@@ -1,0 +1,11 @@
+javascript: url -> Enter an http or https API url
+chrome:// url -> Enter an http or https API url
+save -> Saved
+options url after reload: chrome-extension://jfdikbkikegoaicbfkkidmgoefafomnk/options.html
+stored apiUrl after reload: http://localhost:3001
+stored token length after reload: 16
+storage.local access level: undefined
+commands: [{"description":"Fill the focused page","name":"fill","shortcut":""}]
+console on https://example.com: ["[debug] [skiffr] content script loaded"]
+content script read of storage.local (isolated world on example.com): ERR "Access to storage is not allowed from this context."
+service worker read of storage.local: {"settings":{"apiUrl":"http://x.y","token":"secret"}}
