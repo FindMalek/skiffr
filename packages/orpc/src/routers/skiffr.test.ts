@@ -1,11 +1,14 @@
-import { afterAll, beforeAll, expect, test } from "bun:test"
+import { afterAll, beforeAll, expect, spyOn, test } from "bun:test"
+import { inspect } from "node:util"
 import { PGlite } from "@electric-sql/pglite"
 import { vector } from "@electric-sql/pglite-pgvector"
 import { call } from "@orpc/server"
+import { mockModel } from "@skiffr/ai/testing"
 import type { Session } from "@skiffr/auth"
 import { answer, answerColumns, type Db, findSimilarAnswers, user } from "@skiffr/db"
 import * as schema from "@skiffr/db/schema"
 import { createTestDb } from "@skiffr/db/test-db"
+import { APICallError } from "ai"
 import { eq } from "drizzle-orm"
 import { drizzle } from "drizzle-orm/pglite"
 import { migrate } from "drizzle-orm/pglite/migrator"
@@ -258,4 +261,98 @@ test("a stored embedding round-trips, nearest answers come back by cosine distan
   expect(selected?.id).toBe(near!)
   expect(Object.keys(selected!)).not.toContain("embedding")
   expect(Object.keys(hits[0]!)).not.toContain("embedding")
+})
+
+const mapReply = JSON.stringify({
+  mappings: [
+    { id: "f1", action: "profile", key: "fields.notice period", value: null, confidence: 0.9, reason: "notice" },
+  ],
+})
+const withModel = (userId: string, model: ReturnType<typeof mockModel> | null) => ({
+  context: { ...as(userId), model },
+})
+
+test("ai.mapFields maps against the caller's own saved profile", async () => {
+  const { mappings } = await call(
+    appRouter.ai.mapFields,
+    { fields: [{ id: "f1", label: "Notice period" }] },
+    withModel("ben", mockModel(mapReply)),
+  )
+  expect(mappings).toEqual([
+    { id: "f1", action: "profile", key: "fields.notice period", confidence: 0.9, reason: "notice" },
+  ])
+})
+
+test("ai.draftAnswer returns the draft, or an explicit not-ok state", async () => {
+  const draft = (text: string) =>
+    call(appRouter.ai.draftAnswer, { question: "Why us?" }, withModel("ben", mockModel(text)))
+  expect(await draft("Because the product fits.")).toEqual({ ok: true, text: "Because the product fits." })
+  expect(await draft("NO_ANSWER")).toEqual({ ok: false, reason: "not_enough_info" })
+})
+
+test("ai.mapFields rejects too many, too large and duplicate fields", async () => {
+  const run = (fields: object[]) =>
+    call(appRouter.ai.mapFields, { fields } as never, withModel("ben", mockModel(mapReply)))
+  await expect(run(Array.from({ length: 61 }, (_, i) => ({ id: `f${i}` })))).rejects.toMatchObject({
+    code: "BAD_REQUEST",
+  })
+  const big = Array.from({ length: 30 }, (_, i) => ({
+    id: `f${i}`,
+    label: "x".repeat(300),
+    options: Array(50).fill("y".repeat(100)),
+  }))
+  await expect(run(big)).rejects.toMatchObject({ code: "BAD_REQUEST" })
+  await expect(run([{ id: "f1" }, { id: "f1" }])).rejects.toMatchObject({ code: "BAD_REQUEST" })
+})
+
+test("ai calls need a session, a saved profile and a configured model", async () => {
+  const input = { fields: [{ id: "f1" }] }
+  const anonymous = { context: { ...as("ben"), session: null, model: mockModel(mapReply) } }
+  await expect(call(appRouter.ai.mapFields, input, anonymous as never)).rejects.toMatchObject({ code: "UNAUTHORIZED" })
+  await expect(call(appRouter.ai.mapFields, input, withModel("ana", mockModel(mapReply)))).rejects.toMatchObject({
+    code: "PRECONDITION_FAILED",
+  })
+  await expect(call(appRouter.ai.mapFields, input, withModel("ben", null))).rejects.toMatchObject({
+    code: "SERVICE_UNAVAILABLE",
+  })
+})
+
+test("a failing model call gives the client a clean error and puts no prompt or profile text in the logs", async () => {
+  const pii = "ben-secret@test.dev 1 month"
+  const failure = new APICallError({
+    message: `bad request ${pii}`,
+    url: "https://api.groq.com",
+    requestBodyValues: { messages: [{ content: pii }] },
+    statusCode: 500,
+    responseBody: pii,
+    responseHeaders: { "x-request-id": "req_42" },
+    isRetryable: false,
+  })
+  const logged = spyOn(console, "error").mockImplementation(() => {})
+  try {
+    const error = await call(
+      appRouter.ai.mapFields,
+      { fields: [{ id: "f1", label: "Notice period" }] },
+      withModel("ben", mockModel(failure)),
+    ).catch((e) => e)
+    expect(error).toMatchObject({ code: "SERVICE_UNAVAILABLE", message: "The AI is unavailable, try again." })
+    const lines = inspect(logged.mock.calls, { depth: 10 })
+    expect(lines).toContain("req_42")
+    for (const secret of ["ben-secret", "1 month", "Notice period"]) expect(lines + error.message).not.toContain(secret)
+  } finally {
+    logged.mockRestore()
+  }
+})
+
+test("a prompt that is too large for the model is a clean 400 and the model is never called", async () => {
+  const model = mockModel(mapReply)
+  const fields = Array.from({ length: 5 }, (_, i) => ({
+    id: `f${i}`,
+    label: "<".repeat(300),
+    options: Array(50).fill("<".repeat(100)),
+  }))
+  await expect(call(appRouter.ai.mapFields, { fields }, withModel("ben", model))).rejects.toMatchObject({
+    code: "BAD_REQUEST",
+  })
+  expect(model.doGenerateCalls.length).toBe(0)
 })

@@ -39,6 +39,8 @@ You need node 24, pnpm, bun and docker. The project is already installed and has
 
 Sign in to the dashboard with `ADMIN_EMAIL` and `ADMIN_PASSWORD` from `.env`.
 
+The extension is not part of `pnpm dev`. Run `pnpm --filter extension build`, then load `apps/extension/.output/chrome-mv3` as an unpacked extension in `chrome://extensions` (developer mode). Use `pnpm --filter extension dev` for a hot reloading dev browser.
+
 ---
 
 ## Structure
@@ -51,6 +53,7 @@ skiffr/
 <!-- @findplate:docs -->
 │  ├─ docs/       docs site
 <!-- @end -->
+│  ├─ extension/  wxt browser extension
 │  └─ api/        orpc on bun
 ├─ packages/      ui, common, orpc, db, auth, env, config
 ├─ docker/        local postgres
@@ -60,7 +63,7 @@ skiffr/
 | Package | What it holds |
 | --- | --- |
 | `@skiffr/ui` | shadcn components and the theme tokens |
-| `@skiffr/common` | zod schemas, constants and utils shared by api, web and dashboard |
+| `@skiffr/common` | zod schemas, constants and utils shared by api, web, dashboard and extension |
 | `@skiffr/orpc` | procedures and typed clients |
 | `@skiffr/db` | drizzle schema, migrations, seed scenario |
 | `@skiffr/auth` | better-auth setup |
@@ -85,6 +88,12 @@ skiffr/
 | `pnpm bump-deps` | update every dependency, catalog included, to the latest version |
 
 Router tests run on pglite. Set `TEST_DATABASE_URL` to a server url whose database is named `skiffr_test*` (e.g. `postgres://skiffr:skiffr@localhost:5432/skiffr_test`) to run them on real postgres: each run creates and drops its own `skiffr_test_<random>` database.
+
+---
+
+## Pull request screenshots
+
+Never commit screenshots to a feature branch. Push them to the orphan `pr-screenshots` branch as `<pr-number>/<name>.png` and link `https://raw.githubusercontent.com/FindMalek/skiffr/pr-screenshots/<pr-number>/<name>.png` in the pr body.
 
 ---
 
