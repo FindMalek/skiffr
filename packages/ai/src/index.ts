@@ -29,3 +29,7 @@ export function resolveModel(id: string, keys: AiKeys): LanguageModel | null {
   if (!providers[provider]) return null
   return createProviderRegistry(providers).languageModel(id as `${string}:${string}`)
 }
+
+export { type AiProfile, flattenProfile } from "./data"
+export { draftAnswer } from "./draft-answer"
+export { mapFields } from "./map-fields"

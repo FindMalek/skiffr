@@ -4,6 +4,7 @@ import { call } from "@orpc/server"
 import type { Session } from "@skiffr/auth"
 import { type Db, user } from "@skiffr/db"
 import * as schema from "@skiffr/db/schema"
+import { MockLanguageModelV4 } from "ai/test"
 import { drizzle } from "drizzle-orm/pglite"
 import { migrate } from "drizzle-orm/pglite/migrator"
 import type { Context } from "../context"
@@ -207,4 +208,37 @@ test("another user's rows are not found by any update or remove", async () => {
     () => call(appRouter.jobSources.remove, { id: source.id }, asBen),
   ]
   for (const attempt of attempts) await expect(attempt()).rejects.toMatchObject({ code: "NOT_FOUND" })
+})
+
+test("ai mapping reads the caller's own profile and caps the number of fields", async () => {
+  const text = JSON.stringify({
+    mappings: [
+      { id: "f1", action: "profile", key: "fields.notice period", value: null, confidence: 0.9, reason: "name" },
+    ],
+  })
+  const model = new MockLanguageModelV4({
+    doGenerate: async () => ({
+      content: [{ type: "text", text }],
+      finishReason: { unified: "stop", raw: undefined },
+      usage: {
+        inputTokens: { total: 1, noCache: 1, cacheRead: undefined, cacheWrite: undefined },
+        outputTokens: { total: 1, text: 1, reasoning: undefined },
+      },
+      warnings: [],
+    }),
+  })
+  const context = { ...as("ben"), model }
+
+  const { mappings } = await call(appRouter.ai.mapFields, { fields: [{ id: "f1", label: "First name" }] }, { context })
+  expect(mappings).toEqual([
+    { id: "f1", action: "profile", key: "fields.notice period", confidence: 0.9, reason: "name" },
+  ])
+
+  const tooMany = Array.from({ length: 61 }, (_, i) => ({ id: `f${i}` }))
+  await expect(call(appRouter.ai.mapFields, { fields: tooMany }, { context })).rejects.toMatchObject({
+    code: "BAD_REQUEST",
+  })
+  await expect(
+    call(appRouter.ai.mapFields, { fields: [{ id: "f1" }] }, { context: { ...as("ana"), model } }),
+  ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" })
 })

@@ -395,9 +395,15 @@ importers:
       '@ai-sdk/openai':
         specifier: 'catalog:'
         version: 4.0.96(zod@4.6.7)
+      '@skiffr/common':
+        specifier: workspace:*
+        version: link:../common
       ai:
         specifier: 'catalog:'
         version: 7.0.143(zod@4.6.7)
+      zod:
+        specifier: 'catalog:'
+        version: 4.6.7
     devDependencies:
       '@skiffr/config':
         specifier: workspace:*
@@ -504,6 +510,9 @@ importers:
       '@orpc/tanstack-query':
         specifier: 'catalog:'
         version: 1.15.7(@opentelemetry/api@1.10.0)(@orpc/client@1.15.7(@opentelemetry/api@1.10.0))(@tanstack/query-core@5.104.3)
+      '@skiffr/ai':
+        specifier: workspace:*
+        version: link:../ai
       '@skiffr/auth':
         specifier: workspace:*
         version: link:../auth
