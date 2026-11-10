@@ -9,9 +9,11 @@ import {
   AI_FIELDS_MAX,
   AI_GENERATED_VALUE_MAX,
   AI_JOB_DESCRIPTION_MAX,
+  AI_OPTION_TEXT_MAX,
   AI_OPTIONS_MAX,
   AI_QUESTION_MAX,
   AI_REASON_MAX,
+  AI_REQUEST_CHARS_MAX,
 } from "../constants"
 
 const fieldText = z.string().trim().max(AI_FIELD_TEXT_MAX).optional()
@@ -24,7 +26,7 @@ export const fieldDescriptorSchema = z.object({
   ariaLabel: fieldText,
   placeholder: fieldText,
   type: z.string().trim().max(40).optional(),
-  options: z.array(z.string().trim().max(AI_FIELD_TEXT_MAX)).max(AI_OPTIONS_MAX).default([]),
+  options: z.array(z.string().trim().max(AI_OPTION_TEXT_MAX)).max(AI_OPTIONS_MAX).default([]),
 })
 
 export const correctionSchema = z.object({
@@ -32,9 +34,22 @@ export const correctionSchema = z.object({
   answer: z.string().trim().max(AI_CORRECTION_TEXT_MAX),
 })
 
-export const mapFieldsInputSchema = z.object({
-  fields: z.array(fieldDescriptorSchema).min(1).max(AI_FIELDS_MAX),
-})
+const fieldChars = (field: z.infer<typeof fieldDescriptorSchema>) =>
+  [field.id, field.label, field.name, field.ariaLabel, field.placeholder, field.type, ...field.options].reduce<number>(
+    (sum, text) => sum + (text?.length ?? 0),
+    0,
+  )
+
+export const mapFieldsInputSchema = z
+  .object({ fields: z.array(fieldDescriptorSchema).min(1).max(AI_FIELDS_MAX) })
+  .refine(({ fields }) => new Set(fields.map((f) => f.id)).size === fields.length, {
+    message: "Field ids must be unique.",
+    path: ["fields"],
+  })
+  .refine(({ fields }) => fields.reduce((sum, f) => sum + fieldChars(f), 0) <= AI_REQUEST_CHARS_MAX, {
+    message: `The fields add up to more than ${AI_REQUEST_CHARS_MAX} characters.`,
+    path: ["fields"],
+  })
 
 export const draftAnswerInputSchema = z.object({
   question: z.string().trim().min(1).max(AI_QUESTION_MAX),
@@ -60,8 +75,12 @@ export const fieldMappingSchema = z.discriminatedUnion("action", [
 ])
 
 export const mapFieldsOutputSchema = z.object({ mappings: z.array(fieldMappingSchema) })
-export const draftAnswerOutputSchema = z.object({ text: z.string() })
+export const draftAnswerOutputSchema = z.discriminatedUnion("ok", [
+  z.object({ ok: z.literal(true), text: z.string() }),
+  z.object({ ok: z.literal(false), reason: z.enum(["empty", "not_enough_info"]) }),
+])
 
 export type FieldDescriptor = z.infer<typeof fieldDescriptorSchema>
 export type Correction = z.infer<typeof correctionSchema>
 export type FieldMapping = z.infer<typeof fieldMappingSchema>
+export type DraftAnswerResult = z.infer<typeof draftAnswerOutputSchema>
