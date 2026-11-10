@@ -33,6 +33,7 @@
     "react": "catalog:"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "catalog:",
     "@skiffr/config": "workspace:*",
     "@types/bun": "catalog:",
     "@types/react": "catalog:",
