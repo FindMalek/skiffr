@@ -12,6 +12,8 @@
     "test:browser": "bun test/fixtures/build.ts && node test/browser/verify-fill.mjs"
   },
   "dependencies": {
+    "@orpc/client": "catalog:",
+    "@skiffr/orpc": "workspace:*",
     "@skiffr/common": "workspace:*",
     "react": "catalog:",
     "react-dom": "catalog:"
