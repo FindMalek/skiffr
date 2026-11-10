@@ -3,6 +3,7 @@ import { mapFieldsInputSchema } from "@skiffr/common"
 import { collectFields, descriptorBatches } from "./collect"
 import { fillField } from "./fill-field"
 import { fillPage } from "./fill-page"
+import { readField } from "./read"
 import { mount, trusted } from "./test-dom"
 import { watchEdits } from "./watch"
 
@@ -241,32 +242,226 @@ describe("fillPage", () => {
     expect(submitted).toBe(false)
 
     const last = el(document, "#b")
-    expect(last.hasAttribute("data-skiffr-review")).toBe(true)
-    expect(el(document, "#a").hasAttribute("data-skiffr-review")).toBe(false)
+    expect(last.style.getPropertyValue("outline")).toContain("dashed")
+    expect(last.style.getPropertyPriority("outline")).toBe("important")
+    expect(el(document, "#a").style.getPropertyValue("outline")).toBe("")
     summary.clearHighlights()
-    expect(last.hasAttribute("data-skiffr-review")).toBe(false)
+    expect(last.style.getPropertyValue("outline")).toBe("")
   })
 
-  test("watchEdits reports trusted edits of filled fields only", async () => {
-    const { document } = mount(`<label for="a">First name</label><input id="a">`)
+  test("watchEdits needs a trusted gesture on the field, and stays quiet while the engine fills", async () => {
+    const { document, window } = mount(`<label for="a">First name</label><input id="a">`)
     const [field] = collectFields(document)
-    const summary = await fillPage({
-      root: document,
-      mapping: [{ id: field?.id as string, action: "profile", key: "k", confidence: 1, reason: "" }],
-      values: { k: "Ada" },
-    })
+    const mapping = [{ id: field?.id as string, action: "profile" as const, key: "k", confidence: 1, reason: "" }]
+    const summary = await fillPage({ root: document, mapping, values: { k: "Ada" } })
     const reports: unknown[] = []
     const stop = watchEdits(document, summary, (r) => reports.push(r))
     const input = el<HTMLInputElement>(document, "#a")
+    const fire = (type: string, isTrusted = true) => {
+      const event = new (window as never as { Event: typeof Event }).Event(type, { bubbles: true })
+      input.dispatchEvent(isTrusted ? trusted(event) : event)
+    }
+
     input.value = "Adaa"
-    input.dispatchEvent(
-      new (document.defaultView as never as { Event: typeof Event }).Event("input", { bubbles: true }),
-    )
+    fire("input", false)
+    fire("change")
+    fire("focusout")
     expect(reports).toEqual([])
-    input.dispatchEvent(
-      trusted(new (document.defaultView as never as { Event: typeof Event }).Event("change", { bubbles: true })),
-    )
+
+    fire("keydown", false)
+    fire("change")
+    expect(reports).toEqual([])
+
+    fire("keydown")
+    fire("change")
     expect(reports).toEqual([{ fieldId: field?.id, filledValue: "Ada", finalValue: "Adaa" }])
+
+    input.value = "Zed"
+    fire("keydown")
+    const refill = fillPage({ root: document, mapping, values: { k: "Ada" }, overwrite: true })
+    fire("change")
+    await refill
+    expect(reports).toHaveLength(1)
     stop()
+  })
+})
+
+describe("labels and sections", () => {
+  test("the section is folded into the label and twins are marked ambiguous", () => {
+    const { document } = mount(`
+      <section aria-label="Applicant"><label for="a">Name</label><input id="a" name="name"></section>
+      <h3>Reference</h3><div><label for="b">Name</label><input id="b" name="name"></div>
+      <div><label for="c">Title</label><input id="c" name="title"></div><div><label for="d">Title</label><input id="d" name="title"></div>`)
+    const fields = collectFields(document)
+    expect(fields.map((f) => f.descriptor.label)).toEqual([
+      "Applicant: Name",
+      "Reference: Name",
+      "Reference: Title",
+      "Reference: Title",
+    ])
+    expect(fields.map((f) => f.info.ambiguous)).toEqual([undefined, undefined, true, true])
+  })
+
+  test("required markers are stripped and text nodes keep a space between them", () => {
+    const { document } = mount(`
+      <label><div>Full name<span>\u2731</span></div><input name="n"></label>
+      <label><span>First name</span><span>Last name</span><input name="m"></label>`)
+    expect(collectFields(document).map((f) => f.descriptor.label)).toEqual(["Full name", "First name Last name"])
+  })
+})
+
+describe("adapting values", () => {
+  const field = async (html: string, value: string, locale?: string) => {
+    const { document } = mount(html)
+    const input = el<HTMLInputElement>(document, "input")
+    const before = input.value
+    const result = await fillField(input, value, { locale })
+    return { result, input, before }
+  }
+
+  test("email, url and tel are never cut to maxlength", async () => {
+    for (const [html, value] of [
+      [`<input type="email" maxlength="10">`, "test.applicant@example.com"],
+      [`<input type="url" maxlength="10">`, "https://example.com/very/long"],
+      [`<input type="tel" maxlength="10">`, "+1 (000) 000-0000"],
+    ] as const) {
+      const { result, input } = await field(html, value)
+      expect(result.status).toBe("failed")
+      expect(result.reason).toContain("max length")
+      expect(input.value).toBe("")
+    }
+  })
+
+  test("numbers only parse when their separators are unambiguous", async () => {
+    expect((await field(`<input type="number">`, "85.000,50")).result).toMatchObject({
+      status: "failed",
+      reason: expect.stringContaining("ambiguous"),
+    })
+    expect((await field(`<input type="number">`, "120,000")).result.status).toBe("failed")
+    expect((await field(`<input type="number">`, "1,5")).input.value).toBe("1.5")
+    expect((await field(`<input type="number">`, "$85000")).input.value).toBe("85000")
+    expect((await field(`<input type="number">`, "85.000,50", "de-DE")).input.value).toBe("85000.50")
+  })
+
+  test("a date whose order is unknown fails, an explicit locale decides", async () => {
+    expect((await field(`<input type="date">`, "03/04/2025")).result).toMatchObject({
+      status: "failed",
+      reason: expect.stringContaining("ambiguous"),
+    })
+    expect((await field(`<input type="date">`, "03/04/2025", "en-GB")).input.value).toBe("2025-04-03")
+    expect((await field(`<input type="date">`, "2025-04-03")).input.value).toBe("2025-04-03")
+  })
+
+  test("a value the page rejects is put back", async () => {
+    const { document } = mount(`<input id="x" value="keep me">`)
+    const input = el<HTMLInputElement>(document, "#x")
+    input.addEventListener("input", () => {
+      if (input.value.startsWith("Ada")) setTimeout(() => (input.value = "page says no"), 0)
+    })
+    const result = await fillField(input, "Ada")
+    expect(result.status).toBe("failed")
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    expect(input.value).toBe("keep me")
+  })
+})
+
+describe("selects, comboboxes and slots", () => {
+  test("a prompt option is not a choice and a chosen select is protected", async () => {
+    const { document } = mount(`
+      <label for="a">Country</label><select id="a"><option value="0">Select one</option><option>Canada</option><option>United States</option></select>
+      <label for="b">Region</label><select id="b"><option>Canada</option><option selected>Quebec</option></select>`)
+    const fields = collectFields(document)
+    expect(fields[0]?.descriptor.options).toEqual(["Canada", "United States"])
+    const summary = await fillPage({
+      root: document,
+      mapping: fields.map((f) => ({
+        id: f.id,
+        action: "generate" as const,
+        value: f.descriptor.label === "Country" ? "usa" : "Canada",
+        confidence: 1,
+        reason: "",
+      })),
+      values: {},
+    })
+    expect(summary.fields.map((f) => [f.label, f.status])).toEqual([
+      ["Country", "filled"],
+      ["Region", "skipped"],
+    ])
+    expect(el<HTMLSelectElement>(document, "#b").value).toBe("Quebec")
+  })
+
+  test("a combobox never picks an option of an unrelated listbox", async () => {
+    const { document } = mount(`
+      <label for="cb">Department</label><input id="cb" role="combobox" autocomplete="off">
+      <div role="listbox" id="other"><div role="option">Engineering</div></div>`)
+    let clicked = false
+    document.querySelector("[role=option]")?.addEventListener("click", () => {
+      clicked = true
+    })
+    const result = await fillField(el(document, "#cb"), "Engineering")
+    expect(result.status).toBe("failed")
+    expect(clicked).toBe(false)
+  })
+
+  test("a combobox picks from a menu inserted when it opens, linked or not", async () => {
+    const { document } = mount(`<label for="cb">Department</label><input id="cb" role="combobox" autocomplete="off">`)
+    const input = el<HTMLInputElement>(document, "#cb")
+    input.addEventListener("click", () => {
+      const menu = document.createElement("div")
+      menu.innerHTML = `<div role="option">Design</div><div role="option">Engineering</div>`
+      document.body.append(menu)
+      for (const option of Array.from(menu.children)) {
+        option.addEventListener("click", () => {
+          input.value = option.textContent ?? ""
+          menu.remove()
+        })
+      }
+    })
+    expect(await fillField(input, "engineering")).toMatchObject({ status: "filled", value: "Engineering" })
+  })
+
+  test("a react-select style widget is read from the sibling value node", async () => {
+    const { document } = mount(`
+      <div><label for="g">Gender</label><div><div class="select__control"><div class="select__value-container">
+        <div class="select__single-value">Male</div><div><input id="g" role="combobox" value=""></div></div></div></div></div>`)
+    const [field] = collectFields(document)
+    expect(readField(field as never)).toBe("Male")
+  })
+
+  test("the resume goes to the input that says resume, never to a photo or cover letter slot", async () => {
+    const { document, window } = mount(`
+      <div data-ui="photo"><input type="file"></div>
+      <div data-ui="cover-letter"><input type="file"></div>
+      <div data-ui="resume"><input type="file"></div>`)
+    const file = new (window.File as never as typeof File)(["x"], "cv.pdf")
+    const summary = await fillPage({ root: document, mapping: [], values: {}, files: { resume: file } })
+    expect(summary.fields).toHaveLength(1)
+    expect(Array.from(document.querySelectorAll<HTMLInputElement>("input")).map((i) => i.files?.length ?? 0)).toEqual([
+      0, 0, 1,
+    ])
+  })
+
+  test("a lone upload with no name is the resume, a lone photo upload is not", async () => {
+    for (const [html, expected] of [
+      [`<div><input type="file"></div>`, 1],
+      [`<div class="avatar-upload"><input type="file"></div>`, 0],
+    ] as const) {
+      const { document, window } = mount(html)
+      const file = new (window.File as never as typeof File)(["x"], "cv.pdf")
+      await fillPage({ root: document, mapping: [], values: {}, files: { resume: file } })
+      expect(document.querySelector<HTMLInputElement>("input")?.files?.length ?? 0).toBe(expected)
+    }
+  })
+
+  test("an editor that reverts the text is reported failed and left as it was", async () => {
+    const { document } = mount(`<div id="e" contenteditable="true">draft</div>`)
+    const editor = el(document, "#e")
+    let beforeinput = 0
+    editor.addEventListener("beforeinput", () => beforeinput++)
+    editor.addEventListener("input", () => setTimeout(() => (editor.textContent = "draft"), 0))
+    const result = await fillField(editor, "Hello")
+    expect(beforeinput).toBe(1)
+    expect(result.status).toBe("failed")
+    expect(editor.textContent).toBe("draft")
   })
 })
