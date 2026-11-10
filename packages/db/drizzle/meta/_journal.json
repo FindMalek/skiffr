@@ -12,15 +12,8 @@
     {
       "idx": 1,
       "version": "7",
-      "when": 1793140282158,
-      "tag": "0001_waitlist",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1793177534249,
-      "tag": "0002_flags",
+      "when": 1794333370206,
+      "tag": "0001_thankful_frank_castle",
       "breakpoints": true
     }
   ]

@@ -18,6 +18,7 @@
     "db:studio": "bun --env-file=../../.env x drizzle-kit studio"
   },
   "dependencies": {
+    "@skiffr/common": "workspace:*",
     "drizzle-orm": "catalog:",
     "postgres": "catalog:"
   },
