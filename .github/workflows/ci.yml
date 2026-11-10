@@ -7,7 +7,7 @@ on:
 
 # Branch protection should require the `ci` job only. It aggregates the others.
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
+  group: ci-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
@@ -15,6 +15,8 @@ permissions:
 
 env:
   TURBO_TELEMETRY_DISABLED: "1"
+  # a pr checkout has no local `main`, so turbo needs the base sha to resolve --affected
+  TURBO_SCM_BASE: ${{ github.event.pull_request.base.sha }}
 
 # pull requests only run tasks of changed packages and their dependents (--affected), main runs everything
 jobs:
@@ -34,6 +36,8 @@ jobs:
         with:
           fetch-depth: 0
       - uses: ./.github/actions/setup
+        with:
+          turbo: "true"
       - run: pnpm check-types ${{ github.event_name == 'pull_request' && '--affected' || '' }}
 
   test:
@@ -46,6 +50,7 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           bun: "true"
+          turbo: "true"
       - run: pnpm test ${{ github.event_name == 'pull_request' && '--affected' || '' }}
 
   build:
@@ -57,6 +62,7 @@ jobs:
           fetch-depth: 0
       - uses: ./.github/actions/setup
         with:
+          turbo: "true"
           next-cache: "true"
       # fixed dummy secrets: .env is a turbo global input, random values would miss the cache every run
       - name: Write build env
