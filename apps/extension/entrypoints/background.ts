@@ -1,6 +1,15 @@
 import { browser } from "wxt/browser"
 import { defineBackground } from "wxt/utils/define-background"
-import type { FillMessage } from "@/lib/messages"
+import {
+  type FillMessage,
+  isDisableSiteMessage,
+  isFillFramesMessage,
+  isFormDetectedMessage,
+  isProbeFramesMessage,
+  isSiteDisabledMessage,
+  type SiteDisabledResponse,
+} from "@/lib/messages"
+import { disableSite, getDisabledSites } from "@/lib/storage"
 
 const BADGE_MS = 3000
 const NO_RECEIVER = "Receiving end does not exist"
@@ -39,7 +48,49 @@ async function hideStorageFromContentScripts(): Promise<void> {
   }
 }
 
+function hostnameOf(sender: Browser.runtime.MessageSender): string | null {
+  if (sender.frameId !== 0 || !sender.url) return null
+  try {
+    return new URL(sender.url).hostname
+  } catch {
+    return null
+  }
+}
+
+function toTab(tabId: number, message: unknown, options?: Browser.tabs.MessageSendOptions): void {
+  browser.tabs.sendMessage(tabId, message, options).catch(() => {})
+}
+
+function handleContentMessage(
+  message: unknown,
+  sender: Browser.runtime.MessageSender,
+  sendResponse: (response: SiteDisabledResponse) => void,
+): boolean {
+  const tabId = sender.tab?.id
+  if (tabId === undefined) return false
+  if (isFormDetectedMessage(message) && sender.frameId !== 0) {
+    toTab(tabId, message, { frameId: 0 })
+  } else if (sender.frameId !== 0) {
+    return false
+  } else if (isProbeFramesMessage(message)) {
+    toTab(tabId, { type: "report-form" })
+  } else if (isFillFramesMessage(message)) {
+    toTab(tabId, { type: "fill", skipTop: true } satisfies FillMessage)
+  } else if (isSiteDisabledMessage(message)) {
+    const hostname = hostnameOf(sender)
+    getDisabledSites()
+      .then((sites) => sendResponse({ disabled: hostname !== null && sites.includes(hostname) }))
+      .catch(() => sendResponse({ disabled: false }))
+    return true
+  } else if (isDisableSiteMessage(message)) {
+    const hostname = hostnameOf(sender)
+    if (hostname) void disableSite(hostname)
+  }
+  return false
+}
+
 export default defineBackground(() => {
+  browser.runtime.onMessage.addListener(handleContentMessage)
   browser.commands.onCommand.addListener((command) => {
     if (command === "fill") return requestFill()
   })
