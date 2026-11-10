@@ -89,6 +89,12 @@ skiffr/
 
 ---
 
+## Pull request screenshots
+
+Never commit screenshots to a feature branch. Push them to the orphan `pr-screenshots` branch as `<pr-number>/<name>.png` and link `https://raw.githubusercontent.com/FindMalek/skiffr/pr-screenshots/<pr-number>/<name>.png` in the pr body.
+
+---
+
 ## Deploy
 
 Every app has a `Dockerfile` in `apps/<app>/`, built from the repo root:
