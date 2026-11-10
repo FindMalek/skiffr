@@ -3,7 +3,7 @@ import { PGlite } from "@electric-sql/pglite"
 import { vector } from "@electric-sql/pglite-pgvector"
 import { call } from "@orpc/server"
 import type { Session } from "@skiffr/auth"
-import { answer, type Db, findSimilarAnswers, user } from "@skiffr/db"
+import { answer, answerColumns, type Db, findSimilarAnswers, user } from "@skiffr/db"
 import * as schema from "@skiffr/db/schema"
 import { eq } from "drizzle-orm"
 import { drizzle } from "drizzle-orm/pglite"
@@ -211,7 +211,7 @@ test("another user's rows are not found by any update or remove", async () => {
   for (const attempt of attempts) await expect(attempt()).rejects.toMatchObject({ code: "NOT_FOUND" })
 })
 
-test("a stored embedding round-trips, nearest answers come back by cosine distance and never reach the api", async () => {
+test("a stored embedding round-trips, nearest answers come back by cosine distance and are never selected by the api", async () => {
   const unit = (i: number, tilt = 0) => Array.from({ length: 1536 }, (_, d) => (d === i ? 1 : d === 1 ? tilt : 0))
   const saved = await Promise.all(
     ["Embed near", "Embed mid", "Embed far", "Embed none"].map((rawLabel) =>
@@ -234,7 +234,8 @@ test("a stored embedding round-trips, nearest answers come back by cosine distan
   expect(hits.map((h) => h.id)).not.toContain(none!)
   expect(await findSimilarAnswers(db, "ben", unit(0), 3)).toEqual([])
 
-  const listed = await call(appRouter.answers.list, undefined, ana())
-  expect(listed.find((a) => a.id === near)).toBeDefined()
-  expect(listed.some((a) => "embedding" in a)).toBe(false)
+  const [selected] = await db.select(answerColumns).from(answer).where(eq(answer.id, near!))
+  expect(selected?.id).toBe(near!)
+  expect(Object.keys(selected!)).not.toContain("embedding")
+  expect(Object.keys(hits[0]!)).not.toContain("embedding")
 })
