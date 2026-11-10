@@ -292,3 +292,16 @@ test("a failing model call gives the client a clean error and puts no prompt or 
     logged.mockRestore()
   }
 })
+
+test("a prompt that is too large for the model is a clean 400 and the model is never called", async () => {
+  const model = mockModel(mapReply)
+  const fields = Array.from({ length: 5 }, (_, i) => ({
+    id: `f${i}`,
+    label: "<".repeat(300),
+    options: Array(50).fill("<".repeat(100)),
+  }))
+  await expect(call(appRouter.ai.mapFields, { fields }, withModel("ben", model))).rejects.toMatchObject({
+    code: "BAD_REQUEST",
+  })
+  expect(model.doGenerateCalls.length).toBe(0)
+})

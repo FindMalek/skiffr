@@ -1,5 +1,5 @@
 import { ORPCError } from "@orpc/server"
-import { AiModelError, draftAnswer, mapFields } from "@skiffr/ai"
+import { AiInputError, AiModelError, draftAnswer, mapFields } from "@skiffr/ai"
 import {
   draftAnswerInputSchema,
   draftAnswerOutputSchema,
@@ -24,6 +24,7 @@ async function guarded<T>(route: string, run: () => Promise<T>): Promise<T> {
   try {
     return await run()
   } catch (error) {
+    if (error instanceof AiInputError) throw new ORPCError("BAD_REQUEST", { message: error.message })
     if (!(error instanceof AiModelError)) throw error
     const { name, kind, status, modelId, requestId } = error
     console.error(`[${route}]`, { name, kind, status, modelId, requestId })
