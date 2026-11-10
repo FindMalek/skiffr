@@ -12,6 +12,7 @@
       "!**/next-env.d.ts",
       "!.findplate",
       "!packages/ui/src/components",
+      "!apps/extension/test/fixtures",
       "!.mcp.json",
       "!opencode.json",
       "!.cursor",
