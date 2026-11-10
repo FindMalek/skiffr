@@ -8,6 +8,7 @@ import {
   type DisableSiteMessage,
   type FillFramesMessage,
   type FormDetectedMessage,
+  type FrameNavigatedMessage,
   isFillMessage,
   isFormDetectedMessage,
   type ProbeFramesMessage,
@@ -20,14 +21,23 @@ import { createToastView } from "@/lib/toast/view"
 type NavigationTarget = { addEventListener: (type: "navigatesuccess", listener: () => void) => void }
 
 const allowFormDetected = createRateLimiter(3, 5_000)
+const allowFrameNavigated = createRateLimiter(10, 5_000)
 
 function fillHere(): void {
   void handleFill()
   noteFill(document)
 }
 
-function send(message: FormDetectedMessage | ProbeFramesMessage | FillFramesMessage | DisableSiteMessage): void {
+type Outgoing =
+  | FormDetectedMessage
+  | FrameNavigatedMessage
+  | ProbeFramesMessage
+  | FillFramesMessage
+  | DisableSiteMessage
+
+function send(message: Outgoing): void {
   if (message.type === "form-detected" && !allowFormDetected()) return
+  if (message.type === "frame-navigated" && !allowFrameNavigated()) return
   browser.runtime.sendMessage(message).catch(() => {})
 }
 
@@ -86,6 +96,7 @@ export default defineContentScript({
       lastHref = location.href
       formInChildFrame = false
       dispatch("navigated")
+      if (!isTop) send({ type: "frame-navigated" })
       watcher.start()
       if (isTop) send({ type: "probe-frames" })
     })

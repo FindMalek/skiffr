@@ -8,6 +8,7 @@ import {
   isDisableSiteMessage,
   isFillFramesMessage,
   isFormDetectedMessage,
+  isFrameNavigatedMessage,
   isProbeFramesMessage,
   isSiteDisabledMessage,
   type SiteDisabledResponse,
@@ -52,7 +53,9 @@ async function requestFill(): Promise<void> {
 
 async function fillChildFrames(tabId: number): Promise<void> {
   const message: FillMessage = { type: "fill", skipTop: true }
-  for (const frameId of await frames().trustedFrames(tabId)) toTab(tabId, message, { frameId })
+  for (const { frameId, documentId } of await frames().fillTargets(tabId)) {
+    toTab(tabId, message, documentId ? { frameId, documentId } : { frameId })
+  }
 }
 
 async function hideStorageFromContentScripts(): Promise<void> {
@@ -69,12 +72,18 @@ function toTab(tabId: number, message: unknown, options?: Browser.tabs.MessageSe
 }
 
 async function relayChildReports(tabId: number): Promise<void> {
-  if ((await frames().trustedFrames(tabId)).length > 0) toTab(tabId, { type: "form-detected" }, { frameId: 0 })
+  if (await frames().hasTrustedFrame(tabId)) toTab(tabId, { type: "form-detected" }, { frameId: 0 })
 }
 
-async function handleFrameMessage(message: unknown, tabId: number, frameId: number, url: string, documentId?: string) {
+type FrameSender = { tabId: number; frameId: number; url: string; documentId?: string; origin?: string }
+
+async function handleFrameMessage(message: unknown, { tabId, frameId, url, documentId, origin }: FrameSender) {
   if (frameId !== 0) {
-    if (isFormDetectedMessage(message) && (await frames().report(tabId, frameId, url, documentId)) === "new") {
+    if (isFrameNavigatedMessage(message)) await frames().drop(tabId, frameId)
+    else if (
+      isFormDetectedMessage(message) &&
+      (await frames().report(tabId, frameId, { url, documentId, origin })) === "new"
+    ) {
       await relayChildReports(tabId)
     }
     return
@@ -105,7 +114,13 @@ function handleContentMessage(
       .catch(() => sendResponse({ disabled: false }))
     return true
   }
-  handleFrameMessage(message, tabId, sender.frameId, sender.url, sender.documentId).catch((error) => {
+  handleFrameMessage(message, {
+    tabId,
+    frameId: sender.frameId,
+    url: sender.url,
+    documentId: sender.documentId,
+    origin: sender.origin,
+  }).catch((error) => {
     console.error("[skiffr] frame message failed", error)
   })
   return false
@@ -114,6 +129,10 @@ function handleContentMessage(
 export default defineBackground(() => {
   browser.runtime.onMessage.addListener(handleContentMessage)
   browser.tabs.onRemoved.addListener((tabId) => void frames().reset(tabId))
+  // a top level navigation ends every frame reported so far; same document url changes do not
+  browser.tabs.onUpdated.addListener((tabId, info) => {
+    if (info.status === "loading") void frames().reset(tabId)
+  })
   browser.commands.onCommand.addListener((command) => {
     if (command === "fill") return requestFill()
   })

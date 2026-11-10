@@ -1,7 +1,7 @@
 // Real browser checks for the form detector and toast. Not part of `bun test`.
 //
 //   pnpm --filter extension exec wxt build --mode development
-//   PLAYWRIGHT_CORE=/path/to/playwright-core CHROME_PATH="/path/to/Chrome for Testing" \
+//   PLAYWRIGHT_CORE=/path/to/node_modules/playwright-core CHROME_PATH="/path/to/Chrome for Testing" \
 //     node apps/extension/test/browser/verify.mjs
 //
 // Local mode serves test/fixtures over https and maps every hostname to 127.0.0.1, so ats hostnames
@@ -16,12 +16,16 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs"
 import { createServer } from "node:https"
 import { tmpdir } from "node:os"
 import { basename, dirname, join } from "node:path"
-import { fileURLToPath } from "node:url"
+import { fileURLToPath, pathToFileURL } from "node:url"
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const FIXTURES = join(HERE, "../fixtures")
 const EXTENSION = process.env.EXTENSION_DIR ?? join(HERE, "../../.output/chrome-mv3-dev")
-const { chromium } = await import(process.env.PLAYWRIGHT_CORE ?? "playwright-core")
+// PLAYWRIGHT_CORE is the package directory (or its index.mjs); node 24 will not import a bare directory
+const core = process.env.PLAYWRIGHT_CORE
+const specifier = core ? pathToFileURL(core.endsWith(".mjs") ? core : join(core, "index.mjs")).href : "playwright-core"
+const playwright = await import(specifier)
+const chromium = playwright.chromium ?? playwright.default.chromium
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 let failures = 0
@@ -272,6 +276,37 @@ await Promise.all(
   await clickToast(page, "yes")
   await sleep(800)
   check("greenhouse embed: yes fills the embed frame", frame !== undefined && (await fills(frame)) === 1)
+  await page.close()
+}
+
+// blocker: a frame that navigates cross origin after reporting must not be filled
+{
+  const page = await open(at("careers.initech.test", "/?f=nav-parent"))
+  const toast = await waitToast(page, 3000)
+  check("frame navigated away: toast shown for the same origin frame's form", toast !== null)
+  let moved
+  for (let waited = 0; !moved && waited < 8000; waited += 200) {
+    await sleep(200)
+    moved = page.frames().find((frame) => frame.url().includes("newsletter"))
+  }
+  await sleep(500)
+  await clickToast(page, "yes")
+  await sleep(800)
+  check("frame navigated away: top frame filled", (await fills(page.mainFrame())) === 1)
+  check(
+    "frame navigated away: the frame at the other origin got 0 fill",
+    moved !== undefined && (await fills(moved)) === 0,
+  )
+  await page.close()
+}
+
+// blocker: records must not outlive the page, an embed page then a newsletter page in the same tab
+{
+  const page = await open(at("careers.initech.test", "/careers?f=careers-embed"))
+  check("same tab: toast on the embed page", (await waitToast(page, 4000)) !== null)
+  await page.goto(at("acme.test", "/blog?f=newsletter"), { waitUntil: "load" })
+  await sleep(2500)
+  check("same tab: no toast on the newsletter page that follows", (await toasts(page)).length === 0)
   await page.close()
 }
 
