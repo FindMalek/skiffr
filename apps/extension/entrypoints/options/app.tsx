@@ -2,14 +2,16 @@ import { type ExtensionSettings, extensionSettingsSchema } from "@skiffr/common"
 import { type FormEvent, useEffect, useState } from "react"
 import { DEFAULT_SETTINGS, getSettings, setSettings } from "@/lib/storage"
 
-type Status = "idle" | "saved" | "invalid"
+type Status = "idle" | "saved" | "invalid" | "error"
 
 export function App() {
   const [form, setForm] = useState<ExtensionSettings>(DEFAULT_SETTINGS)
   const [status, setStatus] = useState<Status>("idle")
 
   useEffect(() => {
-    getSettings().then(setForm)
+    getSettings()
+      .then(setForm)
+      .catch(() => setStatus("error"))
   }, [])
 
   function update(field: keyof ExtensionSettings, value: string) {
@@ -23,8 +25,12 @@ export function App() {
       setStatus("invalid")
       return
     }
-    setForm(await setSettings(form))
-    setStatus("saved")
+    try {
+      setForm(await setSettings(form))
+      setStatus("saved")
+    } catch {
+      setStatus("error")
+    }
   }
 
   return (
@@ -46,8 +52,13 @@ export function App() {
         </label>
         <button type="submit">Save</button>
         {status === "saved" && <p role="status">Saved</p>}
-        {status === "invalid" && <p role="alert">Enter a valid API url</p>}
+        {status === "invalid" && <p role="alert">Enter an http or https API url</p>}
+        {status === "error" && <p role="alert">Could not reach extension storage</p>}
       </form>
+      <p>
+        Fill runs on <kbd>Ctrl+Shift+F</kbd> (<kbd>Cmd+Shift+F</kbd> on mac). Remap it at{" "}
+        <code>chrome://extensions/shortcuts</code>.
+      </p>
     </main>
   )
 }

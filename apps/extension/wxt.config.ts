@@ -5,7 +5,7 @@ export default defineConfig({
   manifest: {
     name: "Skiffr",
     description: "Skiffr for your browser",
-    permissions: ["storage", "activeTab"],
+    permissions: ["storage"],
     commands: {
       fill: {
         suggested_key: { default: "Ctrl+Shift+F", mac: "Command+Shift+F" },
