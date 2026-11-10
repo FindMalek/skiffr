@@ -5,9 +5,17 @@ import type { FillMessage } from "@/lib/messages"
 const BADGE_MS = 3000
 const NO_RECEIVER = "Receiving end does not exist"
 
+async function setBadge(text: string): Promise<void> {
+  try {
+    await browser.action.setBadgeText({ text })
+  } catch {
+    // the badge is best effort and must never replace the error it reports
+  }
+}
+
 function flashBadge(text: string): void {
-  browser.action.setBadgeText({ text })
-  setTimeout(() => browser.action.setBadgeText({ text: "" }), BADGE_MS)
+  void setBadge(text)
+  setTimeout(() => void setBadge(""), BADGE_MS)
 }
 
 async function requestFill(): Promise<void> {
@@ -22,9 +30,19 @@ async function requestFill(): Promise<void> {
   }
 }
 
+async function hideStorageFromContentScripts(): Promise<void> {
+  if (typeof browser.storage.local.setAccessLevel !== "function") return
+  try {
+    await browser.storage.local.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" })
+  } catch (error) {
+    console.error("[skiffr] could not restrict storage access", error)
+  }
+}
+
 export default defineBackground(() => {
-  browser.storage.local.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" })
   browser.commands.onCommand.addListener((command) => {
     if (command === "fill") return requestFill()
   })
+  void setBadge("")
+  void hideStorageFromContentScripts()
 })

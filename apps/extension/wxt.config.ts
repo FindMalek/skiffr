@@ -6,6 +6,8 @@ export default defineConfig({
     name: "Skiffr",
     description: "Skiffr for your browser",
     permissions: ["storage"],
+    minimum_chrome_version: "142",
+    action: { default_title: "Skiffr" },
     commands: {
       fill: {
         suggested_key: { default: "Ctrl+Shift+F", mac: "Command+Shift+F" },
