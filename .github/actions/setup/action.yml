@@ -37,7 +37,7 @@ runs:
     # keys hash lockfile and source trees: an unchanged tree reuses its entry, a changed one saves a single new entry (main only)
     - id: src
       shell: bash
-      run: echo "hash=$(git rev-parse HEAD:apps HEAD:packages HEAD:pnpm-lock.yaml HEAD:turbo.json | sha1sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
+      run: echo "hash=$(git rev-parse HEAD:apps HEAD:packages HEAD:pnpm-lock.yaml HEAD:turbo.json HEAD:.env.example HEAD:.github/actions | sha1sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
     - id: turbo
       uses: actions/cache/restore@v6
       if: inputs.turbo == 'true'

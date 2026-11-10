@@ -19,13 +19,13 @@ env:
   TURBO_SCM_BASE: ${{ github.event.pull_request.base.sha }}
 
 # pull requests only run tasks of changed packages and their dependents (--affected), main runs everything.
-# a pr that touches the setup action or this file runs everything too, so a tool bump is really tested.
+# a pr that touches .github/actions, .github/scripts or this file runs everything with --force, so a tool bump is really tested even when main has a cache.
 jobs:
   changes:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
-      affected: ${{ steps.scope.outputs.affected }}
+      flags: ${{ steps.scope.outputs.flags }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -35,11 +35,18 @@ jobs:
           EVENT: ${{ github.event_name }}
           BASE: ${{ github.event.pull_request.base.sha }}
         run: |
+          set -o pipefail
           flag=""
-          if [ "$EVENT" = "pull_request" ] && ! git diff --name-only "$BASE" HEAD | grep -Eq '^(\.github/actions/|\.github/workflows/ci\.yml$)'; then
-            flag="--affected"
+          if [ "$EVENT" = "pull_request" ]; then
+            if ! files=$(git diff --name-only "$BASE" HEAD); then
+              flag="--force"
+            elif echo "$files" | grep -Eq '^(\.github/(actions|scripts)/|\.github/workflows/ci\.yml$)'; then
+              flag="--force"
+            else
+              flag="--affected"
+            fi
           fi
-          echo "affected=$flag" >> "$GITHUB_OUTPUT"
+          echo "flags=$flag" >> "$GITHUB_OUTPUT"
 
   lint:
     runs-on: ubuntu-latest
@@ -61,7 +68,7 @@ jobs:
         uses: ./.github/actions/setup
         with:
           turbo: "true"
-      - run: pnpm check-types ${{ needs.changes.outputs.affected }}
+      - run: pnpm check-types ${{ needs.changes.outputs.flags }}
       - uses: ./.github/actions/save-cache
         with:
           setup: ${{ toJSON(steps.setup.outputs) }}
@@ -80,7 +87,7 @@ jobs:
         with:
           bun: "true"
           turbo: "true"
-      - run: pnpm test ${{ needs.changes.outputs.affected }}
+      - run: pnpm test ${{ needs.changes.outputs.flags }}
       - uses: ./.github/actions/save-cache
         with:
           setup: ${{ toJSON(steps.setup.outputs) }}
@@ -104,7 +111,7 @@ jobs:
         run: |
           cp .env.example .env
           printf 'BETTER_AUTH_SECRET=%s\nADMIN_PASSWORD=%s\n' "ci-build-secret-not-used-anywhere-0123456789" "ci-build-password" >> .env
-      - run: pnpm build ${{ needs.changes.outputs.affected }}
+      - run: pnpm build ${{ needs.changes.outputs.flags }}
       - uses: ./.github/actions/save-cache
         with:
           setup: ${{ toJSON(steps.setup.outputs) }}
