@@ -1,7 +1,12 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "ui": "tui",
-  "globalDependencies": [".env"],
+  "globalDependencies": [
+    ".env",
+    ".env.example",
+    ".github/actions/setup/action.yml",
+    ".github/actions/save-cache/action.yml"
+  ],
   "globalPassThroughEnv": ["NODE_ENV"],
   "envMode": "loose",
   "tasks": {

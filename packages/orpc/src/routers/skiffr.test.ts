@@ -1,9 +1,10 @@
-import { beforeAll, expect, test } from "bun:test"
+import { afterAll, beforeAll, expect, test } from "bun:test"
 import { PGlite } from "@electric-sql/pglite"
 import { call } from "@orpc/server"
 import type { Session } from "@skiffr/auth"
 import { type Db, user } from "@skiffr/db"
 import * as schema from "@skiffr/db/schema"
+import { createTestDb } from "@skiffr/db/test-db"
 import { drizzle } from "drizzle-orm/pglite"
 import { migrate } from "drizzle-orm/pglite/migrator"
 import type { Context } from "../context"
@@ -12,12 +13,31 @@ import { appRouter } from "./index"
 const NOW = new Date("2026-11-10T10:00:00Z")
 let db: Db
 
-beforeAll(async () => {
+const DRIZZLE = new URL("../../../db/drizzle", import.meta.url).pathname
+
+let drop: (() => Promise<void>) | undefined
+
+/** TEST_DATABASE_URL runs the suite on a fresh `skiffr_test_*` database of that server, otherwise in-process pglite. */
+async function connect(): Promise<Db> {
+  const url = process.env.TEST_DATABASE_URL
+  if (url) {
+    const test = await createTestDb(url)
+    drop = test.drop
+    return test.db
+  }
   const pg = drizzle(new PGlite(), { schema })
-  await migrate(pg, { migrationsFolder: new URL("../../../db/drizzle", import.meta.url).pathname })
-  db = pg as unknown as Db
+  await migrate(pg, { migrationsFolder: DRIZZLE })
+  return pg as unknown as Db
+}
+
+afterAll(async () => {
+  await drop?.()
+})
+
+beforeAll(async () => {
+  db = await connect()
   const now = new Date()
-  await pg.insert(user).values(
+  await db.insert(user).values(
     ["ana", "ben"].map((id) => ({
       id,
       name: id,
@@ -29,7 +49,7 @@ beforeAll(async () => {
   )
 })
 
-/** Only the better-auth session is faked: it is the external boundary, everything else is the real router on a real (in-process) postgres. */
+/** Only the better-auth session is faked: it is the external boundary, everything else is the real router on pglite, or on postgres when TEST_DATABASE_URL is set. */
 function as(userId: string, now = NOW): Context {
   const session = { user: { id: userId } } as Session
   return {
