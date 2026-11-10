@@ -11,7 +11,13 @@ test("the token only travels over https, or http to this machine", () => {
   for (const apiUrl of ["http://localhost:3001", "http://127.0.0.1:3001", "http://[::1]:3001", "https://example.com"]) {
     expect(parses(apiUrl), apiUrl).toBe(true)
   }
-  for (const apiUrl of ["http://example.com", "http://localhost.evil.dev", "http://127.0.0.1.evil.dev:3001"]) {
+  for (const apiUrl of [
+    "http://example.com",
+    "http://localhost.evil.dev",
+    "http://127.0.0.1.evil.dev:3001",
+    "https://user:pw@example.com",
+    "http://user@localhost:3001",
+  ]) {
     expect(parses(apiUrl), apiUrl).toBe(false)
   }
 })

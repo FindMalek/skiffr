@@ -5,7 +5,7 @@ import type { TokenAuth } from "./lib/tokens"
 
 export const o = os.$context<Context>()
 
-/** Unexpected errors are logged with the procedure path; ORPCErrors are answers, not failures. Every call is rate limited per route and caller first. */
+/** Unexpected errors are logged with the procedure path; ORPCErrors are answers, not failures. */
 const logErrors = o.middleware(async (options) => {
   const route = options.path.join(".")
   try {

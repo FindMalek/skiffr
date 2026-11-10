@@ -18,34 +18,48 @@ export interface TokenAuth {
 
 /**
  * The only error that leaves a token query. Drizzle's own errors carry the whole statement with its params (the token
- * hash, prefix and last four), so nothing from them is kept except the operation and the postgres code.
+ * hash, prefix and last four), so nothing from them is kept except the operation, the postgres or socket code
+ * (`22021`, `ECONNREFUSED`) and the class of the underlying error (`TypeError`, `PostgresError`).
  */
 export class TokenStoreError extends Error {
   override name = "TokenStoreError"
   constructor(
     readonly operation: string,
     readonly code?: string,
+    readonly causeName?: string,
   ) {
     super("The token store failed.")
   }
 }
 
-const PG_CODE = /^[0-9A-Z]{5}$/
+/** What a log line may say about a failed token query: never the driver's message, statement or params. */
+export function tokenErrorFields({ name, operation, code, causeName }: TokenStoreError) {
+  return { name, operation, code, causeName }
+}
 
-function pgCode(error: unknown): string | undefined {
-  for (let cause = error, depth = 0; cause && typeof cause === "object" && depth < 4; depth++) {
-    const code = (cause as { code?: unknown }).code
-    if (typeof code === "string" && PG_CODE.test(code)) return code
-    cause = (cause as { cause?: unknown }).cause
+const ERROR_CODE = /^[A-Z0-9_]{3,40}$/
+const CLASS_NAME = /^[A-Za-z0-9_]{1,40}$/
+
+function describe(error: unknown): { code?: string; causeName?: string } {
+  let code: string | undefined
+  let innermost: unknown = error
+  for (let depth = 0; depth < 4 && innermost && typeof innermost === "object"; depth++) {
+    const candidate = (innermost as { code?: unknown }).code
+    if (code === undefined && typeof candidate === "string" && ERROR_CODE.test(candidate)) code = candidate
+    const next = (innermost as { cause?: unknown }).cause
+    if (!next || typeof next !== "object") break
+    innermost = next
   }
-  return undefined
+  const name = (innermost as { constructor?: { name?: unknown } } | null)?.constructor?.name
+  return { code, causeName: typeof name === "string" && CLASS_NAME.test(name) ? name : undefined }
 }
 
 export async function guardTokenDb<T>(operation: string, run: () => Promise<T>): Promise<T> {
   try {
     return await run()
   } catch (error) {
-    throw new TokenStoreError(operation, pgCode(error))
+    const { code, causeName } = describe(error)
+    throw new TokenStoreError(operation, code, causeName)
   }
 }
 
@@ -84,8 +98,8 @@ export async function verifyToken(db: Db, secret: string, now: Date): Promise<To
     .set({ lastUsedAt: now })
     .where(and(eq(apiToken.id, token.id), or(isNull(apiToken.lastUsedAt), lt(apiToken.lastUsedAt, staleBefore))))
     .catch((error) => {
-      const { name, operation, code } = new TokenStoreError("touch", pgCode(error))
-      console.error("[tokens] lastUsedAt failed", { name, operation, code })
+      const { code, causeName } = describe(error)
+      console.error("[tokens] lastUsedAt failed", tokenErrorFields(new TokenStoreError("touch", code, causeName)))
     })
 
   return {

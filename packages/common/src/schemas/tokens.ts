@@ -18,7 +18,8 @@ export const apiTokenInputSchema = z.object({
     .trim()
     .min(1)
     .max(TOKEN_NAME_MAX)
-    .regex(/^\P{C}+$/u, "The name can't contain control or hidden characters."),
+    // Letters, marks, symbols, punctuation and spaces; ZWNJ and ZWJ stay for Persian, Urdu and emoji sequences.
+    .regex(/^(?:[^\p{C}\p{Zl}\p{Zp}]|[\u200C\u200D])+$/u, "The name can't contain control or hidden characters."),
   /** `null` never expires. */
   expiresInDays: z.number().int().min(1).max(TOKEN_EXPIRY_DAYS_MAX).nullable(),
 })

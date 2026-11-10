@@ -35,10 +35,14 @@ const EXPIRIES = [
   { label: "Never", days: null },
 ]
 
-type TokenState = { label: "Active" | "Revoked" | "Expired"; variant: "default" | "secondary" | "destructive" }
+type TokenState = {
+  label: "Active" | "Revoked" | "Expired"
+  variant: "default" | "secondary" | "outline"
+  className?: string
+}
 
 function status(token: ApiToken, now: Date): TokenState {
-  if (token.revokedAt) return { label: "Revoked", variant: "destructive" }
+  if (token.revokedAt) return { label: "Revoked", variant: "outline", className: "border-destructive text-destructive" }
   if (token.expiresAt && token.expiresAt <= now) return { label: "Expired", variant: "secondary" }
   return { label: "Active", variant: "default" }
 }
@@ -276,10 +280,14 @@ export function ExtensionTokens({ apiUrl }: { apiUrl: string }) {
                   const state = status(token, now)
                   return (
                     <li key={token.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 py-3">
-                      <div className={`flex min-w-0 flex-col gap-1 ${state.label === "Active" ? "" : "opacity-60"}`}>
+                      <div className="flex min-w-0 flex-col gap-1">
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="truncate font-medium">{token.name}</span>
-                          <Badge variant={state.variant}>{state.label}</Badge>
+                          <span className={`truncate font-medium ${state.label === "Active" ? "" : "opacity-75"}`}>
+                            {token.name}
+                          </span>
+                          <Badge variant={state.variant} className={state.className}>
+                            {state.label}
+                          </Badge>
                         </div>
                         <code className="font-mono text-muted-foreground text-xs">
                           {token.prefix}…{token.last4}

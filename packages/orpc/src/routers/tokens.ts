@@ -50,7 +50,12 @@ export const tokensRouter = {
           .where(
             and(
               eq(apiToken.userId, context.user.id),
-              or(isActive(now), gte(sql`coalesce(${apiToken.revokedAt}, ${apiToken.expiresAt})`, since)),
+              // Typed column comparisons: a raw Date inside a sql`` template reaches postgres-js unserialized and throws.
+              or(
+                isActive(now),
+                gte(apiToken.revokedAt, since),
+                and(isNull(apiToken.revokedAt), gte(apiToken.expiresAt, since)),
+              ),
             ),
           )
           // Active first, so the cap on rows can never hide a token that can still be revoked.
@@ -71,30 +76,34 @@ export const tokensRouter = {
     .handler(async ({ context, input }) => {
       const { secret, ...stored } = generateToken()
       const now = context.now()
-      const [active] = await guardTokenDb("count", () =>
-        context.db
-          .select({ total: count() })
-          .from(apiToken)
-          .where(and(eq(apiToken.userId, context.user.id), isActive(now))),
+      // One transaction per user at a time, so parallel creates can't all pass the cap check.
+      const created = await guardTokenDb("create", () =>
+        context.db.transaction(async (tx) => {
+          await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${context.user.id}))`)
+          const [active] = await tx
+            .select({ total: count() })
+            .from(apiToken)
+            .where(and(eq(apiToken.userId, context.user.id), isActive(now)))
+          if ((active?.total ?? 0) >= TOKEN_ACTIVE_MAX) return null
+          const [row] = await tx
+            .insert(apiToken)
+            .values({
+              ...stored,
+              userId: context.user.id,
+              name: input.name,
+              createdAt: now,
+              expiresAt: input.expiresInDays === null ? null : new Date(now.getTime() + input.expiresInDays * DAY_MS),
+            })
+            .returning(publicColumns)
+          return row
+        }),
       )
-      if ((active?.total ?? 0) >= TOKEN_ACTIVE_MAX) {
+      if (!created) {
         throw new ORPCError("BAD_REQUEST", {
           message: `You already have ${TOKEN_ACTIVE_MAX} active tokens. Revoke one to create another.`,
         })
       }
-      const [row] = await guardTokenDb("create", () =>
-        context.db
-          .insert(apiToken)
-          .values({
-            ...stored,
-            userId: context.user.id,
-            name: input.name,
-            createdAt: now,
-            expiresAt: input.expiresInDays === null ? null : new Date(now.getTime() + input.expiresInDays * DAY_MS),
-          })
-          .returning(publicColumns),
-      )
-      return { ...row!, secret }
+      return { ...created, secret }
     }),
 
   revoke: protectedProcedure

@@ -2,7 +2,7 @@ import type { Auth, Session } from "@skiffr/auth"
 import type { Db } from "@skiffr/db"
 import type { Storage } from "@skiffr/storage"
 import type { LanguageModel } from "ai"
-import { bearerSecret, type TokenAuth, TokenStoreError, verifyToken } from "./lib/tokens"
+import { bearerSecret, type TokenAuth, TokenStoreError, tokenErrorFields, verifyToken } from "./lib/tokens"
 
 /** Everything procedures need, built once by the api at startup (and by tests with their own). */
 export interface Services {
@@ -39,8 +39,7 @@ export async function createContext(services: Services, headers: Headers): Promi
       return { ...services, headers, session: null, bearer: true, token, tokenUnavailable: false }
     } catch (error) {
       if (!(error instanceof TokenStoreError)) throw error
-      const { name, operation, code } = error
-      console.error("[tokens] verify failed", { name, operation, code })
+      console.error("[tokens] verify failed", tokenErrorFields(error))
       return { ...services, headers, session: null, bearer: true, token: null, tokenUnavailable: true }
     }
   }

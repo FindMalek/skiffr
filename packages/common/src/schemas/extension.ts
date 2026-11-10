@@ -8,9 +8,10 @@ export const extensionSettingsSchema = z.object({
     .trim()
     .transform((url) => url.replace(/\/+$/, ""))
     .refine((url) => {
-      const { protocol, hostname } = new URL(url)
-      return protocol === "https:" || LOCAL_HOSTS.has(hostname)
-    }, "http is only allowed for localhost"),
+      const { protocol, hostname, username, password } = new URL(url)
+      // fetch refuses a url with credentials in it, so the connection test would only say "unreachable".
+      return !username && !password && (protocol === "https:" || LOCAL_HOSTS.has(hostname))
+    }, "https only (http works for localhost), without a user or password in the url"),
   token: z.string().trim(),
 })
 

@@ -7,12 +7,13 @@ import { mockModel } from "@skiffr/ai/testing"
 import type { Session } from "@skiffr/auth"
 import { answer, answerColumns, apiToken, type Db, findSimilarAnswers, user } from "@skiffr/db"
 import * as schema from "@skiffr/db/schema"
-import { createTestDb } from "@skiffr/db/test-db"
+import { createTestDb, strictDateSerializers } from "@skiffr/db/test-db"
 import { APICallError } from "ai"
 import { eq } from "drizzle-orm"
 import { drizzle } from "drizzle-orm/pglite"
 import { migrate } from "drizzle-orm/pglite/migrator"
 import { type Context, createContext } from "../context"
+import { errorMessage } from "../errors"
 import { hashToken } from "../lib/tokens"
 import { TOKEN_PROCEDURES } from "../procedures"
 import { appRouter } from "./index"
@@ -32,7 +33,7 @@ async function connect(): Promise<Db> {
     drop = test.drop
     return test.db
   }
-  const pg = drizzle(new PGlite({ extensions: { vector } }), { schema })
+  const pg = drizzle(new PGlite({ extensions: { vector }, serializers: strictDateSerializers }), { schema })
   await migrate(pg, { migrationsFolder: DRIZZLE })
   return pg as unknown as Db
 }
@@ -471,15 +472,22 @@ async function addUser(id: string, extra: Partial<typeof user.$inferInsert> = {}
   return () => ({ context: as(id) })
 }
 
-test("a token name can't hold control or hidden characters", async () => {
+test("a token name can't hold control or hidden characters, but keeps the joiners real scripts need", async () => {
   const owner = await addUser("names")
-  for (const name of ["a\u0000b", "a​b", "‮evil", "two\nlines", "a\ud800b"]) {
-    const error = await call(appRouter.tokens.create, { name, expiresInDays: 30 }, owner()).catch((e) => e)
-    expect(error, JSON.stringify(name)).toMatchObject({ code: "BAD_REQUEST" })
+  const rejected = ["\u0000", "​", "‮", "‎", "﻿", "­", " ", " ", "󠁁", "", "͸", "\n", "\ud800"]
+  for (const char of rejected) {
+    const error = await call(appRouter.tokens.create, { name: `a${char}b`, expiresInDays: 30 }, owner()).catch((e) => e)
+    expect(error, JSON.stringify(char)).toMatchObject({ code: "BAD_REQUEST" })
   }
-  const ok = await call(appRouter.tokens.create, { name: "  Café 💻  ", expiresInDays: 30 }, owner())
-  expect(ok.name).toBe("Café 💻")
+  expect(errorMessage(await mintNamed(owner, "a\u0000b"))).toBe("The name can't contain control or hidden characters.")
+  for (const name of ["Café 💻", "می‌خواهم", "👩‍💻"]) {
+    expect((await call(appRouter.tokens.create, { name, expiresInDays: 30 }, owner())).name).toBe(name)
+  }
+  expect((await call(appRouter.tokens.create, { name: "  padded  ", expiresInDays: 30 }, owner())).name).toBe("padded")
 })
+
+const mintNamed = (owner: () => { context: Context }, name: string) =>
+  call(appRouter.tokens.create, { name, expiresInDays: 30 }, owner()).catch((e) => e)
 
 test("a user holds at most 20 active tokens, revoked and expired ones don't count", async () => {
   const owner = await addUser("capped")
@@ -494,6 +502,15 @@ test("a user holds at most 20 active tokens, revoked and expired ones don't coun
 
   const later = { context: as("capped", new Date(NOW.getTime() + 60 * DAY)) }
   await mint(() => later, 1)
+})
+
+test("parallel creates can't get past the cap", async () => {
+  const owner = await addUser("racer")
+  const results = await Promise.all(Array.from({ length: 30 }, () => mint(owner).catch((e) => e)))
+  expect(results.filter((r) => r.secret)).toHaveLength(20)
+  expect(results.filter((r) => r.code === "BAD_REQUEST")).toHaveLength(10)
+  const stored = await db.select().from(apiToken).where(eq(apiToken.userId, "racer"))
+  expect(stored).toHaveLength(20)
 })
 
 const day = (n: number) => new Date(NOW.getTime() - n * DAY)
@@ -582,55 +599,74 @@ test("only a well formed bearer header is a token, anything odd is the same 401"
   }
 })
 
+class PostgresError extends Error {}
+
 /** A drizzle failure as the driver gives it: the statement and every param, including the token hash. */
-function failingInsert(): Error {
-  const driver = Object.assign(new Error("invalid byte sequence for encoding UTF8: 0x00"), { code: "22021" })
+function failure(cause: Error): Error {
   return Object.assign(
     new Error(
       "Failed query: insert into api_token (token_hash, prefix, last4) params: LEAKED-HASH,LEAKED-PREFIX,LEAKED-4",
     ),
-    { params: ["LEAKED-HASH", "LEAKED-PREFIX", "LEAKED-4"], cause: driver },
+    { params: ["LEAKED-HASH", "LEAKED-PREFIX", "LEAKED-4"], cause },
   )
 }
 
-function breakOn(method: "insert" | "select"): Db {
+function breakOn(method: "transaction" | "select", cause: Error): Db {
   return new Proxy(db, {
     get: (target, key, receiver) =>
       key === method
         ? () => {
-            throw failingInsert()
+            throw failure(cause)
           }
         : Reflect.get(target, key, receiver),
   })
 }
 
-test("a database error in a token path is logged as name and code only, never its params", async () => {
+test("a database error in a token path is logged as operation, code and error class only, never its params", async () => {
   const logged = spyOn(console, "error").mockImplementation(() => {})
+  const causes: Array<[Error, string, string]> = [
+    [
+      Object.assign(new PostgresError("invalid byte sequence 0x00 LEAKED-HASH"), { code: "22021" }),
+      "22021",
+      "PostgresError",
+    ],
+    [new TypeError("Received an instance of Date LEAKED-HASH"), "TypeError", "TypeError"],
+    [Object.assign(new Error("connect ECONNREFUSED LEAKED-HASH"), { code: "ECONNREFUSED" }), "ECONNREFUSED", "Error"],
+  ]
   try {
-    const create = await call(
-      appRouter.tokens.create,
-      { name: "x", expiresInDays: 30 },
-      {
-        context: { ...as("ana"), db: breakOn("insert") },
-      },
-    ).catch((e) => e)
-    expect(create).toMatchObject({ name: "TokenStoreError", code: "22021" })
+    for (const [cause, code, causeName] of causes) {
+      const create = await call(
+        appRouter.tokens.create,
+        { name: "x", expiresInDays: 30 },
+        { context: { ...as("ana"), db: breakOn("transaction", cause) } },
+      ).catch((e) => e)
+      expect(create).toMatchObject({ name: "TokenStoreError", operation: "create", causeName })
+      expect(create.code).toBe(cause instanceof TypeError ? undefined : code)
 
-    const { secret } = await mint(ana)
-    const context = await createContext(
-      { db: breakOn("select"), now: () => NOW } as never,
-      new Headers({ authorization: `Bearer ${secret}` }),
-    )
-    // A db failure is an outage (503), not a rejected token (401).
-    const verify = await createRouterClient(appRouter, { context })
-      .extension.whoami()
-      .catch((e: Error) => e)
-    expect(verify).toMatchObject({ code: "SERVICE_UNAVAILABLE", status: 503 })
+      const { secret } = await mint(ana)
+      const context = await createContext(
+        { db: breakOn("select", cause), now: () => NOW } as never,
+        new Headers({ authorization: `Bearer ${secret}` }),
+      )
+      // A db failure is an outage (503), not a rejected token (401).
+      const verify = await createRouterClient(appRouter, { context })
+        .extension.whoami()
+        .catch((e: Error) => e)
+      expect(verify).toMatchObject({ code: "SERVICE_UNAVAILABLE", status: 503 })
 
-    const lines = inspect(logged.mock.calls, { depth: 10 })
-    expect(lines).toContain("22021")
-    for (const secretText of ["LEAKED", secret, hashToken(secret), secret.slice(0, 8), "token_hash"]) {
-      expect(lines + create.message + String(verify)).not.toContain(secretText)
+      const lines = inspect(logged.mock.calls, { depth: 10 })
+      expect(lines).toContain(causeName)
+      for (const text of [
+        "LEAKED",
+        secret,
+        hashToken(secret),
+        secret.slice(0, 8),
+        "token_hash",
+        "0x00",
+        "instance of Date",
+      ]) {
+        expect(lines + create.message + String(verify)).not.toContain(text)
+      }
     }
   } finally {
     logged.mockRestore()

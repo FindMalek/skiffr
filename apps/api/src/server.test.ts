@@ -5,6 +5,7 @@ import type { Auth } from "@skiffr/auth"
 import type { Db } from "@skiffr/db"
 import { user } from "@skiffr/db"
 import * as schema from "@skiffr/db/schema"
+import { strictDateSerializers } from "@skiffr/db/test-db"
 import { drizzle } from "drizzle-orm/pglite"
 import { migrate } from "drizzle-orm/pglite/migrator"
 import { createServer } from "./server"
@@ -16,7 +17,9 @@ const DRIZZLE = new URL("../../../packages/db/drizzle", import.meta.url).pathnam
 let server: (request: Request) => Promise<Response>
 
 beforeAll(async () => {
-  const db = drizzle(new PGlite({ extensions: { vector } }), { schema }) as unknown as Db
+  const db = drizzle(new PGlite({ extensions: { vector }, serializers: strictDateSerializers }), {
+    schema,
+  }) as unknown as Db
   await migrate(db as never, { migrationsFolder: DRIZZLE })
   const now = new Date()
   await db
