@@ -2,7 +2,7 @@ import { z } from "zod"
 
 export const extensionSettingsSchema = z.object({
   apiUrl: z
-    .url()
+    .url({ protocol: /^https?$/ })
     .trim()
     .transform((url) => url.replace(/\/+$/, "")),
   token: z.string().trim(),
