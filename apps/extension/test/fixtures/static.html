@@ -1,0 +1,51 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>static form</title>
+<style>
+  body { font: 14px sans-serif; max-width: 640px; margin: 24px auto; }
+  label, legend { display: block; margin-top: 12px; }
+  .trap { position: absolute; left: -9999px; }
+</style>
+<form id="app" onsubmit="event.preventDefault(); window.__submitted = true">
+  <h2>Personal details</h2>
+  <label for="name">Full name *</label><input id="name" name="name">
+  <label>Email <input name="email" type="email" autocomplete="email"></label>
+  <label for="phone">Phone</label><input id="phone" name="phone" type="tel" maxlength="14">
+  <label for="born">Date of birth</label><input id="born" type="date">
+  <label for="start">Start date</label><input id="start" placeholder="DD/MM/YYYY">
+
+  <h2>Application</h2>
+  <label for="country">Country</label>
+  <select id="country"><option value="">Please choose</option><option value="DE">Germany</option><option value="GB">United Kingdom</option><option value="US">United States</option></select>
+  <fieldset><legend>Do you need sponsorship?</legend>
+    <label><input type="radio" name="sponsor" value="y"> Yes</label>
+    <label><input type="radio" name="sponsor" value="n"> No</label>
+  </fieldset>
+  <fieldset><legend>Tools you use</legend>
+    <label><input type="checkbox" name="tools" value="git"> Git</label>
+    <label><input type="checkbox" name="tools" value="docker"> Docker</label>
+  </fieldset>
+  <label for="cv">Resume</label><input id="cv" type="file" accept=".pdf">
+  <!-- biome-ignore lint/a11y/noLabelWithoutControl: a contenteditable is the control -->
+  <label>Cover note</label><div id="note" contenteditable="true" style="border:1px solid #999;min-height:40px"></div>
+
+  <div class="trap"><label for="hp1">Leave this empty</label><input id="hp1" name="url2" tabindex="-1"></div>
+  <div style="display:none"><input name="hp2" aria-label="Fax"></div>
+  <input name="website" tabindex="-1" style="opacity:0;position:absolute;width:0;height:0">
+
+  <div id="shadow-host"></div>
+  <iframe id="frame" title="referral" style="width:100%;height:80px" srcdoc='<label for="x">Referral</label><input id="x" name="ref">'></iframe>
+
+  <label for="angular">Angular style field</label><input id="angular" name="ng">
+  <button type="submit">Submit</button>
+</form>
+<script>
+  const host = document.getElementById("shadow-host")
+  host.attachShadow({ mode: "open" }).innerHTML = '<label for="s">Nickname</label><input id="s" name="nick">'
+  window.__submitted = false
+  window.__ng = { value: "", touched: false }
+  const ng = document.getElementById("angular")
+  ng.addEventListener("input", (e) => { window.__ng.value = e.target.value })
+  ng.addEventListener("blur", () => { window.__ng.touched = true })
+</script>
+<script src="./entry.js"></script>
