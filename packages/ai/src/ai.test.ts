@@ -1,7 +1,8 @@
 import { expect, test } from "bun:test"
 import { profileDataSchema } from "@skiffr/common/schemas"
+import { normalizeLabel } from "@skiffr/common/utils"
 import { draftAnswer, fitLength } from "./draft-answer"
-import { AiModelError } from "./errors"
+import { AiInputError, AiModelError } from "./errors"
 import { mapFields } from "./map-fields"
 import { mockModel } from "./testing"
 
@@ -185,11 +186,115 @@ test("an empty reply or a not-enough-info reply is not a draft", async () => {
   expect(await draft("NO_ANSWER")).toEqual({ ok: false, reason: "not_enough_info" })
 })
 
-test("a draft prompt leaves out contact details, salary and sensitive extra fields", async () => {
+const LEAKY_LABELS = [
+  "Email Address",
+  "E-mail",
+  "mobile",
+  "Mobile Number",
+  "tel",
+  "Telephone",
+  "phone",
+  "expected_salary",
+  "compensation",
+  "Desired pay",
+  "iban",
+  "ssn",
+  "social security number",
+  "passport",
+  "date of birth",
+  "DOB",
+  "birthday",
+  "home address",
+  "street address",
+  "whatsapp",
+  "cell",
+  "contact number",
+  "national id",
+  "tax id",
+  "bank account",
+  "hourly rate",
+  "ctc",
+  "income",
+  "gender",
+  "religion",
+  "hobbies",
+  "favorite color",
+]
+
+test("a draft sends only allowlisted profile data", async () => {
+  const fields: Record<string, string> = { "notice period": "SHOWN-notice", linkedin: "SHOWN-linkedin" }
+  for (const label of LEAKY_LABELS) fields[normalizeLabel(label)] = `LEAK-${normalizeLabel(label).replaceAll(" ", "_")}`
   const model = mockModel("Fine.")
-  await draftAnswer({ model, profile, question: "Why us?" })
+  await draftAnswer({ model, profile: { ...profile, fields }, question: "Why us?" })
+  const text = sentPrompt(model)
+  for (const shown of ["identity.firstName: Ana", "location.city: Lisbon", "SHOWN-notice", "SHOWN-linkedin"]) {
+    expect(text).toContain(shown)
+  }
+  for (const secret of ["LEAK-", "ana@test.dev", "555 0100", "90000", "pronouns"]) expect(text).not.toContain(secret)
+})
+
+test("a draft caps each profile value and the whole profile block", async () => {
+  const big = "&".repeat(5000)
+  const fields = Object.fromEntries(
+    ["preferred name", "headline", "summary", "experience", "skills", "languages", "notice period", "availability"].map(
+      (label) => [label, big],
+    ),
+  )
+  const model = mockModel("Fine.")
+  await draftAnswer({ model, profile: { ...profile, fields }, question: "Why us?" })
+  const text = sentPrompt(model)
+  const block = text.slice(text.indexOf('<data name="profile">'), text.indexOf("</data>"))
+  expect(block.length).toBeLessThanOrEqual(6_100)
+  expect(text).not.toContain("&amp;".repeat(301))
+})
+
+test("a prompt over the hard limit is refused before the model is called", async () => {
+  const huge = (n: number) => ({ id: "a", label: "<".repeat(300), options: Array(n).fill("<".repeat(100)) })
+  const map = mockModel(reply())
+  await expect(
+    mapFields({ model: map, profile, fields: [huge(50), huge(50), huge(50), huge(50), huge(50)] }),
+  ).rejects.toBeInstanceOf(AiInputError)
+  const draft = mockModel("Fine.")
+  const corrections = Array(5).fill({ question: "<".repeat(1000), answer: "<".repeat(1500) })
+  await expect(
+    draftAnswer({ model: draft, profile, question: "<".repeat(1000), jobDescription: "<".repeat(8000), corrections }),
+  ).rejects.toBeInstanceOf(AiInputError)
+  expect(map.doGenerateCalls.length + draft.doGenerateCalls.length).toBe(0)
+})
+
+test("a max profile with max fields stays under the hard limit", async () => {
+  const fields = Object.fromEntries(
+    Array.from({ length: 200 }, (_, i) => [`${"k".repeat(90)}${String(i).padStart(4, "0")}`, "&".repeat(5000)]),
+  )
+  const ids = Array.from({ length: 60 }, (_, i) => ({ id: `f${i}`, label: "x".repeat(100), options: [] as string[] }))
+  const model = mockModel(reply())
+  await mapFields({ model, profile: { ...profile, fields }, fields: ids })
+  expect(JSON.stringify(model.doGenerateCalls[0]?.prompt).length).toBeLessThan(80_000)
+})
+
+test("a map prompt offers at most 150 keys in a fixed order and previews only short shared values", async () => {
+  const fields = Object.fromEntries(Array.from({ length: 300 }, (_, i) => [`k${String(i).padStart(3, "0")}`, "v"]))
+  const model = mockModel(reply())
+  await mapFields({
+    model,
+    profile: { data: profile.data, fields: { ...fields, "notice period": "x".repeat(61), linkedin: "short" } },
+    fields: [field("a", "A")],
+  })
   const text = sentPrompt(model)
   expect(text).toContain("identity.firstName: Ana")
-  expect(text).toContain("location.city: Lisbon")
-  for (const secret of ["ana@test.dev", "555 0100", "90000", "555 0199"]) expect(text).not.toContain(secret)
+  expect(text).toContain("fields.linkedin: short")
+  expect(text).not.toContain("fields.notice period:")
+  expect(text).not.toContain("ana@test.dev")
+  expect(text).not.toContain("identity.phone:")
+  expect(text).toContain("identity.phone")
+  const offered = text.match(/^fields\.k\d{3}$/gm) ?? []
+  expect(offered.length).toBeLessThan(150)
+  expect(text).not.toContain("fields.k299")
+})
+
+test("a type spelled with spaces or zero-width characters is still never sent", async () => {
+  const model = mockModel(reply(mapping("a", { action: "profile", key: "identity.firstName" })))
+  const [result] = await mapFields({ model, profile, fields: [field("a", "SECRETLABEL", "pass\u200bword")] })
+  expect(result).toMatchObject({ action: "skip" })
+  expect(model.doGenerateCalls.length).toBe(0)
 })

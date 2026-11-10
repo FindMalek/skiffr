@@ -15,6 +15,14 @@ export class AiModelError extends Error {
   }
 }
 
+/** The request is too big to send. Raised before any model call, so it is the caller's to fix and safe to show. */
+export class AiInputError extends Error {
+  override name = "AiInputError"
+  constructor() {
+    super("The request is too large for the AI.")
+  }
+}
+
 export function modelIdOf(model: unknown): string {
   if (typeof model === "string") return model
   const id = (model as { modelId?: unknown } | null)?.modelId

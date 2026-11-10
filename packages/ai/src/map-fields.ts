@@ -2,13 +2,39 @@ import { AI_GENERATED_VALUE_MAX, AI_REASON_MAX } from "@skiffr/common/constants"
 import type { FieldDescriptor, FieldMapping } from "@skiffr/common/schemas"
 import { generateText, type LanguageModel, Output } from "ai"
 import { z } from "zod"
-import { type AiProfile, dataBlock, flattenProfile, UNTRUSTED_NOTICE } from "./data"
+import { type AiProfile, assertPromptSize, dataBlock, fitLines, flattenProfile, UNTRUSTED_NOTICE } from "./data"
 import { toAiError } from "./errors"
+import { isShared } from "./shared-keys"
 
-const VALUE_PREVIEW_MAX = 100
+const VALUE_PREVIEW_MAX = 60
+const KEYS_MAX = 150
+const KEY_LENGTH_MAX = 100
+const PROFILE_BLOCK_MAX = 8_000
 const TIMEOUT_MS = 20_000
 const MAX_OUTPUT_TOKENS = 8_000
 const NEVER_FILLED = new Set(["password", "hidden", "file"])
+
+/** Case, spaces and zero-width characters in `type` can't dodge the check. */
+const blocked = (field: FieldDescriptor) =>
+  NEVER_FILLED.has(
+    (field.type ?? "")
+      .normalize("NFKC")
+      .replace(/[^\p{L}]/gu, "")
+      .toLowerCase(),
+  )
+
+/** Keys are always offered (they are what gets copied), values only for shared keys and when short. At most KEYS_MAX keys, shared ones first then the rest in a fixed order, and only the ones that fit. */
+function profileKeyLines(profile: AiProfile): { lines: string[]; keys: Set<string> } {
+  const all = Object.entries(flattenProfile(profile)).filter(([key]) => key.length <= KEY_LENGTH_MAX)
+  const entries = [...all.filter(([key]) => isShared(key)), ...all.filter(([key]) => !isShared(key))]
+  const lines = fitLines(
+    entries
+      .slice(0, KEYS_MAX)
+      .map(([key, value]) => (isShared(key) && value.length <= VALUE_PREVIEW_MAX ? `${key}: ${value}` : key)),
+    PROFILE_BLOCK_MAX,
+  )
+  return { lines, keys: new Set(entries.slice(0, lines.length).map(([key]) => key)) }
+}
 
 /** Loose on purpose: the model's answer is checked in code, so a bad key downgrades one field instead of failing the call. */
 const modelOutputSchema = z.object({
@@ -66,14 +92,18 @@ export async function mapFields(input: {
   fields: FieldDescriptor[]
   profile: AiProfile
 }): Promise<FieldMapping[]> {
-  const fillable = input.fields.filter((field) => !NEVER_FILLED.has(field.type?.toLowerCase() ?? ""))
+  const fillable = input.fields.filter((field) => !blocked(field))
   const raw = new Map<string, RawMapping>()
+  const { lines, keys } = profileKeyLines(input.profile)
 
   if (fillable.length > 0) {
-    const flat = flattenProfile(input.profile)
-    const keyList = Object.entries(flat)
-      .map(([key, value]) => `${key}: ${value.slice(0, VALUE_PREVIEW_MAX)}`)
-      .join("\n")
+    const prompt = [
+      "PROFILE_KEYS (key, with a value preview where it is short and safe to share):",
+      dataBlock("profile", lines.join("\n")),
+      "FIELDS (one JSON object per line):",
+      dataBlock("fields", fillable.map(describe).join("\n")),
+    ].join("\n")
+    assertPromptSize(SYSTEM, prompt)
     try {
       const { output } = await generateText({
         model: input.model,
@@ -83,12 +113,7 @@ export async function mapFields(input: {
         maxOutputTokens: MAX_OUTPUT_TOKENS,
         abortSignal: AbortSignal.timeout(TIMEOUT_MS),
         output: Output.object({ schema: modelOutputSchema }),
-        prompt: [
-          "PROFILE_KEYS (key: value preview):",
-          dataBlock("profile", keyList),
-          "FIELDS (one JSON object per line):",
-          dataBlock("fields", fillable.map(describe).join("\n")),
-        ].join("\n"),
+        prompt,
       })
       for (const mapping of output.mappings) raw.set(mapping.id, mapping)
     } catch (error) {
@@ -96,9 +121,8 @@ export async function mapFields(input: {
     }
   }
 
-  const keys = new Set(Object.keys(flattenProfile(input.profile)))
   return input.fields.map((field) => {
-    if (NEVER_FILLED.has(field.type?.toLowerCase() ?? "")) return skip(field.id, "this field type is never filled")
+    if (blocked(field)) return skip(field.id, "this field type is never filled")
     const mapping = raw.get(field.id)
     return mapping ? normalize(mapping, keys) : skip(field.id, "model gave no answer")
   })

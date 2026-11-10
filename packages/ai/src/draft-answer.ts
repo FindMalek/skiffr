@@ -1,12 +1,15 @@
 import { AI_ANSWER_LENGTH_DEFAULT } from "@skiffr/common/constants"
 import type { Correction, DraftAnswerResult } from "@skiffr/common/schemas"
 import { generateText, type LanguageModel } from "ai"
-import { type AiProfile, dataBlock, flattenProfile, UNTRUSTED_NOTICE } from "./data"
+import { type AiProfile, assertPromptSize, dataBlock, fitLines, flattenProfile, UNTRUSTED_NOTICE } from "./data"
 import { toAiError } from "./errors"
+import { isShared } from "./shared-keys"
 
 const TIMEOUT_MS = 30_000
 const MAX_OUTPUT_TOKENS = 3_000
 const NO_ANSWER = "NO_ANSWER"
+const VALUE_MAX = 300
+const PROFILE_BLOCK_MAX = 6_000
 
 const SYSTEM = `You draft answers to open-ended job application questions for the applicant, in first person.
 - Plain, human tone: short sentences, no buzzwords, no flattery, no bullet lists unless asked.
@@ -15,15 +18,6 @@ const SYSTEM = `You draft answers to open-ended job application questions for th
 - Corrections are earlier answers the applicant wrote or fixed. Match their voice and reuse their facts.
 - Reply with the answer text only, under the character limit given in the request.
 ${UNTRUSTED_NOTICE}`
-
-/** Contact details and pay never help an open answer, so they are not sent: identity is name and pronouns only, salary is out, and extra fields that look like contact or pay are dropped. */
-const SENSITIVE_FIELD = /e ?mail|phone|mobile|salary|compensation|password|ssn|iban|passport/
-const ALLOWED = (key: string) => {
-  if (key.startsWith("identity.")) return ["firstName", "lastName", "pronouns"].some((k) => key === `identity.${k}`)
-  if (key.startsWith("salary")) return false
-  if (key.startsWith("fields.")) return !SENSITIVE_FIELD.test(key)
-  return true
-}
 
 function prefix(text: string, max: number, granularity: "sentence" | "word" | "grapheme"): string {
   let out = ""
@@ -53,10 +47,22 @@ export async function draftAnswer(input: {
   maxLength?: number
 }): Promise<DraftAnswerResult> {
   const maxLength = input.maxLength ?? AI_ANSWER_LENGTH_DEFAULT
-  const profile = Object.entries(flattenProfile(input.profile, ALLOWED))
-    .map(([key, value]) => `${key}: ${value}`)
-    .join("\n")
+  const profile = fitLines(
+    Object.entries(flattenProfile(input.profile, isShared)).map(
+      ([key, value]) => `${key}: ${value.slice(0, VALUE_MAX)}`,
+    ),
+    PROFILE_BLOCK_MAX,
+  ).join("\n")
   const corrections = (input.corrections ?? []).map((c) => `Question: ${c.question}\nAnswer: ${c.answer}`).join("\n\n")
+
+  const prompt = [
+    `Character limit: ${maxLength}`,
+    dataBlock("profile", profile),
+    ...(corrections ? [dataBlock("corrections", corrections)] : []),
+    ...(input.jobDescription ? [dataBlock("job_description", input.jobDescription)] : []),
+    dataBlock("question", input.question),
+  ].join("\n\n")
+  assertPromptSize(SYSTEM, prompt)
 
   let text: string
   try {
@@ -67,13 +73,7 @@ export async function draftAnswer(input: {
       maxRetries: 1,
       maxOutputTokens: MAX_OUTPUT_TOKENS,
       abortSignal: AbortSignal.timeout(TIMEOUT_MS),
-      prompt: [
-        `Character limit: ${maxLength}`,
-        dataBlock("profile", profile),
-        ...(corrections ? [dataBlock("corrections", corrections)] : []),
-        ...(input.jobDescription ? [dataBlock("job_description", input.jobDescription)] : []),
-        dataBlock("question", input.question),
-      ].join("\n\n"),
+      prompt,
     }))
   } catch (error) {
     throw toAiError(error, input.model)
