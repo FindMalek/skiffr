@@ -18,6 +18,7 @@ catalog:
   "@ai-sdk/openai": 4.0.96
   "@base-ui/react": ^1.9.0
   "@biomejs/biome": 2.5.15
+  "@electric-sql/pglite": 0.5.16
   "@next/env": 16.4.3
   "@orpc/client": 1.15.7
   "@orpc/openapi": 1.15.7

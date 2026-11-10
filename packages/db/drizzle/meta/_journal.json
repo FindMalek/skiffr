@@ -12,15 +12,8 @@
     {
       "idx": 1,
       "version": "7",
-      "when": 1793140282158,
-      "tag": "0001_waitlist",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1793177534249,
-      "tag": "0002_flags",
+      "when": 1794334266980,
+      "tag": "0001_harsh_darkstar",
       "breakpoints": true
     }
   ]
