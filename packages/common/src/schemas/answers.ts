@@ -1,7 +1,9 @@
 import { z } from "zod"
-import { ANSWER_SOURCES, ANSWER_VALUE_MAX, LABEL_MAX } from "../constants"
+import { ANSWER_SOURCES, ANSWER_STATUSES, ANSWER_VALUE_MAX, LABEL_MAX } from "../constants"
 
 export const answerSourceSchema = z.enum(ANSWER_SOURCES)
+
+export const answerStatusSchema = z.enum(ANSWER_STATUSES)
 
 export const answerSchema = z.object({
   id: z.string(),
@@ -11,6 +13,8 @@ export const answerSchema = z.object({
   source: answerSourceSchema,
   timesUsed: z.number(),
   timesCorrected: z.number(),
+  status: answerStatusSchema,
+  lastCorrectedAt: z.date().nullable(),
   createdAt: z.date(),
   updatedAt: z.date(),
 })

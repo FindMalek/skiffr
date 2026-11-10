@@ -36,6 +36,8 @@ export const TOKEN_PROCEDURES: ReadonlySet<string> = new Set([
   "applications.update",
   "ai.mapFields",
   "ai.draftAnswer",
+  "learning.lookup",
+  "learning.record",
 ])
 
 /**

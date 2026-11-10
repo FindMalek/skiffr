@@ -31,7 +31,15 @@ beforeAll(async () => {
     api: { getSession: async ({ headers }: { headers: Headers }) => (headers.has("cookie") ? COOKIE_SESSION : null) },
   } as unknown as Auth
   server = createServer(
-    { db, auth, now: () => new Date(), config: { deployEnv: "test", githubAuth: false }, storage: null, model: null },
+    {
+      db,
+      auth,
+      now: () => new Date(),
+      config: { deployEnv: "test", githubAuth: false },
+      storage: null,
+      model: null,
+      embeddingModel: null,
+    },
     { publicUrl: "http://api.test" },
   )
 })

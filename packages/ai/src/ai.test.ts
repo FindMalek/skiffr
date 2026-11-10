@@ -2,9 +2,11 @@ import { expect, test } from "bun:test"
 import { profileDataSchema } from "@skiffr/common/schemas"
 import { normalizeLabel } from "@skiffr/common/utils"
 import { draftAnswer, fitLength } from "./draft-answer"
+import { embedTexts } from "./embeddings"
 import { AiInputError, AiModelError } from "./errors"
+import { isLearnableField } from "./learnable"
 import { mapFields } from "./map-fields"
-import { mockModel } from "./testing"
+import { mockEmbeddingModel, mockModel } from "./testing"
 
 const profile = {
   data: profileDataSchema.parse({
@@ -297,4 +299,40 @@ test("a type spelled with spaces or zero-width characters is still never sent", 
   const [result] = await mapFields({ model, profile, fields: [field("a", "SECRETLABEL", "pass\u200bword")] })
   expect(result).toMatchObject({ action: "skip" })
   expect(model.doGenerateCalls.length).toBe(0)
+})
+
+test("only plain input kinds with harmless labels are learnable", () => {
+  const learnable = (label: string, type?: string) => isLearnableField({ label, type })
+  expect(learnable("Notice period")).toBe(true)
+  expect(learnable("Pronouns", "Select-One")).toBe(true)
+  for (const type of ["password", "hidden", "file", "submit", " pass\u200bword "])
+    expect(learnable("Name", type)).toBe(false)
+  for (const label of [
+    "Credit card number",
+    "CVV",
+    "IBAN",
+    "SSN",
+    "National ID",
+    "Date of birth",
+    "Account password",
+    "!!!",
+  ]) {
+    expect(learnable(label)).toBe(false)
+  }
+})
+
+test("embeddings are checked for count and size before the call, and provider failures carry no text", async () => {
+  const vector = (text: string) => Array.from({ length: 1536 }, (_, i) => (i === 0 ? text.length : 0))
+  const model = mockEmbeddingModel(vector)
+  await expect(embedTexts({ model, texts: Array(101).fill("a") })).rejects.toBeInstanceOf(AiInputError)
+  await expect(embedTexts({ model, texts: ["a".repeat(301)] })).rejects.toBeInstanceOf(AiInputError)
+  expect(model.doEmbedCalls.length).toBe(0)
+  expect(await embedTexts({ model, texts: ["ab", "abc"] })).toHaveLength(2)
+
+  const short = mockEmbeddingModel(() => [1, 2, 3])
+  await expect(embedTexts({ model: short, texts: ["a"] })).rejects.toMatchObject({ kind: "invalid_output" })
+  const broken = mockEmbeddingModel(new Error("boom secret-text"))
+  const error = await embedTexts({ model: broken, texts: ["secret-text"] }).catch((e) => e)
+  expect(error).toBeInstanceOf(AiModelError)
+  expect(JSON.stringify(error) + error.message).not.toContain("secret-text")
 })

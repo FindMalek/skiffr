@@ -5,6 +5,7 @@ import { answersRouter } from "./answers"
 import { applicationsRouter } from "./applications"
 import { jobSourcesRouter } from "./job-sources"
 import { jobsRouter } from "./jobs"
+import { learningRouter } from "./learning"
 import { notesRouter } from "./notes"
 import { profileRouter } from "./profile"
 import { publicRouter } from "./public"
@@ -22,6 +23,7 @@ export const appRouter = {
   profile: profileRouter,
   answers: answersRouter,
   ai: aiRouter,
+  learning: learningRouter,
   jobs: jobsRouter,
   applications: applicationsRouter,
   jobSources: jobSourcesRouter,

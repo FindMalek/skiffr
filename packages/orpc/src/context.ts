@@ -1,7 +1,7 @@
 import type { Auth, Session } from "@skiffr/auth"
 import type { Db } from "@skiffr/db"
 import type { Storage } from "@skiffr/storage"
-import type { LanguageModel } from "ai"
+import type { EmbeddingModel, LanguageModel } from "ai"
 import { bearerSecret, type TokenAuth, TokenStoreError, tokenErrorFields, verifyToken } from "./lib/tokens"
 
 /** Everything procedures need, built once by the api at startup (and by tests with their own). */
@@ -17,6 +17,8 @@ export interface Services {
   }
   storage: Storage | null
   model: LanguageModel | null
+  /** Null without an OpenAI key: lookup then skips the similarity step and writes skip embeddings. */
+  embeddingModel: EmbeddingModel | null
 }
 
 /**

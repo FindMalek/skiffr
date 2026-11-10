@@ -1,3 +1,9 @@
+import {
+  ANSWER_STATUSES,
+  EMBEDDING_DIMENSIONS,
+  FIELD_EVENT_OUTCOMES,
+  FIELD_EVENT_SOURCES,
+} from "@skiffr/common/constants"
 import type { ProfileData, ProfileFields } from "@skiffr/common/schemas"
 import { getTableColumns } from "drizzle-orm"
 import { index, integer, jsonb, pgEnum, pgTable, text, timestamp, unique, uuid, vector } from "drizzle-orm/pg-core"
@@ -12,6 +18,10 @@ const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull(
 const updatedAt = () => timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
 
 export const answerSource = pgEnum("answer_source", ["manual", "autofill", "ai", "import"])
+/** `learned` came from the user's own corrections, `confirmed` is kept as their default, `rejected` is never filled or suggested again. */
+export const answerStatus = pgEnum("answer_status", ANSWER_STATUSES)
+export const fieldEventSource = pgEnum("field_event_source", FIELD_EVENT_SOURCES)
+export const fieldEventOutcome = pgEnum("field_event_outcome", FIELD_EVENT_OUTCOMES)
 export const jobStatus = pgEnum("job_status", ["queued", "applied", "skipped"])
 export const applicationStatus = pgEnum("application_status", [
   "applied",
@@ -31,8 +41,6 @@ export const profile = pgTable("profile", {
   updatedAt: updatedAt(),
 })
 
-export const EMBEDDING_DIMENSIONS = 1536
-
 export const answer = pgTable(
   "answer",
   {
@@ -44,11 +52,18 @@ export const answer = pgTable(
     source: answerSource("source").notNull().default("manual"),
     timesUsed: integer("times_used").notNull().default(0),
     timesCorrected: integer("times_corrected").notNull().default(0),
+    status: answerStatus("status").notNull().default("learned"),
+    lastCorrectedAt: timestamp("last_corrected_at", { withTimezone: true }),
+    /** Fingerprint of the field this value was last learned on: label, type and options. */
+    fingerprint: text("fingerprint"),
     embedding: vector("embedding", { dimensions: EMBEDDING_DIMENSIONS }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (t) => [unique("answer_user_label_unique").on(t.userId, t.normalizedLabel)],
+  (t) => [
+    unique("answer_user_label_unique").on(t.userId, t.normalizedLabel),
+    index("answer_user_fingerprint_idx").on(t.userId, t.fingerprint),
+  ],
 )
 
 const { embedding: _embedding, ...answerPublicColumns } = getTableColumns(answer)
@@ -98,6 +113,33 @@ export const application = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [index("application_user_status_idx").on(t.userId, t.status)],
+)
+
+/** What the extension filled and what the user left in the field. Both values are the user's own data: never log them. */
+export const fieldEvent = pgTable(
+  "field_event",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: userId(),
+    applicationId: uuid("application_id").references(() => application.id, { onDelete: "set null" }),
+    /** Host, or host and first path segment on multi-tenant ATS hosts. */
+    siteKey: text("site_key").notNull(),
+    fingerprint: text("fingerprint").notNull(),
+    normalizedLabel: text("normalized_label").notNull(),
+    rawLabel: text("raw_label").notNull(),
+    fieldType: text("field_type").notNull().default(""),
+    filledValue: text("filled_value").notNull(),
+    finalValue: text("final_value").notNull(),
+    source: fieldEventSource("source").notNull(),
+    outcome: fieldEventOutcome("outcome").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("field_event_user_fingerprint_idx").on(t.userId, t.fingerprint, t.createdAt.desc()),
+    index("field_event_user_label_idx").on(t.userId, t.normalizedLabel, t.createdAt.desc()),
+    index("field_event_application_idx").on(t.applicationId),
+    index("field_event_user_site_idx").on(t.userId, t.siteKey),
+  ],
 )
 
 /** A careers page the user watches for new postings. */
