@@ -1,0 +1,34 @@
+name: setup
+description: node, pnpm, optional bun, dependencies and the turbo cache
+
+inputs:
+  bun:
+    description: install bun (needed by the test tasks)
+    default: "false"
+  next-cache:
+    description: also cache the next.js build cache
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - uses: pnpm/action-setup@v6
+    - uses: actions/setup-node@v7
+      with:
+        node-version: 24
+        cache: pnpm
+    - uses: oven-sh/setup-bun@v2
+      if: inputs.bun == 'true'
+    - run: pnpm install --frozen-lockfile
+      shell: bash
+    - uses: actions/cache@v6
+      with:
+        path: .turbo
+        key: turbo-${{ runner.os }}-${{ github.job }}-${{ github.sha }}
+        restore-keys: turbo-${{ runner.os }}-${{ github.job }}-
+    - uses: actions/cache@v6
+      if: inputs.next-cache == 'true'
+      with:
+        path: apps/*/.next/cache
+        key: next-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+        restore-keys: next-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-

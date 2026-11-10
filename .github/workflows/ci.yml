@@ -5,32 +5,78 @@ on:
   push:
     branches: [main]
 
+# Branch protection should require the `ci` job only. It aggregates the others.
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
 
+env:
+  TURBO_TELEMETRY_DISABLED: "1"
+
+# pull requests only run tasks of changed packages and their dependents (--affected), main runs everything
 jobs:
-  ci:
-    name: ci
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+      - run: pnpm lint
+
+  check-types:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup
+      - run: pnpm check-types ${{ github.event_name == 'pull_request' && '--affected' || '' }}
+
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup
+        with:
+          bun: "true"
+      - run: pnpm test ${{ github.event_name == 'pull_request' && '--affected' || '' }}
+
+  build:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
         with:
-          node-version: 24
-          cache: pnpm
-      - uses: oven-sh/setup-bun@v2
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm lint
-      - run: pnpm check-types
-      - run: pnpm test
-      - name: Build
+          fetch-depth: 0
+      - uses: ./.github/actions/setup
+        with:
+          next-cache: "true"
+      # fixed dummy secrets: .env is a turbo global input, random values would miss the cache every run
+      - name: Write build env
         run: |
           cp .env.example .env
-          printf 'BETTER_AUTH_SECRET=%s\nADMIN_PASSWORD=%s\n' "$(openssl rand -base64 32)" "$(openssl rand -hex 12)" >> .env
-          pnpm build
+          printf 'BETTER_AUTH_SECRET=%s\nADMIN_PASSWORD=%s\n' "ci-build-secret-not-used-anywhere-0123456789" "ci-build-password" >> .env
+      - run: pnpm build ${{ github.event_name == 'pull_request' && '--affected' || '' }}
+
+  ci:
+    name: ci
+    if: always()
+    needs: [lint, check-types, test, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: All jobs passed
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "results: $RESULTS"
+          for r in $RESULTS; do
+            [ "$r" = "success" ] || exit 1
+          done
