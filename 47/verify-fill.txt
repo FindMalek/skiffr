@@ -1,0 +1,124 @@
+
+== react
+PASS  control: plain .value= on a react input never reaches state
+  label | status | value | reason
+  First name | filled | Ada | 
+  Email | filled | ada@example.com | 
+  Phone | filled | (555) 123-4567 | 
+  Country | filled | United States of America | 
+  Are you authorized to work here? | filled | Yes | 
+  Skills | filled | TypeScript, Rust | 
+  I agree to the terms | filled | true | 
+  Summary | filled | Engineer who likes compilers. | 
+  Department | filled | Engineering | 
+PASS  react: framework state holds every value  {"first":"Ada","email":"ada@example.com","phone":"(555) 123-4567","country":"US","auth":"Yes","skills":["TypeScript","Rust"],"agree":true,"summary":"Engineer who likes compilers.","dept":"Engineering"}
+PASS  react: no failures  {"filled":9,"unchanged":0,"failed":0,"skipped":0}
+PASS  react: form not submitted
+PASS  react: second pass changes nothing  {"filled":0,"unchanged":9,"failed":0,"skipped":0}
+PASS  react: low confidence field outlined  dashed
+PASS  react: a real keystroke is reported by watchEdits  [{"fieldId":"f_1o7rens","filledValue":"Ada","finalValue":"Adax"}]
+PASS  react: outline removed
+
+== vue
+  label | status | value | reason
+  First name | filled | Ada | 
+  Email | filled | ada@example.com | 
+  Country | filled | United States of America | 
+  Willing to relocate? | filled | No | 
+  Skills | filled | Go | 
+  I agree to the terms | filled | true | 
+  Summary | filled | Hello vue | 
+PASS  vue: framework state holds every value  {"first":"Ada","email":"ada@example.com","country":"US","auth":"No","skills":["Go"],"agree":true,"summary":"Hello vue"}
+PASS  vue: no failures  {"filled":7,"unchanged":0,"failed":0,"skipped":0}
+PASS  vue: form not submitted
+
+== static
+  label | status | value | reason
+  Personal details: Full name | filled | Ada Lovelace | 
+  Personal details: Email | filled | ada@example.com | 
+  Personal details: Phone | filled | +15551234567 | 
+  Personal details: Date of birth | filled | 1990-12-25 | 
+  Personal details: Start date | filled | 05/03/2025 | 
+  Application: Country | filled | United States | 
+  Do you need sponsorship? | filled | No | 
+  Tools you use | filled | Docker | 
+  Application: Resume | filled | ada-cv.pdf | 
+  Application: Cover note | filled | I like small teams. | 
+  Application: Nickname | filled | ada | 
+  Referral | filled | a friend | 
+  Application: Angular style field | filled | ng value | 
+PASS  static: honeypots not collected  Personal details: Full name | Personal details: Email | Personal details: Phone | Personal details: Date of birth | Personal details: Start date | Application: Country | Do you need sponsorship? | Tools you use | Application: Resume | Application: Cover note | Application: Nickname | Referral | Application: Angular style field
+PASS  static: honeypot values empty
+PASS  static: shadow root and iframe inputs filled
+PASS  static: resume attached via DataTransfer
+PASS  static: contenteditable  I like small teams.
+PASS  static: date input, unambiguous 12/25/1990  1990-12-25
+PASS  static: text date reformatted from ISO to the placeholder  05/03/2025
+PASS  static: phone kept whole  +15551234567
+PASS  static: country fuzzy USA -> United States  US
+PASS  static: radio and checkbox group
+PASS  static: angular style binding saw input and blur  {"value":"ng value","touched":true}
+PASS  static: form not submitted
+
+== honeypots (34 hidden fields, 5 legit ones)
+PASS  honeypots: none of the 34 hidden fields is collected
+PASS  honeypots: none of them received a value
+PASS  honeypots: LEGIT visible still collected  LEGIT visible | LEGIT checkbox | LEGIT framed | LEGIT shadow | LEGIT scrolled | LEGIT below the fold
+PASS  honeypots: LEGIT checkbox still collected  LEGIT visible | LEGIT checkbox | LEGIT framed | LEGIT shadow | LEGIT scrolled | LEGIT below the fold
+PASS  honeypots: LEGIT framed still collected  LEGIT visible | LEGIT checkbox | LEGIT framed | LEGIT shadow | LEGIT scrolled | LEGIT below the fold
+PASS  honeypots: LEGIT shadow still collected  LEGIT visible | LEGIT checkbox | LEGIT framed | LEGIT shadow | LEGIT scrolled | LEGIT below the fold
+PASS  honeypots: LEGIT scrolled still collected  LEGIT visible | LEGIT checkbox | LEGIT framed | LEGIT shadow | LEGIT scrolled | LEGIT below the fold
+PASS  honeypots: LEGIT below the fold still collected  LEGIT visible | LEGIT checkbox | LEGIT framed | LEGIT shadow | LEGIT scrolled | LEGIT below the fold
+
+== react-select (real library, label inside the wrapper)
+  label | status | value | reason
+  Gender | filled | Male | 
+  Country | filled | United States | 
+  Are you legally authorized to work in the United States? | filled | Yes | 
+PASS  react-select: state holds all three values  {"gender":"Male","country":"United States","authorized":"Yes"}
+PASS  react-select: all reported filled, none failed  {"filled":3,"unchanged":0,"failed":0,"skipped":0}
+PASS  react-select: the unrelated listbox was never used
+
+== resume slots
+PASS  lever: resume goes to the right slot (label has stars and joined text nodes)  [1]
+PASS  lever: stars stripped, text nodes spaced  Resume/CV ATTACH RESUME/CV | Full name | Email | First name Last name
+PASS  workable: resume goes to the right slot (three unlabeled uploads, headings only)  [0,1,0]
+PASS  ashby: resume goes to the right slot (a single unlabeled upload)  [1]
+
+== edge cases
+  label | status | value | reason
+  Applicant: Name | filled | Ada Lovelace | 
+  Reference: Name | filled | Grace Hopper | 
+  Details: Email | failed |  | value does not fit the field's max length
+  Details: Salary | failed |  | ambiguous number: group and decimal separators are unknown
+  Details: Phone | failed |  | value does not fit the field's max length
+  Details: Date of birth | failed |  | ambiguous date: send YYYY-MM-DD or pass a locale
+  Details: Country | filled | United States | 
+  Details: Region | skipped | Quebec | already has a value
+  Do you need sponsorship? | skipped | No | already has a value
+  Details: Outlined | filled | x | 
+  Details: Own editor | filled | hello own | 
+  Details: Reverting editor | failed |  | the editor did not keep the text
+PASS  section: applicant and reference Name differ  Applicant: Name,Reference: Name
+PASS  email is never cut to maxlength
+PASS  85.000,50 into a number input fails as ambiguous
+PASS  tel that does not fit maxlength fails, not cut
+PASS  03/04/2025 fails without a locale
+PASS  select prompt option is not a pre-selection  United States
+PASS  pre-selected select is protected  Quebec
+PASS  pre-checked radio is protected  no
+PASS  outline beats input#x { outline: none !important }  dashed
+PASS  beforeinput editor receives the text  hello own
+PASS  reverting editor is reported failed and left empty
+PASS  explicit locale decides date order and separators  {"date":"2025-04-03","number":"85000.50"}
+PASS  combobox ignores an unrelated visible listbox  {"status":"failed","decoyClicked":false}
+PASS  combobox picks from a menu inserted when it opens  {"status":"filled","value":"Design"}
+PASS  forged value + focus + blur from page script is not an edit  []
+PASS  a real keystroke after the forgery is reported  [{"fieldId":"f_14j3wvn","filledValue":"filled","finalValue":"forged!"}]filled,unchanged
+
+== cost on a 2000 field page
+  collected 2016 fields in 54 ms with 6050 getComputedStyle calls
+PASS  2000 fields collected
+PASS  getComputedStyle calls stay far below one per ancestor per field  6050
+
+all checks pass
