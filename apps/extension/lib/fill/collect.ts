@@ -8,19 +8,20 @@ import {
 import {
   cleanText,
   containsControl,
-  hasLayout,
   isAriaHidden,
   isDisabled,
   isElement,
   isRendered,
   parentOf,
   textOf,
-  view,
   walkElements,
 } from "./dom"
 import type { CollectedField, FieldChoice, FieldDescriptor, FieldInfo, FieldKind } from "./types"
+import { isVisible, newVisibilityCtx, type VisibilityCtx } from "./visibility"
 
-export type Ctx = { labels: Map<Node, HTMLElement[]> }
+export type Ctx = { labels: Map<Node, Map<string, HTMLElement[]>>; vis: VisibilityCtx }
+
+export const newCtx = (): Ctx => ({ labels: new Map(), vis: newVisibilityCtx() })
 
 const NOT_FILLABLE = new Set(["hidden", "password", "submit", "button", "reset", "image", "color", "range"])
 const BAIT = new Set([
@@ -47,7 +48,6 @@ const HEADING = "h1,h2,h3,h4,h5,h6,[role=heading]"
 
 const cap = (text: string | undefined, max = AI_FIELD_TEXT_MAX) => (text ? text.slice(0, max) : undefined)
 const squash = (name: string) => name.toLowerCase().replace(/[^a-z0-9]/g, "")
-const px = (value: string) => (value.endsWith("px") ? Number.parseFloat(value) : Number.NaN)
 
 function hash(text: string): string {
   let h = 0x811c9dc5
@@ -92,12 +92,16 @@ export function kindOf(el: HTMLElement): FieldKind | null {
 
 export function labelsFor(el: HTMLElement, ctx: Ctx): HTMLElement[] {
   const root = el.getRootNode()
-  let all = ctx.labels.get(root)
-  if (!all) {
-    all = Array.from((root as Document).querySelectorAll<HTMLElement>("label"))
-    ctx.labels.set(root, all)
+  let byFor = ctx.labels.get(root)
+  if (!byFor) {
+    byFor = new Map()
+    for (const label of Array.from((root as Document).querySelectorAll<HTMLElement>("label[for]"))) {
+      const id = label.getAttribute("for") as string
+      byFor.set(id, [...(byFor.get(id) ?? []), label])
+    }
+    ctx.labels.set(root, byFor)
   }
-  const found = el.id ? all.filter((label) => label.getAttribute("for") === el.id) : []
+  const found = [...(el.id ? (byFor.get(el.id) ?? []) : [])]
   const wrapping = el.closest("label") as HTMLElement | null
   if (wrapping && !found.includes(wrapping)) found.push(wrapping)
   return found
@@ -178,24 +182,47 @@ function groupLabel(members: HTMLElement[], ctx: Ctx): string {
   return ownLabel(first, ctx)
 }
 
+const SECTION_MAX = 60
+
+const SIBLINGS_MAX = 25
+
+function headingBefore(node: HTMLElement): string {
+  let scanned = 0
+  for (let sibling = node.previousElementSibling; sibling; sibling = sibling.previousElementSibling) {
+    if (++scanned > SIBLINGS_MAX) break
+    if (sibling.matches(HEADING)) return textOf(sibling)
+    if (containsControl(sibling)) continue
+    const nested = Array.from(sibling.querySelectorAll(HEADING))
+    const last = nested[nested.length - 1]
+    if (last && textOf(last)) return textOf(last)
+  }
+  return ""
+}
+
+/** Nearest legend, labelled container or heading above a control: what tells "Name" of the applicant from "Name" of a reference. */
 function sectionOf(el: HTMLElement, ctx: Ctx): string | undefined {
+  const sibling = headingBefore(el)
+  if (sibling) return sibling
   let node: HTMLElement | null = parentOf(el)
-  for (let depth = 0; node && depth < 6; depth++, node = parentOf(node)) {
-    if (node.localName === "body" || node.localName === "form") break
+  for (let depth = 0; node && depth < 8; depth++, node = parentOf(node)) {
+    if (node.localName === "body" || node.localName === "html") break
     if (node.localName === "fieldset") {
       const legend = node.querySelector(":scope > legend")
       if (legend && textOf(legend)) return textOf(legend)
     }
-    if (node.matches("section,[role=group],[role=region]") && node.localName !== "fieldset") {
-      const text = ownLabel(node, ctx)
-      if (text) return text
+    if (node.localName !== "label" && node.localName !== "form") {
+      const named = ownLabel(node, ctx)
+      if (named) return named
     }
-    for (let sibling = node.previousElementSibling; sibling; sibling = sibling.previousElementSibling) {
-      if (sibling.matches(HEADING)) return textOf(sibling) || undefined
-    }
+    const heading = headingBefore(node)
+    if (heading) return heading
+    if (node.localName === "form") break
   }
   return undefined
 }
+
+const same = (a: string, b: string) =>
+  a.toLowerCase().includes(b.toLowerCase()) || b.toLowerCase().includes(a.toLowerCase())
 
 function groupMembers(el: HTMLInputElement, kind: "radio" | "checkbox"): HTMLInputElement[] {
   if (!el.name) return [el]
@@ -206,12 +233,18 @@ function groupMembers(el: HTMLInputElement, kind: "radio" | "checkbox"): HTMLInp
   )
 }
 
+const PLACEHOLDER = /^[\s\-\u2013\u2014]*(select|choose|pick|please|none selected)\b|^[-\u2013\u2014]{2,}/i
+
+/** "Select one" with an empty, 0 or -1 value is the prompt of a select, never a choice. */
+export function isPlaceholderOption(option: HTMLOptionElement): boolean {
+  const text = (option.label || option.textContent || "").trim()
+  if (option.value === "") return option.index === 0 || option.disabled || text === "" || PLACEHOLDER.test(text)
+  return (option.index === 0 || option.disabled) && PLACEHOLDER.test(text)
+}
+
 function readOptions(select: HTMLSelectElement): FieldChoice[] {
   return Array.from(select.options)
-    .filter(
-      (option) =>
-        !(option.value === "" && (option.disabled || option.index === 0 || option.textContent?.trim() === "")),
-    )
+    .filter((option) => !isPlaceholderOption(option))
     .map((option) => ({ text: cleanText(option.label || option.textContent), value: option.value, el: option }))
 }
 
@@ -219,7 +252,12 @@ export function readListOptions(el: HTMLElement): HTMLElement[] {
   const ids = `${el.getAttribute("aria-controls") ?? ""} ${el.getAttribute("aria-owns") ?? ""}`
     .split(/\s+/)
     .filter(Boolean)
-  const lists = el.getAttribute("role") === "listbox" ? [el] : ids.map((id) => byId(el, id)).filter(isElement)
+  const active = el.getAttribute("aria-activedescendant")
+  const activeList = active ? byId(el, active)?.closest<HTMLElement>("[role=listbox]") : null
+  const lists =
+    el.getAttribute("role") === "listbox"
+      ? [el]
+      : [...ids.map((id) => byId(el, id)).filter(isElement), ...(activeList ? [activeList] : [])]
   const options = lists.flatMap((list) =>
     list.matches("[role=option]") ? [list] : Array.from(list.querySelectorAll<HTMLElement>("[role=option]")),
   )
@@ -230,29 +268,14 @@ function interactable(members: HTMLElement[], kind: FieldKind, ctx: Ctx): boolea
   const relaxed = kind === "radio" || kind === "checkbox" || kind === "file"
   return members.some((el) => {
     if (isAriaHidden(el)) return false
-    const win = view(el)
-    const shown = (node: HTMLElement, strict: boolean) => {
-      if (!isRendered(node)) return false
-      const style = win.getComputedStyle(node)
-      if (strict && style.opacity === "0") return false
-      const [w, h] = [px(style.width), px(style.height)]
-      if (w === 0 || h === 0) return false
-      if (strict && w <= 1 && h <= 1) return false
-      if (style.position === "absolute" || style.position === "fixed") {
-        if (px(style.left) <= -1000 || px(style.top) <= -1000) return false
-      }
-      if (hasLayout(node)) {
-        const rect = node.getBoundingClientRect()
-        if (rect.width === 0 || rect.height === 0) return false
-        if (rect.right + win.scrollX <= 0 || rect.bottom + win.scrollY <= 0) return false
-      }
-      return true
-    }
-    if (shown(el, !relaxed)) return true
+    if (isVisible(el, ctx.vis)) return true
+    // react-select draws a non-searchable list with a 1px transparent input; its label is the visible part
+    if (kind === "combobox" && el.localName === "input" && isRendered(el))
+      return labelsFor(el, ctx).some((label) => isVisible(label, ctx.vis))
     if (!relaxed) return false
-    if (labelsFor(el, ctx).some((label) => shown(label, false))) return true
+    if (labelsFor(el, ctx).some((label) => isVisible(label, ctx.vis))) return true
     const parent = el.parentElement
-    return kind === "file" && parent !== null && shown(parent, false)
+    return kind === "file" && parent !== null && isVisible(parent, ctx.vis)
   })
 }
 
@@ -272,7 +295,6 @@ function buildField(
     usable.some((member) => (member as HTMLInputElement).readOnly || member.getAttribute("aria-readonly") === "true")
   )
     return { field: null, members }
-  if (filter && kind === "combobox" && el.getAttribute("aria-readonly") === "true") return { field: null, members }
   if (filter && !interactable(usable, kind, ctx)) return { field: null, members }
 
   let choices: FieldChoice[] = []
@@ -295,7 +317,9 @@ function buildField(
   const found = kind === "radio" || grouped ? groupLabel(usable, ctx) : ownLabel(el, ctx)
   const title = cleanText(el.getAttribute("title"))
   const placeholder = cleanText(el.getAttribute("placeholder"))
-  const label = found || precedingText(el) || placeholder || title
+  const own = found || precedingText(el) || placeholder || title
+  const section = sectionOf(el, ctx)
+  const label = section && own && section.length <= SECTION_MAX && !same(own, section) ? `${section}: ${own}` : own
   const name = input.name || el.id || undefined
   const trapName = BAIT.has(squash(name ?? "")) || /^b_[0-9a-f]{20,}/i.test(name ?? "")
   if (filter && trapName && (el.getAttribute("tabindex") === "-1" || !label)) return { field: null, members }
@@ -313,7 +337,7 @@ function buildField(
     maxLength,
     pattern: input.getAttribute?.("pattern") ?? undefined,
     autocomplete: el.getAttribute("autocomplete") ?? undefined,
-    section: cap(sectionOf(el, ctx)),
+    section: cap(section),
   }
   const descriptor: FieldDescriptor = {
     id: "",
@@ -333,12 +357,12 @@ function buildField(
 /** The field a single control belongs to, without the visibility and trap filters. */
 export function resolveField(el: HTMLElement): CollectedField | null {
   const kind = kindOf(el)
-  return kind ? (buildField(el, kind, { labels: new Map() }, false)?.field ?? null) : null
+  return kind ? (buildField(el, kind, newCtx(), false)?.field ?? null) : null
 }
 
 /** Every control a person could fill on the page, in document order, with what the page says about it. */
 export function collectFields(root: ParentNode = document): CollectedField[] {
-  const ctx: Ctx = { labels: new Map() }
+  const ctx = newCtx()
   const fields: CollectedField[] = []
   const seen = new Set<Element>()
   const used = new Map<string, number>()
@@ -360,6 +384,12 @@ export function collectFields(root: ParentNode = document): CollectedField[] {
     field.descriptor.id = field.id
     fields.push(field)
   }
+  const seenKeys = new Map<string, CollectedField[]>()
+  for (const field of fields) {
+    const key = [field.kind, field.descriptor.label, field.descriptor.name].join("|")
+    seenKeys.set(key, [...(seenKeys.get(key) ?? []), field])
+  }
+  for (const twins of seenKeys.values()) if (twins.length > 1) for (const field of twins) field.info.ambiguous = true
   return fields
 }
 

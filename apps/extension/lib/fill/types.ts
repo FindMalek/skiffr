@@ -23,6 +23,8 @@ export type FieldInfo = {
   pattern?: string
   autocomplete?: string
   section?: string
+  /** Another field has the same kind, label and name, so a mapping for one cannot tell them apart. */
+  ambiguous?: boolean
 }
 
 export type CollectedField = {

@@ -18,22 +18,40 @@ export function frameDocument(el: Element): Document | null {
   }
 }
 
-/** Every element below `root` in document order, through open shadow roots and same-origin iframes. */
-export function* walkElements(root: ParentNode): Generator<HTMLElement> {
+const MAX_FRAME_DEPTH = 3
+const MAX_FRAMES = 20
+const MAX_ELEMENTS = 100_000
+
+type WalkBudget = { frames: number; elements: number }
+
+/** Every element below `root` in document order, through open shadow roots and same-origin iframes, within a depth and size budget. */
+export function* walkElements(
+  root: ParentNode,
+  depth = 0,
+  budget: WalkBudget = { frames: 0, elements: 0 },
+): Generator<HTMLElement> {
   if (isElement(root as Node)) yield root as HTMLElement
   for (const el of Array.from(root.querySelectorAll<HTMLElement>("*"))) {
+    if (++budget.elements > MAX_ELEMENTS) return
     yield el
-    if (el.shadowRoot) yield* walkElements(el.shadowRoot)
+    if (el.shadowRoot) yield* walkElements(el.shadowRoot, depth, budget)
     if (el.localName === "iframe" || el.localName === "frame") {
+      if (depth >= MAX_FRAME_DEPTH || budget.frames >= MAX_FRAMES) continue
       const doc = frameDocument(el)
       if (!doc) continue
+      budget.frames++
       if (doc.designMode === "on" && doc.body) yield doc.body
-      yield* walkElements(doc)
+      yield* walkElements(doc, depth + 1, budget)
     }
   }
 }
 
+type VisibilityCheck = { checkVisibility?: (options?: Record<string, boolean>) => boolean }
+
+/** Display, visibility and content-visibility only. Opacity, clipping and overlays are `isVisible` in visibility.ts. */
 export function isRendered(el: HTMLElement): boolean {
+  const native = (el as VisibilityCheck).checkVisibility
+  if (typeof native === "function") return native.call(el, { visibilityProperty: true, contentVisibilityAuto: true })
   const win = view(el)
   for (let node: HTMLElement | null = el; node; node = parentOf(node)) {
     const style = win.getComputedStyle(node)
@@ -63,23 +81,35 @@ export function isDisabled(el: HTMLElement): boolean {
   return (el as HTMLInputElement).disabled === true || el.closest("fieldset[disabled]") !== null
 }
 
+const MARKERS = "*\u2731\u2217\u2733\uff0a\u204e"
+const STAR_MARKERS = /[\u2731\u2217\u2733\uff0a\u204e]/g
+const EDGE_MARKERS = new RegExp(`^[\\s${MARKERS}]+|[\\s${MARKERS}]+$`, "g")
+
 export function cleanText(text: string | null | undefined): string {
   return (text ?? "")
-    .replace(/[\s ​]+/g, " ")
-    .replace(/^\s*\*+\s*/, "")
-    .replace(/\s*(\*+|\(\s*required\s*\)|\brequired\b)\s*$/i, "")
+    .replace(STAR_MARKERS, "")
+    .replace(/[\s\u00a0\u200b]+/g, " ")
+    .replace(EDGE_MARKERS, "")
+    .replace(/\s*(\(\s*required\s*\)|\brequired\b)\s*$/i, "")
     .trim()
 }
 
 const CONTROLS = "input,select,textarea,button,script,style,option,[role=listbox],[role=combobox],[aria-hidden=true]"
 
-/** Visible text of a node, without the form controls and decoration inside it. */
+function gatherText(node: Node, out: string[]): void {
+  for (const child of Array.from(node.childNodes)) {
+    if (child.nodeType === 3) out.push(child.textContent ?? "")
+    else if (isElement(child) && !child.matches(CONTROLS)) gatherText(child, out)
+  }
+}
+
+/** Visible text of a node, without the form controls and decoration inside it. Text nodes are joined with a space. */
 export function textOf(node: Node): string {
   if (node.nodeType === 3) return cleanText(node.textContent)
-  if (!isElement(node)) return ""
-  const clone = node.cloneNode(true) as HTMLElement
-  for (const inner of Array.from(clone.querySelectorAll(CONTROLS))) inner.remove()
-  return cleanText(clone.textContent)
+  if (!isElement(node) || node.matches(CONTROLS)) return ""
+  const out: string[] = []
+  gatherText(node, out)
+  return cleanText(out.join(" "))
 }
 
 export function containsControl(el: Element): boolean {
