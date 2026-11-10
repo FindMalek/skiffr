@@ -1,5 +1,6 @@
 import type { ProfileData, ProfileFields } from "@skiffr/common/schemas"
-import { index, integer, jsonb, pgEnum, pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core"
+import { getTableColumns } from "drizzle-orm"
+import { index, integer, jsonb, pgEnum, pgTable, text, timestamp, unique, uuid, vector } from "drizzle-orm/pg-core"
 import { user } from "./auth"
 
 const userId = () =>
@@ -30,7 +31,8 @@ export const profile = pgTable("profile", {
   updatedAt: updatedAt(),
 })
 
-// The embedding vector(1536) column is a follow-up: the local postgres image (postgres:17-alpine) has no pgvector.
+export const EMBEDDING_DIMENSIONS = 1536
+
 export const answer = pgTable(
   "answer",
   {
@@ -42,11 +44,19 @@ export const answer = pgTable(
     source: answerSource("source").notNull().default("manual"),
     timesUsed: integer("times_used").notNull().default(0),
     timesCorrected: integer("times_corrected").notNull().default(0),
+    embedding: vector("embedding", { dimensions: EMBEDDING_DIMENSIONS }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (t) => [unique("answer_user_label_unique").on(t.userId, t.normalizedLabel)],
+  (t) => [
+    unique("answer_user_label_unique").on(t.userId, t.normalizedLabel),
+    index("answer_embedding_idx").using("hnsw", t.embedding.op("vector_cosine_ops")),
+  ],
 )
+
+const { embedding: _embedding, ...answerPublicColumns } = getTableColumns(answer)
+/** Every answer column except the embedding, which never leaves the server. Use it for selects and returning. */
+export const answerColumns = answerPublicColumns
 
 export const job = pgTable(
   "job",

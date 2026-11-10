@@ -1,9 +1,11 @@
 import { beforeAll, expect, test } from "bun:test"
 import { PGlite } from "@electric-sql/pglite"
+import { vector } from "@electric-sql/pglite-pgvector"
 import { call } from "@orpc/server"
 import type { Session } from "@skiffr/auth"
-import { type Db, user } from "@skiffr/db"
+import { answer, type Db, findSimilarAnswers, user } from "@skiffr/db"
 import * as schema from "@skiffr/db/schema"
+import { eq } from "drizzle-orm"
 import { drizzle } from "drizzle-orm/pglite"
 import { migrate } from "drizzle-orm/pglite/migrator"
 import type { Context } from "../context"
@@ -13,7 +15,7 @@ const NOW = new Date("2026-11-10T10:00:00Z")
 let db: Db
 
 beforeAll(async () => {
-  const pg = drizzle(new PGlite(), { schema })
+  const pg = drizzle(new PGlite({ extensions: { vector } }), { schema })
   await migrate(pg, { migrationsFolder: new URL("../../../db/drizzle", import.meta.url).pathname })
   db = pg as unknown as Db
   const now = new Date()
@@ -207,4 +209,32 @@ test("another user's rows are not found by any update or remove", async () => {
     () => call(appRouter.jobSources.remove, { id: source.id }, asBen),
   ]
   for (const attempt of attempts) await expect(attempt()).rejects.toMatchObject({ code: "NOT_FOUND" })
+})
+
+test("a stored embedding round-trips, nearest answers come back by cosine distance and never reach the api", async () => {
+  const unit = (i: number, tilt = 0) => Array.from({ length: 1536 }, (_, d) => (d === i ? 1 : d === 1 ? tilt : 0))
+  const saved = await Promise.all(
+    ["Embed near", "Embed mid", "Embed far", "Embed none"].map((rawLabel) =>
+      call(appRouter.answers.create, { rawLabel, value: "x" }, ana()),
+    ),
+  )
+  const [near, mid, far, none] = saved.map((a) => a.id)
+  const stored = [
+    [near!, unit(0, 0.1)],
+    [mid!, unit(0, 1)],
+    [far!, unit(1)],
+  ] as const
+  for (const [id, embedding] of stored) await db.update(answer).set({ embedding }).where(eq(answer.id, id))
+
+  const [row] = await db.select({ embedding: answer.embedding }).from(answer).where(eq(answer.id, mid!))
+  expect(row?.embedding).toEqual(unit(0, 1))
+
+  const hits = await findSimilarAnswers(db, "ana", unit(0), 3)
+  expect(hits.map((h) => h.id)).toEqual([near!, mid!, far!])
+  expect(hits.map((h) => h.id)).not.toContain(none!)
+  expect(await findSimilarAnswers(db, "ben", unit(0), 3)).toEqual([])
+
+  const listed = await call(appRouter.answers.list, undefined, ana())
+  expect(listed.find((a) => a.id === near)).toBeDefined()
+  expect(listed.some((a) => "embedding" in a)).toBe(false)
 })
