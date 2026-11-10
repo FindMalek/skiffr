@@ -1,0 +1,23 @@
+@skiffr/ai:test: cache hit, replaying logs d84350f188900ffc
+@skiffr/orpc:test: cache hit, replaying logs e8b014bc6f94a1d6
+@skiffr/ai:test: 
+@skiffr/ai:test: > @skiffr/ai@0.0.0 test /Users/findmalek/Projects/skiffr-11/packages/ai
+@skiffr/ai:test: > bun test
+@skiffr/ai:test: 
+@skiffr/ai:test: bun test v1.4.2 (744846f84)
+@skiffr/ai:test: 
+@skiffr/ai:test:  6 pass
+@skiffr/ai:test:  0 fail
+@skiffr/ai:test:  11 expect() calls
+@skiffr/ai:test: Ran 6 tests across 1 file. [170.00ms]
+@skiffr/orpc:test: 
+@skiffr/orpc:test: > @skiffr/orpc@0.0.0 test /Users/findmalek/Projects/skiffr-11/packages/orpc
+@skiffr/orpc:test: > bun test --pass-with-no-tests
+@skiffr/orpc:test: 
+@skiffr/orpc:test: bun test v1.4.2 (744846f84)
+@skiffr/orpc:test: 
+@skiffr/orpc:test:  13 pass
+@skiffr/orpc:test:  0 fail
+@skiffr/orpc:test:  44 expect() calls
+@skiffr/orpc:test: Ran 13 tests across 1 file. [825.00ms]
+ Tasks:    6 successful, 6 total
