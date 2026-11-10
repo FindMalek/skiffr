@@ -32,4 +32,5 @@ export function resolveModel(id: string, keys: AiKeys): LanguageModel | null {
 
 export { type AiProfile, flattenProfile } from "./data"
 export { draftAnswer } from "./draft-answer"
+export { AiModelError } from "./errors"
 export { mapFields } from "./map-fields"
