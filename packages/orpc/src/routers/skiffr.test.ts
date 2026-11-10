@@ -40,90 +40,112 @@ function as(userId: string, now = NOW): Context {
   } as unknown as Context
 }
 
+const ana = () => ({ context: as("ana") })
+const ben = () => ({ context: as("ben") })
+
+const POSTING = {
+  url: "https://jobs.acme.dev/1",
+  canonicalId: "acme:1",
+  title: "Engineer",
+  company: "Acme",
+  source: "greenhouse",
+}
+
 test("saving an answer under a differently written label updates the same row", async () => {
-  const first = await call(
-    appRouter.answers.create,
-    { rawLabel: "Years of experience?", value: "5" },
-    { context: as("ana") },
-  )
+  const first = await call(appRouter.answers.create, { rawLabel: "Years of experience?", value: "5" }, ana())
   const second = await call(
     appRouter.answers.create,
     { rawLabel: "  years of EXPERIENCE ", value: "6", source: "ai" },
-    { context: as("ana") },
+    ana(),
   )
   expect(second.id).toBe(first.id)
   expect(second.normalizedLabel).toBe("years of experience")
   expect(second).toMatchObject({ value: "6", source: "ai", rawLabel: "years of EXPERIENCE" })
-  expect(await call(appRouter.answers.list, undefined, { context: as("ben") })).toEqual([])
+  expect(await call(appRouter.answers.list, undefined, ben())).toEqual([])
 })
 
-test("recording a use counts a fill, and a correction only when the user changed it", async () => {
-  const saved = await call(
-    appRouter.answers.create,
-    { rawLabel: "Preferred name", value: "Ana" },
-    { context: as("ana") },
+test("concurrent uses are all counted, and a correction only when the user changed the value", async () => {
+  const saved = await call(appRouter.answers.create, { rawLabel: "Preferred name", value: "Ana" }, ana())
+  await Promise.all(
+    Array.from({ length: 8 }, (_, i) => call(appRouter.answers.recordUse, { id: saved.id, corrected: i < 3 }, ana())),
   )
-  await call(appRouter.answers.recordUse, { id: saved.id }, { context: as("ana") })
-  const row = await call(appRouter.answers.recordUse, { id: saved.id, corrected: true }, { context: as("ana") })
-  expect(row).toMatchObject({ timesUsed: 2, timesCorrected: 1 })
-  await expect(call(appRouter.answers.recordUse, { id: saved.id }, { context: as("ben") })).rejects.toMatchObject({
-    code: "NOT_FOUND",
-  })
+  const [row] = (await call(appRouter.answers.list, undefined, ana())).filter((a) => a.id === saved.id)
+  expect(row).toMatchObject({ timesUsed: 8, timesCorrected: 3 })
 })
 
 test("a profile is one per user, and extra fields are stored under normalized labels", async () => {
-  await call(appRouter.profile.upsert, { data: { identity: { firstName: "Ben" } } }, { context: as("ben") })
+  await call(appRouter.profile.upsert, { data: { identity: { firstName: "Ben" } } }, ben())
   const row = await call(
     appRouter.profile.upsert,
     { data: { salary: { currency: "EUR", min: 60000, period: "year" } }, fields: { "Notice Period!": "1 month" } },
-    { context: as("ben") },
+    ben(),
   )
   expect(row.data.salary.min).toBe(60000)
   expect(row.data.identity).toEqual({})
   expect(row.fields).toEqual({ "notice period": "1 month" })
-  expect(await call(appRouter.profile.get, undefined, { context: as("ana") })).toBeNull()
+  expect(await call(appRouter.profile.get, undefined, ana())).toBeNull()
 })
 
-test("queueing the same posting twice returns the saved job, and other users can't touch it", async () => {
-  const input = {
-    url: "https://jobs.acme.dev/1",
-    canonicalId: "acme:1",
-    title: "Engineer",
-    company: "Acme",
-    source: "greenhouse",
-  }
-  const job = await call(appRouter.jobs.create, input, { context: as("ana") })
-  const again = await call(appRouter.jobs.create, { ...input, title: "Changed" }, { context: as("ana") })
-  expect(again).toMatchObject({ id: job.id, title: "Engineer", status: "queued" })
-  await expect(
-    call(appRouter.jobs.update, { id: job.id, status: "skipped" }, { context: as("ben") }),
-  ).rejects.toMatchObject({
-    code: "NOT_FOUND",
+test("profile fields with an empty or colliding normalized label are rejected", async () => {
+  const upsert = (fields: Record<string, string>) => call(appRouter.profile.upsert, { fields }, ana())
+  await expect(upsert({ "!!!": "x" })).rejects.toMatchObject({ code: "BAD_REQUEST" })
+  await expect(upsert({ "Notice period": "1", "notice  PERIOD?": "2" })).rejects.toMatchObject({ code: "BAD_REQUEST" })
+})
+
+test("urls that aren't http(s) are rejected on jobs, sources and profile links", async () => {
+  const bad = "javascript:alert(1)"
+  await expect(call(appRouter.jobs.create, { ...POSTING, url: bad }, ana())).rejects.toMatchObject({
+    code: "BAD_REQUEST",
   })
-  expect(await call(appRouter.jobs.list, { status: "skipped" }, { context: as("ana") })).toEqual([])
+  await expect(call(appRouter.jobSources.create, { url: "file:///etc/passwd" }, ana())).rejects.toMatchObject({
+    code: "BAD_REQUEST",
+  })
+  await expect(call(appRouter.profile.upsert, { data: { links: { github: bad } } }, ana())).rejects.toMatchObject({
+    code: "BAD_REQUEST",
+  })
+})
+
+test("queueing the same posting twice returns the saved job", async () => {
+  const job = await call(appRouter.jobs.create, POSTING, ana())
+  const again = await call(appRouter.jobs.create, { ...POSTING, title: "Changed" }, ana())
+  expect(again).toMatchObject({ id: job.id, title: "Engineer", status: "queued" })
+  expect(await call(appRouter.jobs.list, { status: "skipped" }, ana())).toEqual([])
+})
+
+test("lists are paged and capped", async () => {
+  await call(appRouter.jobs.create, { ...POSTING, canonicalId: "acme:page-1", url: "https://jobs.acme.dev/p1" }, ben())
+  await call(appRouter.jobs.create, { ...POSTING, canonicalId: "acme:page-2", url: "https://jobs.acme.dev/p2" }, ben())
+  expect(await call(appRouter.jobs.list, { limit: 1 }, ben())).toHaveLength(1)
+  expect(await call(appRouter.jobs.list, { limit: 1, offset: 1 }, ben())).toHaveLength(1)
+  await expect(call(appRouter.jobs.list, { limit: 501 }, ben())).rejects.toMatchObject({ code: "BAD_REQUEST" })
+})
+
+test("jobs can be queued or skipped by hand but never set to applied", async () => {
+  const job = await call(
+    appRouter.jobs.create,
+    { ...POSTING, canonicalId: "acme:status", url: "https://jobs.acme.dev/s" },
+    ana(),
+  )
+  expect((await call(appRouter.jobs.update, { id: job.id, status: "skipped" }, ana())).status).toBe("skipped")
+  await expect(call(appRouter.jobs.update, { id: job.id, status: "applied" as "queued" }, ana())).rejects.toMatchObject(
+    {
+      code: "BAD_REQUEST",
+    },
+  )
 })
 
 test("applying marks the job applied, and each funnel stage is stamped once", async () => {
   const job = await call(
     appRouter.jobs.create,
-    { url: "https://jobs.acme.dev/2", canonicalId: "acme:2", title: "Designer", company: "Acme", source: "lever" },
-    { context: as("ana") },
+    { ...POSTING, canonicalId: "acme:2", url: "https://jobs.acme.dev/2", title: "Designer" },
+    ana(),
   )
-  const app = await call(
-    appRouter.applications.create,
-    { jobId: job.id, ats: "lever", matchScore: 82 },
-    { context: as("ana") },
-  )
+  const app = await call(appRouter.applications.create, { jobId: job.id, ats: "lever", matchScore: 82 }, ana())
   expect(app).toMatchObject({ status: "applied", matchScore: 82, respondedAt: null })
-  const [applied] = await call(appRouter.jobs.list, { status: "applied" }, { context: as("ana") })
-  expect(applied?.id).toBe(job.id)
+  expect((await call(appRouter.jobs.list, { status: "applied" }, ana())).map((j) => j.id)).toContain(job.id)
 
   const later = new Date("2026-11-12T10:00:00Z")
-  const responded = await call(
-    appRouter.applications.update,
-    { id: app.id, status: "responded" },
-    { context: as("ana") },
-  )
+  const responded = await call(appRouter.applications.update, { id: app.id, status: "responded" }, ana())
   const again = await call(
     appRouter.applications.update,
     { id: app.id, status: "responded" },
@@ -132,23 +154,57 @@ test("applying marks the job applied, and each funnel stage is stamped once", as
   expect(responded.respondedAt).toEqual(NOW)
   expect(again.respondedAt).toEqual(NOW)
 
-  await expect(
-    call(appRouter.applications.create, { jobId: job.id, ats: "lever" }, { context: as("ana") }),
-  ).rejects.toMatchObject({
+  await expect(call(appRouter.applications.create, { jobId: job.id, ats: "lever" }, ana())).rejects.toMatchObject({
     code: "CONFLICT",
   })
-  await expect(
-    call(appRouter.applications.create, { jobId: job.id, ats: "lever" }, { context: as("ben") }),
-  ).rejects.toMatchObject({
+  await expect(call(appRouter.applications.create, { jobId: job.id, ats: "lever" }, ben())).rejects.toMatchObject({
     code: "NOT_FOUND",
+  })
+  await expect(call(appRouter.jobs.update, { id: job.id, status: "skipped" }, ana())).rejects.toMatchObject({
+    code: "CONFLICT",
   })
 })
 
-test("a watched careers page is saved once and stamped when checked", async () => {
-  const url = "https://acme.dev/careers"
-  const source = await call(appRouter.jobSources.create, { url }, { context: as("ana") })
-  expect(source.lastCheckedAt).toBeNull()
-  expect((await call(appRouter.jobSources.create, { url }, { context: as("ana") })).id).toBe(source.id)
-  const checked = await call(appRouter.jobSources.markChecked, { id: source.id }, { context: as("ana") })
+test("removing an application puts its job back in the queue", async () => {
+  const job = await call(
+    appRouter.jobs.create,
+    { ...POSTING, canonicalId: "acme:3", url: "https://jobs.acme.dev/3" },
+    ana(),
+  )
+  const app = await call(appRouter.applications.create, { jobId: job.id, ats: "lever" }, ana())
+  await call(appRouter.applications.remove, { id: app.id }, ana())
+  const [back] = (await call(appRouter.jobs.list, {}, ana())).filter((j) => j.id === job.id)
+  expect(back?.status).toBe("queued")
+})
+
+test("a watched careers page is saved once however the url is written, and stamped when checked", async () => {
+  const source = await call(appRouter.jobSources.create, { url: "https://Acme.dev/careers/#open" }, ana())
+  expect(source).toMatchObject({ url: "https://acme.dev/careers", lastCheckedAt: null })
+  expect((await call(appRouter.jobSources.create, { url: "https://acme.dev/careers" }, ana())).id).toBe(source.id)
+  const checked = await call(appRouter.jobSources.markChecked, { id: source.id }, ana())
   expect(checked.lastCheckedAt).toEqual(NOW)
+})
+
+test("another user's rows are not found by any update or remove", async () => {
+  const answer = await call(appRouter.answers.create, { rawLabel: "Own answer", value: "x" }, ana())
+  const job = await call(
+    appRouter.jobs.create,
+    { ...POSTING, canonicalId: "acme:own", url: "https://jobs.acme.dev/own" },
+    ana(),
+  )
+  const application = await call(appRouter.applications.create, { jobId: job.id, ats: "lever" }, ana())
+  const source = await call(appRouter.jobSources.create, { url: "https://own.dev/careers" }, ana())
+  const asBen = ben()
+  const attempts: Array<() => Promise<unknown>> = [
+    () => call(appRouter.answers.update, { id: answer.id, value: "y" }, asBen),
+    () => call(appRouter.answers.recordUse, { id: answer.id }, asBen),
+    () => call(appRouter.answers.remove, { id: answer.id }, asBen),
+    () => call(appRouter.jobs.update, { id: job.id, status: "skipped" }, asBen),
+    () => call(appRouter.jobs.remove, { id: job.id }, asBen),
+    () => call(appRouter.applications.update, { id: application.id, status: "offer" }, asBen),
+    () => call(appRouter.applications.remove, { id: application.id }, asBen),
+    () => call(appRouter.jobSources.markChecked, { id: source.id }, asBen),
+    () => call(appRouter.jobSources.remove, { id: source.id }, asBen),
+  ]
+  for (const attempt of attempts) await expect(attempt()).rejects.toMatchObject({ code: "NOT_FOUND" })
 })

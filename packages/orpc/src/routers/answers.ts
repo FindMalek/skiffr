@@ -5,21 +5,28 @@ import {
   answerUpdateSchema,
   answerUsageSchema,
   okSchema,
+  pageInputSchema,
 } from "@skiffr/common/schemas"
 import { normalizeLabel } from "@skiffr/common/utils"
 import { answer } from "@skiffr/db"
-import { and, asc, eq, sql } from "drizzle-orm"
+import { asc, eq, sql } from "drizzle-orm"
 import { z } from "zod"
+import { mine, orNotFound } from "../lib/owned"
 import { protectedProcedure } from "../procedures"
-
-const mine = (userId: string, id: string) => and(eq(answer.userId, userId), eq(answer.id, id))
 
 export const answersRouter = {
   list: protectedProcedure
     .route({ method: "GET", path: "/answers", summary: "The signed-in user's answer bank", tags: ["answers"] })
+    .input(pageInputSchema)
     .output(z.array(answerSchema))
-    .handler(({ context }) =>
-      context.db.select().from(answer).where(eq(answer.userId, context.user.id)).orderBy(asc(answer.normalizedLabel)),
+    .handler(({ context, input }) =>
+      context.db
+        .select()
+        .from(answer)
+        .where(eq(answer.userId, context.user.id))
+        .orderBy(asc(answer.normalizedLabel), asc(answer.id))
+        .limit(input.limit)
+        .offset(input.offset),
     ),
 
   create: protectedProcedure
@@ -53,10 +60,9 @@ export const answersRouter = {
       const [row] = await context.db
         .update(answer)
         .set({ ...patch, updatedAt: context.now() })
-        .where(mine(context.user.id, id))
+        .where(mine(answer, context.user.id, id))
         .returning()
-      if (!row) throw new ORPCError("NOT_FOUND", { message: "Answer not found." })
-      return row
+      return orNotFound(row, "Answer")
     }),
 
   recordUse: protectedProcedure
@@ -76,10 +82,9 @@ export const answersRouter = {
           timesCorrected: input.corrected ? sql`${answer.timesCorrected} + 1` : answer.timesCorrected,
           updatedAt: context.now(),
         })
-        .where(mine(context.user.id, input.id))
+        .where(mine(answer, context.user.id, input.id))
         .returning()
-      if (!row) throw new ORPCError("NOT_FOUND", { message: "Answer not found." })
-      return row
+      return orNotFound(row, "Answer")
     }),
 
   remove: protectedProcedure
@@ -87,7 +92,11 @@ export const answersRouter = {
     .input(z.object({ id: z.uuid() }))
     .output(okSchema)
     .handler(async ({ context, input }) => {
-      await context.db.delete(answer).where(mine(context.user.id, input.id))
+      const [row] = await context.db
+        .delete(answer)
+        .where(mine(answer, context.user.id, input.id))
+        .returning({ id: answer.id })
+      orNotFound(row, "Answer")
       return { ok: true as const }
     }),
 }

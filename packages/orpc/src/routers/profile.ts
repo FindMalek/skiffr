@@ -1,9 +1,25 @@
-import { applicantProfileInputSchema, applicantProfileSchema } from "@skiffr/common/schemas"
+import { ORPCError } from "@orpc/server"
+import {
+  applicantProfileInputSchema,
+  applicantProfileSchema,
+  okSchema,
+  type ProfileFields,
+} from "@skiffr/common/schemas"
 import { normalizeLabel } from "@skiffr/common/utils"
 import { profile } from "@skiffr/db"
 import { eq } from "drizzle-orm"
-import { z } from "zod"
 import { protectedProcedure } from "../procedures"
+
+function normalizeFields(fields: ProfileFields): ProfileFields {
+  const normalized: ProfileFields = {}
+  for (const [label, value] of Object.entries(fields)) {
+    const key = normalizeLabel(label)
+    if (!key) throw new ORPCError("BAD_REQUEST", { message: `The label "${label}" has no letters or digits.` })
+    if (key in normalized) throw new ORPCError("BAD_REQUEST", { message: `Two fields share the label "${key}".` })
+    normalized[key] = value
+  }
+  return normalized
+}
 
 export const profileRouter = {
   get: protectedProcedure
@@ -24,10 +40,7 @@ export const profileRouter = {
     .input(applicantProfileInputSchema)
     .output(applicantProfileSchema)
     .handler(async ({ context, input }) => {
-      const fields = Object.fromEntries(
-        Object.entries(input.fields).map(([label, value]) => [normalizeLabel(label), value]),
-      )
-      const values = { data: input.data, fields, updatedAt: context.now() }
+      const values = { data: input.data, fields: normalizeFields(input.fields), updatedAt: context.now() }
       const [row] = await context.db
         .insert(profile)
         .values({ ...values, userId: context.user.id })
@@ -38,7 +51,7 @@ export const profileRouter = {
 
   remove: protectedProcedure
     .route({ method: "DELETE", path: "/profile", summary: "Delete your application profile", tags: ["profile"] })
-    .output(z.object({ ok: z.literal(true) }))
+    .output(okSchema)
     .handler(async ({ context }) => {
       await context.db.delete(profile).where(eq(profile.userId, context.user.id))
       return { ok: true as const }

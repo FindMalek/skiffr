@@ -1,11 +1,10 @@
 import { ORPCError } from "@orpc/server"
 import { jobInputSchema, jobListSchema, jobSchema, jobUpdateSchema, okSchema } from "@skiffr/common/schemas"
 import { job } from "@skiffr/db"
-import { and, desc, eq } from "drizzle-orm"
+import { and, desc, eq, ne } from "drizzle-orm"
 import { z } from "zod"
+import { mine, orNotFound } from "../lib/owned"
 import { protectedProcedure } from "../procedures"
-
-const mine = (userId: string, id: string) => and(eq(job.userId, userId), eq(job.id, id))
 
 export const jobsRouter = {
   list: protectedProcedure
@@ -17,7 +16,9 @@ export const jobsRouter = {
         .select()
         .from(job)
         .where(and(eq(job.userId, context.user.id), input.status ? eq(job.status, input.status) : undefined))
-        .orderBy(desc(job.queuedAt)),
+        .orderBy(desc(job.queuedAt), desc(job.id))
+        .limit(input.limit)
+        .offset(input.offset),
     ),
 
   create: protectedProcedure
@@ -44,17 +45,27 @@ export const jobsRouter = {
     }),
 
   update: protectedProcedure
-    .route({ method: "PATCH", path: "/jobs/{id}", summary: "Change a job's status", tags: ["jobs"] })
+    .route({
+      method: "PATCH",
+      path: "/jobs/{id}",
+      summary: "Queue or skip a job. Applied is only set by recording an application",
+      tags: ["jobs"],
+    })
     .input(jobUpdateSchema)
     .output(jobSchema)
     .handler(async ({ context, input: { id, ...patch } }) => {
       const [row] = await context.db
         .update(job)
         .set({ ...patch, updatedAt: context.now() })
-        .where(mine(context.user.id, id))
+        .where(and(mine(job, context.user.id, id), ne(job.status, "applied")))
         .returning()
-      if (!row) throw new ORPCError("NOT_FOUND", { message: "Job not found." })
-      return row
+      if (row) return row
+      const [existing] = await context.db
+        .select({ id: job.id })
+        .from(job)
+        .where(mine(job, context.user.id, id))
+      if (existing) throw new ORPCError("CONFLICT", { message: "The job has an application: remove it first." })
+      throw new ORPCError("NOT_FOUND", { message: "Job not found." })
     }),
 
   remove: protectedProcedure
@@ -62,7 +73,11 @@ export const jobsRouter = {
     .input(z.object({ id: z.uuid() }))
     .output(okSchema)
     .handler(async ({ context, input }) => {
-      await context.db.delete(job).where(mine(context.user.id, input.id))
+      const [row] = await context.db
+        .delete(job)
+        .where(mine(job, context.user.id, input.id))
+        .returning({ id: job.id })
+      orNotFound(row, "Job")
       return { ok: true as const }
     }),
 }

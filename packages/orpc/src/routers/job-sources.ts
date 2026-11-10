@@ -1,11 +1,11 @@
-import { ORPCError } from "@orpc/server"
-import { jobSourceInputSchema, jobSourceSchema, okSchema } from "@skiffr/common/schemas"
+import { jobSourceInputSchema, jobSourceSchema, okSchema, pageInputSchema } from "@skiffr/common/schemas"
+import { normalizeUrl } from "@skiffr/common/utils"
 import { jobSource } from "@skiffr/db"
 import { and, asc, eq } from "drizzle-orm"
 import { z } from "zod"
+import { mine, orNotFound } from "../lib/owned"
 import { protectedProcedure } from "../procedures"
 
-const mine = (userId: string, id: string) => and(eq(jobSource.userId, userId), eq(jobSource.id, id))
 const idSchema = z.object({ id: z.uuid() })
 
 export const jobSourcesRouter = {
@@ -16,13 +16,16 @@ export const jobSourcesRouter = {
       summary: "The careers pages the user watches",
       tags: ["job-sources"],
     })
+    .input(pageInputSchema)
     .output(z.array(jobSourceSchema))
-    .handler(({ context }) =>
+    .handler(({ context, input }) =>
       context.db
         .select()
         .from(jobSource)
         .where(eq(jobSource.userId, context.user.id))
-        .orderBy(asc(jobSource.createdAt)),
+        .orderBy(asc(jobSource.createdAt), asc(jobSource.id))
+        .limit(input.limit)
+        .offset(input.offset),
     ),
 
   create: protectedProcedure
@@ -30,16 +33,17 @@ export const jobSourcesRouter = {
     .input(jobSourceInputSchema)
     .output(jobSourceSchema)
     .handler(async ({ context, input }) => {
+      const url = normalizeUrl(input.url)
       const [created] = await context.db
         .insert(jobSource)
-        .values({ ...input, userId: context.user.id })
+        .values({ url, userId: context.user.id })
         .onConflictDoNothing()
         .returning()
       if (created) return created
       const [existing] = await context.db
         .select()
         .from(jobSource)
-        .where(and(eq(jobSource.userId, context.user.id), eq(jobSource.url, input.url)))
+        .where(and(eq(jobSource.userId, context.user.id), eq(jobSource.url, url)))
       return existing!
     }),
 
@@ -56,10 +60,9 @@ export const jobSourcesRouter = {
       const [row] = await context.db
         .update(jobSource)
         .set({ lastCheckedAt: context.now() })
-        .where(mine(context.user.id, input.id))
+        .where(mine(jobSource, context.user.id, input.id))
         .returning()
-      if (!row) throw new ORPCError("NOT_FOUND", { message: "Source not found." })
-      return row
+      return orNotFound(row, "Source")
     }),
 
   remove: protectedProcedure
@@ -72,7 +75,11 @@ export const jobSourcesRouter = {
     .input(idSchema)
     .output(okSchema)
     .handler(async ({ context, input }) => {
-      await context.db.delete(jobSource).where(mine(context.user.id, input.id))
+      const [row] = await context.db
+        .delete(jobSource)
+        .where(mine(jobSource, context.user.id, input.id))
+        .returning({ id: jobSource.id })
+      orNotFound(row, "Source")
       return { ok: true as const }
     }),
 }
