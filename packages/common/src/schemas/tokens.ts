@@ -13,7 +13,12 @@ export const apiTokenSchema = z.object({
 })
 
 export const apiTokenInputSchema = z.object({
-  name: z.string().trim().min(1).max(TOKEN_NAME_MAX),
+  name: z
+    .string()
+    .trim()
+    .min(1)
+    .max(TOKEN_NAME_MAX)
+    .regex(/^\P{C}+$/u, "The name can't contain control or hidden characters."),
   /** `null` never expires. */
   expiresInDays: z.number().int().min(1).max(TOKEN_EXPIRY_DAYS_MAX).nullable(),
 })

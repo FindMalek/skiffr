@@ -462,3 +462,177 @@ test("a user can only revoke their own token", async () => {
   const { id } = await mint(ana)
   await expect(call(appRouter.tokens.revoke, { id }, ben())).rejects.toMatchObject({ code: "NOT_FOUND" })
 })
+
+async function addUser(id: string, extra: Partial<typeof user.$inferInsert> = {}) {
+  const now = new Date()
+  await db
+    .insert(user)
+    .values({ id, name: id, email: `${id}@test.dev`, emailVerified: true, createdAt: now, updatedAt: now, ...extra })
+  return () => ({ context: as(id) })
+}
+
+test("a token name can't hold control or hidden characters", async () => {
+  const owner = await addUser("names")
+  for (const name of ["a\u0000b", "a​b", "‮evil", "two\nlines", "a\ud800b"]) {
+    const error = await call(appRouter.tokens.create, { name, expiresInDays: 30 }, owner()).catch((e) => e)
+    expect(error, JSON.stringify(name)).toMatchObject({ code: "BAD_REQUEST" })
+  }
+  const ok = await call(appRouter.tokens.create, { name: "  Café 💻  ", expiresInDays: 30 }, owner())
+  expect(ok.name).toBe("Café 💻")
+})
+
+test("a user holds at most 20 active tokens, revoked and expired ones don't count", async () => {
+  const owner = await addUser("capped")
+  const ids: string[] = []
+  for (let i = 0; i < 20; i++) ids.push((await mint(owner)).id)
+  const error = await mint(owner).catch((e) => e)
+  expect(error).toMatchObject({ code: "BAD_REQUEST", message: expect.stringContaining("20 active tokens") })
+
+  await call(appRouter.tokens.revoke, { id: ids[0]! }, owner())
+  await mint(owner)
+  await expect(mint(owner)).rejects.toMatchObject({ code: "BAD_REQUEST" })
+
+  const later = { context: as("capped", new Date(NOW.getTime() + 60 * DAY)) }
+  await mint(() => later, 1)
+})
+
+const day = (n: number) => new Date(NOW.getTime() - n * DAY)
+const tokenRow = (userId: string, i: number, extra: Partial<typeof apiToken.$inferInsert>) => ({
+  userId,
+  name: `t${i}`,
+  prefix: "skp_xxxx",
+  last4: "abcd",
+  tokenHash: `hash-${userId}-${i}`,
+  createdAt: day(1),
+  ...extra,
+})
+
+test("the list drops tokens that were revoked or expired more than 30 days ago", async () => {
+  const owner = await addUser("window")
+  await db
+    .insert(apiToken)
+    .values([
+      tokenRow("window", 1, { revokedAt: day(2) }),
+      tokenRow("window", 2, { expiresAt: day(3) }),
+      tokenRow("window", 3, { revokedAt: day(31), createdAt: day(40) }),
+      tokenRow("window", 4, { expiresAt: day(31), createdAt: day(40) }),
+    ])
+  const live = await mint(owner)
+  const names = (await call(appRouter.tokens.list, undefined, owner())).map((t) => t.name)
+  expect(names.sort()).toEqual(["laptop", "t1", "t2"])
+  expect(live.name).toBe("laptop")
+})
+
+test("the list holds 100 tokens at most and active ones come first, so a live token is never cut", async () => {
+  const owner = await addUser("lister")
+  // Older than every revoked row below, so only "active first" keeps it inside the 100.
+  const old = await mint(() => ({ context: { ...as("lister", day(10)), now: () => day(10) } }), 90)
+  await db.insert(apiToken).values(Array.from({ length: 105 }, (_, i) => tokenRow("lister", i, { revokedAt: day(2) })))
+  const listed = await call(appRouter.tokens.list, undefined, owner())
+  expect(listed).toHaveLength(100)
+  expect(listed[0]?.id).toBe(old.id)
+})
+
+test("revoking twice is fine, and someone else's token stays not found", async () => {
+  const { id } = await mint(ana)
+  await call(appRouter.tokens.revoke, { id }, ana())
+  const [first] = await db.select().from(apiToken).where(eq(apiToken.id, id))
+  await expect(call(appRouter.tokens.revoke, { id }, ana())).resolves.toEqual({ ok: true })
+  const [second] = await db.select().from(apiToken).where(eq(apiToken.id, id))
+  expect(second?.revokedAt).toEqual(first?.revokedAt)
+  await expect(call(appRouter.tokens.revoke, { id }, ben())).rejects.toMatchObject({ code: "NOT_FOUND" })
+})
+
+test("a token dies with its owner, and a ban only blocks it until the ban expires", async () => {
+  const banned = await addUser("banned", { banned: true, banExpires: new Date(NOW.getTime() + DAY) })
+  const gone = await addUser("gone")
+  const { secret: bannedSecret } = await mint(banned)
+  const { secret: goneSecret } = await mint(gone)
+
+  const whoami = async (secret: string, now = NOW) => (await asToken(secret, now)).extension.whoami().catch((e) => e)
+  expect(await whoami(bannedSecret)).toMatchObject({ code: "UNAUTHORIZED", status: 401 })
+  expect(await whoami(bannedSecret, new Date(NOW.getTime() + 2 * DAY))).toMatchObject({ user: { name: "banned" } })
+
+  await db.update(user).set({ banExpires: null }).where(eq(user.id, "banned"))
+  expect(await whoami(bannedSecret, new Date(NOW.getTime() + 2 * DAY))).toMatchObject({ code: "UNAUTHORIZED" })
+
+  await db.delete(user).where(eq(user.id, "gone"))
+  expect(await whoami(goneSecret)).toMatchObject({ code: "UNAUTHORIZED", status: 401 })
+})
+
+test("only a well formed bearer header is a token, anything odd is the same 401", async () => {
+  const { secret } = await mint(ana)
+  const whoami = async (headers: Headers) =>
+    createRouterClient(appRouter, { context: await createContext({ db, now: () => NOW } as never, headers) })
+      .extension.whoami()
+      .catch((e: unknown) => e)
+
+  expect(await whoami(new Headers({ authorization: `bearer ${secret}` }))).toMatchObject({ user: { name: "ana" } })
+  expect(await whoami(new Headers({ authorization: `Bearer    ${secret}  ` }))).toMatchObject({ user: { name: "ana" } })
+
+  const twice = new Headers()
+  twice.append("authorization", `Bearer ${secret}`)
+  twice.append("authorization", `Bearer ${secret}`)
+  for (const headers of [
+    twice,
+    new Headers({ authorization: "Bearer" }),
+    new Headers({ authorization: `Bearer ${secret} x` }),
+  ]) {
+    expect(await whoami(headers)).toMatchObject({ code: "UNAUTHORIZED", status: 401, message: "Unauthorized." })
+  }
+})
+
+/** A drizzle failure as the driver gives it: the statement and every param, including the token hash. */
+function failingInsert(): Error {
+  const driver = Object.assign(new Error("invalid byte sequence for encoding UTF8: 0x00"), { code: "22021" })
+  return Object.assign(
+    new Error(
+      "Failed query: insert into api_token (token_hash, prefix, last4) params: LEAKED-HASH,LEAKED-PREFIX,LEAKED-4",
+    ),
+    { params: ["LEAKED-HASH", "LEAKED-PREFIX", "LEAKED-4"], cause: driver },
+  )
+}
+
+function breakOn(method: "insert" | "select"): Db {
+  return new Proxy(db, {
+    get: (target, key, receiver) =>
+      key === method
+        ? () => {
+            throw failingInsert()
+          }
+        : Reflect.get(target, key, receiver),
+  })
+}
+
+test("a database error in a token path is logged as name and code only, never its params", async () => {
+  const logged = spyOn(console, "error").mockImplementation(() => {})
+  try {
+    const create = await call(
+      appRouter.tokens.create,
+      { name: "x", expiresInDays: 30 },
+      {
+        context: { ...as("ana"), db: breakOn("insert") },
+      },
+    ).catch((e) => e)
+    expect(create).toMatchObject({ name: "TokenStoreError", code: "22021" })
+
+    const { secret } = await mint(ana)
+    const context = await createContext(
+      { db: breakOn("select"), now: () => NOW } as never,
+      new Headers({ authorization: `Bearer ${secret}` }),
+    )
+    // A db failure is an outage (503), not a rejected token (401).
+    const verify = await createRouterClient(appRouter, { context })
+      .extension.whoami()
+      .catch((e: Error) => e)
+    expect(verify).toMatchObject({ code: "SERVICE_UNAVAILABLE", status: 503 })
+
+    const lines = inspect(logged.mock.calls, { depth: 10 })
+    expect(lines).toContain("22021")
+    for (const secretText of ["LEAKED", secret, hashToken(secret), secret.slice(0, 8), "token_hash"]) {
+      expect(lines + create.message + String(verify)).not.toContain(secretText)
+    }
+  } finally {
+    logged.mockRestore()
+  }
+})

@@ -45,6 +45,9 @@ export const TOKEN_PROCEDURES: ReadonlySet<string> = new Set([
 const requireSession = o.middleware(async ({ context, path, next }) => {
   let identity: { user: Session["user"]; token: TokenAuth | null }
   if (context.bearer) {
+    if (context.tokenUnavailable) {
+      throw new ORPCError("SERVICE_UNAVAILABLE", { message: "The API is unavailable, try again." })
+    }
     if (!context.token) throw new ORPCError("UNAUTHORIZED", { message: "Unauthorized." })
     if (!TOKEN_PROCEDURES.has(path.join("."))) {
       throw new ORPCError("FORBIDDEN", { message: "This token can't call that." })

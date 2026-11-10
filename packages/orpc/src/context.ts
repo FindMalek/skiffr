@@ -2,7 +2,7 @@ import type { Auth, Session } from "@skiffr/auth"
 import type { Db } from "@skiffr/db"
 import type { Storage } from "@skiffr/storage"
 import type { LanguageModel } from "ai"
-import { bearerSecret, type TokenAuth, verifyToken } from "./lib/tokens"
+import { bearerSecret, type TokenAuth, TokenStoreError, verifyToken } from "./lib/tokens"
 
 /** Everything procedures need, built once by the api at startup (and by tests with their own). */
 export interface Services {
@@ -19,15 +19,31 @@ export interface Services {
   model: LanguageModel | null
 }
 
-/** `bearer` is set whenever the request carries an `Authorization: Bearer` header: then only the token counts (`token` is null when it is not valid) and cookies are ignored. */
-export type Context = Services & { headers: Headers; session: Session | null; bearer: boolean; token: TokenAuth | null }
+/**
+ * `bearer` is set whenever the request carries an `Authorization: Bearer` header: then only the token counts (`token` is
+ * null when it is not valid) and cookies are ignored. `tokenUnavailable` means the token could not be checked at all.
+ */
+export type Context = Services & {
+  headers: Headers
+  session: Session | null
+  bearer: boolean
+  token: TokenAuth | null
+  tokenUnavailable: boolean
+}
 
 export async function createContext(services: Services, headers: Headers): Promise<Context> {
   const secret = bearerSecret(headers)
   if (secret !== null) {
-    const token = await verifyToken(services.db, secret, services.now()).catch(() => null)
-    return { ...services, headers, session: null, bearer: true, token }
+    try {
+      const token = await verifyToken(services.db, secret, services.now())
+      return { ...services, headers, session: null, bearer: true, token, tokenUnavailable: false }
+    } catch (error) {
+      if (!(error instanceof TokenStoreError)) throw error
+      const { name, operation, code } = error
+      console.error("[tokens] verify failed", { name, operation, code })
+      return { ...services, headers, session: null, bearer: true, token: null, tokenUnavailable: true }
+    }
   }
   const session = await services.auth.api.getSession({ headers }).catch(() => null)
-  return { ...services, headers, session, bearer: false, token: null }
+  return { ...services, headers, session, bearer: false, token: null, tokenUnavailable: false }
 }

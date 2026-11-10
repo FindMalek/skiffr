@@ -59,6 +59,12 @@
   body {
     @apply bg-background text-foreground;
   }
+  /* A mono font's ligatures turn `http://` into `http: //`. */
+  code,
+  kbd,
+  .font-mono {
+    font-variant-ligatures: none;
+  }
 }
 /* Landing backdrop: a soft glow in the preset's primary color over a dotted screen, fading into the background. */
 @utility bg-glow {

@@ -1,9 +1,10 @@
 "use client"
 
-import { TOKEN_NAME_MAX } from "@skiffr/common/constants"
+import { TOKEN_ACTIVE_MAX, TOKEN_HISTORY_DAYS, TOKEN_NAME_MAX } from "@skiffr/common/constants"
 import type { ApiToken } from "@skiffr/common/schemas"
 import { errorMessage } from "@skiffr/orpc/errors"
 import { orpc } from "@skiffr/orpc/react"
+import { Alert, AlertDescription, AlertTitle } from "@skiffr/ui/components/alert"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -21,11 +22,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@skif
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@skiffr/ui/components/empty"
 import { Field, FieldGroup, FieldLabel } from "@skiffr/ui/components/field"
 import { Input } from "@skiffr/ui/components/input"
+import { Textarea } from "@skiffr/ui/components/textarea"
 import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query"
-import { CheckIcon, CopyIcon } from "lucide-react"
-import { type FormEvent, useState } from "react"
+import { CheckIcon, CopyIcon, TriangleAlertIcon } from "lucide-react"
+import { type FormEvent, useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
-import { LocalDate } from "./local-date"
 
 const EXPIRIES = [
   { label: "30 days", days: 30 },
@@ -34,64 +35,130 @@ const EXPIRIES = [
   { label: "Never", days: null },
 ]
 
-function status(token: ApiToken): { label: string; variant: "default" | "secondary" | "outline" } {
-  if (token.revokedAt) return { label: "Revoked", variant: "secondary" }
-  if (token.expiresAt && token.expiresAt <= new Date()) return { label: "Expired", variant: "secondary" }
-  return { label: "Active", variant: "outline" }
+type TokenState = { label: "Active" | "Revoked" | "Expired"; variant: "default" | "secondary" | "destructive" }
+
+function status(token: ApiToken, now: Date): TokenState {
+  if (token.revokedAt) return { label: "Revoked", variant: "destructive" }
+  if (token.expiresAt && token.expiresAt <= now) return { label: "Expired", variant: "secondary" }
+  return { label: "Active", variant: "default" }
 }
 
-function CopyField({ label, value }: { label: string; value: string }) {
-  const [copied, setCopied] = useState(false)
+// One fixed format, in UTC: the server and every browser print the same text, whatever their locale or timezone.
+const DATE = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeZone: "UTC" })
+
+function Stamp({ value, time = false }: { value: Date; time?: boolean }) {
+  const text = DATE.format(value)
+  return <time dateTime={value.toISOString()}>{time ? `${text}, ${value.toISOString().slice(11, 16)} UTC` : text}</time>
+}
+
+function CopyField({ label, value, multiline = false }: { label: string; value: string; multiline?: boolean }) {
+  const [state, setState] = useState<"idle" | "copied" | "failed">("idle")
+  const field = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null)
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  useEffect(() => () => clearTimeout(timer.current), [])
+
   const copy = async () => {
-    await navigator.clipboard.writeText(value)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+    clearTimeout(timer.current)
+    try {
+      await navigator.clipboard.writeText(value)
+      setState("copied")
+      timer.current = setTimeout(() => setState("idle"), 2000)
+    } catch {
+      field.current?.focus()
+      field.current?.select()
+      setState("failed")
+    }
+  }
+  const props = {
+    readOnly: true,
+    value,
+    "aria-label": label,
+    onFocus: (e: { currentTarget: HTMLInputElement | HTMLTextAreaElement }) => e.currentTarget.select(),
   }
   return (
     <Field>
       <FieldLabel>{label}</FieldLabel>
       <div className="flex gap-2">
-        <Input
-          readOnly
-          value={value}
-          aria-label={label}
-          className="font-mono"
-          onFocus={(e) => e.currentTarget.select()}
-        />
+        {multiline ? (
+          <Textarea {...props} ref={field as never} rows={2} className="font-mono min-w-0 resize-none break-all" />
+        ) : (
+          <Input {...props} ref={field as never} className="font-mono min-w-0" />
+        )}
         <Button type="button" variant="outline" onClick={copy}>
-          {copied ? <CheckIcon data-icon="inline-start" /> : <CopyIcon data-icon="inline-start" />}
-          {copied ? "Copied" : "Copy"}
+          {state === "copied" ? <CheckIcon data-icon="inline-start" /> : <CopyIcon data-icon="inline-start" />}
+          {state === "copied" ? "Copied" : "Copy"}
         </Button>
       </div>
+      {state === "failed" && (
+        <p role="alert" className="text-destructive text-xs">
+          Could not copy automatically. The text is selected, press Ctrl+C (Cmd+C on mac).
+        </p>
+      )}
     </Field>
+  )
+}
+
+function RevokeButton({ token }: { token: ApiToken }) {
+  const queryClient = useQueryClient()
+  const [open, setOpen] = useState(false)
+  const revoke = useMutation(
+    orpc.tokens.revoke.mutationOptions({
+      onSuccess: () => {
+        toast.success("Token revoked")
+        setOpen(false)
+        return queryClient.invalidateQueries({ queryKey: orpc.tokens.key() })
+      },
+      onError: (error) => toast.error(errorMessage(error)),
+    }),
+  )
+  return (
+    <AlertDialog open={open} onOpenChange={(next) => !revoke.isPending && setOpen(next)}>
+      <AlertDialogTrigger render={<Button variant="outline" size="sm" />}>Revoke</AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Revoke {token.name}?</AlertDialogTitle>
+          <AlertDialogDescription>
+            The extension using it stops working right away. You can't undo this.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={revoke.isPending}>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            variant="destructive"
+            disabled={revoke.isPending}
+            onClick={() => revoke.mutate({ id: token.id })}
+          >
+            {revoke.isPending ? "Revoking…" : "Revoke"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   )
 }
 
 export function ExtensionTokens({ apiUrl }: { apiUrl: string }) {
   const queryClient = useQueryClient()
   const { data: tokens } = useSuspenseQuery(orpc.tokens.list.queryOptions())
-  const refresh = () => queryClient.invalidateQueries({ queryKey: orpc.tokens.key() })
-  const onError = (error: Error) => toast.error(errorMessage(error))
   const [secret, setSecret] = useState<string | null>(null)
+  const [now] = useState(() => new Date())
 
+  // gcTime 0: once this page unmounts the mutation, and the secret in its result, is dropped from the cache.
   const create = useMutation(
     orpc.tokens.create.mutationOptions({
+      gcTime: 0,
       onSuccess: (created) => {
         setSecret(created.secret)
-        return refresh()
+        return queryClient.invalidateQueries({ queryKey: orpc.tokens.key() })
       },
-      onError,
+      onError: (error) => toast.error(errorMessage(error)),
     }),
   )
-  const revoke = useMutation(
-    orpc.tokens.revoke.mutationOptions({
-      onSuccess: () => {
-        toast.success("Token revoked")
-        return refresh()
-      },
-      onError,
-    }),
-  )
+  const dismiss = () => {
+    setSecret(null)
+    create.reset()
+  }
+  const activeCount = tokens.filter((token) => status(token, now).label === "Active").length
+  const atCap = activeCount >= TOKEN_ACTIVE_MAX
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -134,9 +201,17 @@ export function ExtensionTokens({ apiUrl }: { apiUrl: string }) {
                     ))}
                   </select>
                 </Field>
-                <Button type="submit" className="self-start" disabled={create.isPending}>
+                <Button type="submit" className="self-start" disabled={create.isPending || secret !== null || atCap}>
                   Create token
                 </Button>
+                {secret !== null && (
+                  <p className="text-muted-foreground text-xs">Dismiss the new token first to create another.</p>
+                )}
+                {atCap && (
+                  <p className="text-muted-foreground text-xs">
+                    You have {TOKEN_ACTIVE_MAX} active tokens. Revoke one to create another.
+                  </p>
+                )}
               </FieldGroup>
             </form>
           </CardContent>
@@ -144,18 +219,28 @@ export function ExtensionTokens({ apiUrl }: { apiUrl: string }) {
       </div>
 
       <div className="grid content-start gap-4 lg:col-span-2">
+        <p role="status" className="sr-only">
+          {secret ? "Token created" : ""}
+        </p>
         {secret && (
-          <Card role="status">
+          <Card>
             <CardHeader>
-              <CardTitle>Copy your token now</CardTitle>
-              <CardDescription>It is shown once. If you lose it, revoke it and create another.</CardDescription>
+              <CardTitle>Your new token</CardTitle>
             </CardHeader>
             <CardContent className="flex flex-col gap-4">
-              <CopyField label="Token" value={secret} />
+              <Alert variant="destructive" role="note">
+                <TriangleAlertIcon />
+                <AlertTitle>Copy it now, you will not see it again</AlertTitle>
+                <AlertDescription>
+                  Skiffr only keeps a hash. If you lose it, revoke it and create another.
+                </AlertDescription>
+              </Alert>
+              <CopyField label="Token" value={secret} multiline />
               <ol className="flex list-decimal flex-col gap-1 pl-5 text-muted-foreground text-sm">
                 <li>Open the Skiffr extension options (right click the toolbar icon, then Options).</li>
                 <li>
-                  Set <strong className="text-foreground">API url</strong> to <code>{apiUrl}</code>.
+                  Set <strong className="text-foreground">API url</strong> to{" "}
+                  <code className="font-mono">{apiUrl}</code>.
                 </li>
                 <li>
                   Paste the token into <strong className="text-foreground">Token</strong>, press Save, then Test
@@ -163,7 +248,7 @@ export function ExtensionTokens({ apiUrl }: { apiUrl: string }) {
                 </li>
               </ol>
               <CopyField label="API url" value={apiUrl} />
-              <Button variant="outline" className="self-start" onClick={() => setSecret(null)}>
+              <Button variant="outline" className="self-start" onClick={dismiss}>
                 I have copied it
               </Button>
             </CardContent>
@@ -173,6 +258,9 @@ export function ExtensionTokens({ apiUrl }: { apiUrl: string }) {
         <Card>
           <CardHeader>
             <CardTitle>Your tokens</CardTitle>
+            <CardDescription>
+              Active tokens, and the ones revoked or expired in the last {TOKEN_HISTORY_DAYS} days.
+            </CardDescription>
           </CardHeader>
           <CardContent>
             {tokens.length === 0 ? (
@@ -185,58 +273,42 @@ export function ExtensionTokens({ apiUrl }: { apiUrl: string }) {
             ) : (
               <ul className="divide-y">
                 {tokens.map((token) => {
-                  const state = status(token)
+                  const state = status(token, now)
                   return (
                     <li key={token.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 py-3">
-                      <div className="flex min-w-0 flex-col gap-1">
+                      <div className={`flex min-w-0 flex-col gap-1 ${state.label === "Active" ? "" : "opacity-60"}`}>
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="truncate font-medium">{token.name}</span>
                           <Badge variant={state.variant}>{state.label}</Badge>
                         </div>
-                        <code className="text-muted-foreground text-xs">
+                        <code className="font-mono text-muted-foreground text-xs">
                           {token.prefix}…{token.last4}
                         </code>
                         <span className="text-muted-foreground text-xs">
-                          Created <LocalDate value={token.createdAt} />
+                          Created <Stamp value={token.createdAt} />
                           {" · "}
                           {token.lastUsedAt ? (
                             <>
-                              Last used <LocalDate value={token.lastUsedAt} time />
+                              Last used <Stamp value={token.lastUsedAt} time />
                             </>
                           ) : (
                             "Never used"
                           )}
                           {" · "}
-                          {token.expiresAt ? (
+                          {token.revokedAt ? (
                             <>
-                              Expires <LocalDate value={token.expiresAt} />
+                              Revoked <Stamp value={token.revokedAt} />
+                            </>
+                          ) : token.expiresAt ? (
+                            <>
+                              {state.label === "Expired" ? "Expired" : "Expires"} <Stamp value={token.expiresAt} />
                             </>
                           ) : (
                             "No expiry"
                           )}
                         </span>
                       </div>
-                      {state.label === "Active" && (
-                        <AlertDialog>
-                          <AlertDialogTrigger render={<Button variant="outline" size="sm" />}>
-                            Revoke
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>Revoke {token.name}?</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                The extension using it stops working right away. You can't undo this.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>Cancel</AlertDialogCancel>
-                              <AlertDialogAction variant="destructive" onClick={() => revoke.mutate({ id: token.id })}>
-                                Revoke
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                      )}
+                      {state.label === "Active" && <RevokeButton token={token} />}
                     </li>
                   )
                 })}

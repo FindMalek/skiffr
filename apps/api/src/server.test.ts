@@ -100,3 +100,12 @@ test("other origins and other routes get no cors", async () => {
     (await preflight("chrome-extension://short", "/rpc/extension/whoami")).headers.has("access-control-allow-origin"),
   ).toBe(false)
 })
+
+test("every /rpc and /v1 answer varies on Origin, other routes don't", async () => {
+  const get = (path: string, headers: Record<string, string> = {}) =>
+    server(new Request(`http://api.test${path}`, { headers }))
+  expect((await get("/rpc/extension/whoami")).headers.get("vary")).toContain("Origin")
+  expect((await get("/rpc/extension/whoami", { origin: "https://evil.dev" })).headers.get("vary")).toContain("Origin")
+  expect((await get("/v1/extension/whoami", { origin: EXTENSION })).headers.get("vary")).toContain("Origin")
+  expect((await get("/health")).headers.get("vary")).toBeNull()
+})

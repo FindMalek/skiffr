@@ -12,10 +12,11 @@ export function withExtensionCors(handler: Handler, origins: string[] = []): Han
   const allowed = (origin: string) => (origins.length ? origins.includes(origin) : ANY_EXTENSION.test(origin))
 
   return async (request) => {
-    const origin = request.headers.get("origin")
-    if (!origin || !BEARER_ROUTES.test(new URL(request.url).pathname) || !allowed(origin)) return handler(request)
+    if (!BEARER_ROUTES.test(new URL(request.url).pathname)) return handler(request)
 
-    if (request.method === "OPTIONS") {
+    const origin = request.headers.get("origin")
+    const cors = origin !== null && allowed(origin)
+    if (cors && request.method === "OPTIONS") {
       return new Response(null, {
         status: 204,
         headers: {
@@ -28,12 +29,17 @@ export function withExtensionCors(handler: Handler, origins: string[] = []): Han
       })
     }
 
-    const headers = new Headers(request.headers)
-    headers.delete("cookie")
-    const response = await handler(new Request(request, { headers }))
+    let forwarded = request
+    if (cors) {
+      const headers = new Headers(request.headers)
+      headers.delete("cookie")
+      forwarded = new Request(request, { headers })
+    }
+    const response = await handler(forwarded)
     const out = new Headers(response.headers)
-    out.set("access-control-allow-origin", origin)
+    // These urls answer differently with and without an extension origin, so caches must key on it.
     out.append("vary", "Origin")
+    if (cors) out.set("access-control-allow-origin", origin)
     return new Response(response.body, { status: response.status, statusText: response.statusText, headers: out })
   }
 }

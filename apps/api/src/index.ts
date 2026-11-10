@@ -27,6 +27,13 @@ const auth = createAuth({
 const adminId = await ensureAdmin(db, auth, env.ADMIN_EMAIL, env.ADMIN_PASSWORD)
 if (env.SEED === "demo" && (await seedDemo(db, { ownerId: adminId }))) console.info("seeded demo data")
 
+const extensionOrigins = env.EXTENSION_ORIGINS?.split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean)
+if (env.NODE_ENV === "production" && !extensionOrigins?.length) {
+  console.warn("EXTENSION_ORIGINS is not set: any chrome-extension:// origin may call /rpc and /v1 with a token")
+}
+
 const fetch = createServer(
   {
     db,
@@ -50,9 +57,7 @@ const fetch = createServer(
   },
   {
     publicUrl: env.API_PUBLIC_URL,
-    extensionOrigins: env.EXTENSION_ORIGINS?.split(",")
-      .map((origin) => origin.trim())
-      .filter(Boolean),
+    extensionOrigins,
   },
 )
 

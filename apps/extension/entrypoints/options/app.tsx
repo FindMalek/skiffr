@@ -2,16 +2,10 @@ import { type ExtensionSettings, extensionSettingsSchema } from "@skiffr/common"
 import { TOKEN_PREFIX } from "@skiffr/common/constants"
 import { type FormEvent, useEffect, useState } from "react"
 import { browser } from "wxt/browser"
-import type { ConnectionResult, TestConnectionMessage } from "@/lib/connection"
+import { CONNECTION_TEXT, type ConnectionResult, type TestConnectionMessage } from "@/lib/connection"
 import { DEFAULT_SETTINGS, getSettings, setSettings } from "@/lib/storage"
 
 type Status = "idle" | "saved" | "invalid" | "bad-token" | "error"
-
-const CONNECTION_TEXT = {
-  "missing-token": "Add a token first. Create one in the dashboard under Extension.",
-  rejected: "The token was rejected. It may be revoked or expired: create a new one in the dashboard under Extension.",
-  unreachable: "Could not reach the API. Check the API url.",
-} as const
 
 export function App() {
   const [form, setForm] = useState<ExtensionSettings>(DEFAULT_SETTINGS)
@@ -86,12 +80,14 @@ export function App() {
         <p>
           Create a token in the Skiffr dashboard under <strong>Extension</strong>, then paste it here.
         </p>
-        <button type="submit">Save</button>
-        <button type="button" disabled={connection === "testing"} onClick={test}>
-          Test connection
-        </button>
+        <fieldset>
+          <button type="submit">Save</button>
+          <button type="button" disabled={connection === "testing"} onClick={test}>
+            Test connection
+          </button>
+        </fieldset>
         {status === "saved" && <p role="status">Saved</p>}
-        {status === "invalid" && <p role="alert">Enter an http or https API url</p>}
+        {status === "invalid" && <p role="alert">Enter an https API url. Plain http only works for localhost.</p>}
         {status === "bad-token" && (
           <p role="alert">
             That is not a Skiffr token, it starts with {TOKEN_PREFIX}. Create one in the dashboard under Extension.

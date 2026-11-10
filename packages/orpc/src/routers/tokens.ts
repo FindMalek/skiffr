@@ -1,3 +1,5 @@
+import { ORPCError } from "@orpc/server"
+import { TOKEN_ACTIVE_MAX, TOKEN_HISTORY_DAYS, TOKEN_LIST_MAX } from "@skiffr/common/constants"
 import {
   apiTokenInputSchema,
   apiTokenSchema,
@@ -6,10 +8,10 @@ import {
   whoamiSchema,
 } from "@skiffr/common/schemas"
 import { apiToken } from "@skiffr/db"
-import { and, desc, eq, isNull } from "drizzle-orm"
+import { and, count, desc, eq, gt, gte, isNull, or, type SQL, sql } from "drizzle-orm"
 import { z } from "zod"
 import { mine, orNotFound } from "../lib/owned"
-import { generateToken } from "../lib/tokens"
+import { generateToken, guardTokenDb } from "../lib/tokens"
 import { protectedProcedure } from "../procedures"
 
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -25,18 +27,37 @@ const publicColumns = {
   revokedAt: apiToken.revokedAt,
 }
 
+const isActive = (now: Date): SQL =>
+  and(isNull(apiToken.revokedAt), or(isNull(apiToken.expiresAt), gt(apiToken.expiresAt, now)))!
+
 /** Session only: a token can't reach these (see `TOKEN_PROCEDURES`), so a leaked token can't mint or list tokens. */
 export const tokensRouter = {
   list: protectedProcedure
-    .route({ method: "GET", path: "/tokens", summary: "Your extension tokens", tags: ["tokens"] })
+    .route({
+      method: "GET",
+      path: "/tokens",
+      summary: `Your active extension tokens, and the ones revoked or expired in the last ${TOKEN_HISTORY_DAYS} days`,
+      tags: ["tokens"],
+    })
     .output(z.array(apiTokenSchema))
-    .handler(({ context }) =>
-      context.db
-        .select(publicColumns)
-        .from(apiToken)
-        .where(eq(apiToken.userId, context.user.id))
-        .orderBy(desc(apiToken.createdAt)),
-    ),
+    .handler(({ context }) => {
+      const now = context.now()
+      const since = new Date(now.getTime() - TOKEN_HISTORY_DAYS * DAY_MS)
+      return guardTokenDb("list", () =>
+        context.db
+          .select(publicColumns)
+          .from(apiToken)
+          .where(
+            and(
+              eq(apiToken.userId, context.user.id),
+              or(isActive(now), gte(sql`coalesce(${apiToken.revokedAt}, ${apiToken.expiresAt})`, since)),
+            ),
+          )
+          // Active first, so the cap on rows can never hide a token that can still be revoked.
+          .orderBy(desc(sql`(${isActive(now)})`), desc(apiToken.createdAt))
+          .limit(TOKEN_LIST_MAX),
+      )
+    }),
 
   create: protectedProcedure
     .route({
@@ -50,16 +71,29 @@ export const tokensRouter = {
     .handler(async ({ context, input }) => {
       const { secret, ...stored } = generateToken()
       const now = context.now()
-      const [row] = await context.db
-        .insert(apiToken)
-        .values({
-          ...stored,
-          userId: context.user.id,
-          name: input.name,
-          createdAt: now,
-          expiresAt: input.expiresInDays === null ? null : new Date(now.getTime() + input.expiresInDays * DAY_MS),
+      const [active] = await guardTokenDb("count", () =>
+        context.db
+          .select({ total: count() })
+          .from(apiToken)
+          .where(and(eq(apiToken.userId, context.user.id), isActive(now))),
+      )
+      if ((active?.total ?? 0) >= TOKEN_ACTIVE_MAX) {
+        throw new ORPCError("BAD_REQUEST", {
+          message: `You already have ${TOKEN_ACTIVE_MAX} active tokens. Revoke one to create another.`,
         })
-        .returning(publicColumns)
+      }
+      const [row] = await guardTokenDb("create", () =>
+        context.db
+          .insert(apiToken)
+          .values({
+            ...stored,
+            userId: context.user.id,
+            name: input.name,
+            createdAt: now,
+            expiresAt: input.expiresInDays === null ? null : new Date(now.getTime() + input.expiresInDays * DAY_MS),
+          })
+          .returning(publicColumns),
+      )
       return { ...row!, secret }
     }),
 
@@ -68,12 +102,21 @@ export const tokensRouter = {
     .input(z.object({ id: z.uuid() }))
     .output(okSchema)
     .handler(async ({ context, input }) => {
-      const [row] = await context.db
-        .update(apiToken)
-        .set({ revokedAt: context.now() })
-        .where(and(mine(apiToken, context.user.id, input.id), isNull(apiToken.revokedAt)))
-        .returning({ id: apiToken.id })
-      orNotFound(row, "Token")
+      const owned = mine(apiToken, context.user.id, input.id)
+      const [revoked] = await guardTokenDb("revoke", () =>
+        context.db
+          .update(apiToken)
+          .set({ revokedAt: context.now() })
+          .where(and(owned, isNull(apiToken.revokedAt)))
+          .returning({ id: apiToken.id }),
+      )
+      if (!revoked) {
+        // Already revoked is fine (a double click), somebody else's or unknown is not.
+        const [existing] = await guardTokenDb("revoke", () =>
+          context.db.select({ id: apiToken.id }).from(apiToken).where(owned),
+        )
+        orNotFound(existing, "Token")
+      }
       return { ok: true as const }
     }),
 }
