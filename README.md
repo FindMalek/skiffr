@@ -39,6 +39,8 @@ You need node 24, pnpm, bun and docker. The project is already installed and has
 
 Sign in to the dashboard with `ADMIN_EMAIL` and `ADMIN_PASSWORD` from `.env`.
 
+The extension is not part of `pnpm dev`. Run `pnpm --filter extension build`, then load `apps/extension/.output/chrome-mv3` as an unpacked extension in `chrome://extensions` (developer mode). Use `pnpm --filter extension dev` for a hot reloading dev browser.
+
 ---
 
 ## Structure
@@ -51,6 +53,7 @@ skiffr/
 <!-- @findplate:docs -->
 │  ├─ docs/       docs site
 <!-- @end -->
+│  ├─ extension/  wxt browser extension
 │  └─ api/        orpc on bun
 ├─ packages/      ui, common, orpc, db, auth, env, config
 ├─ docker/        local postgres
@@ -60,7 +63,7 @@ skiffr/
 | Package | What it holds |
 | --- | --- |
 | `@skiffr/ui` | shadcn components and the theme tokens |
-| `@skiffr/common` | zod schemas, constants and utils shared by api, web and dashboard |
+| `@skiffr/common` | zod schemas, constants and utils shared by api, web, dashboard and extension |
 | `@skiffr/orpc` | procedures and typed clients |
 | `@skiffr/db` | drizzle schema, migrations, seed scenario |
 | `@skiffr/auth` | better-auth setup |

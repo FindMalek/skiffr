@@ -1,0 +1,6 @@
+{
+  "extends": ["@skiffr/config/react-library.json", "./.wxt/tsconfig.json"],
+  "compilerOptions": { "types": ["bun"] },
+  "include": [".wxt/wxt.d.ts", "**/*.ts", "**/*.tsx"],
+  "exclude": ["node_modules", ".output"]
+}

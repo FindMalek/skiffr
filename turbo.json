@@ -8,7 +8,7 @@
     "build": {
       "dependsOn": ["^build"],
       "inputs": ["$TURBO_DEFAULT$", ".env*"],
-      "outputs": [".next/**", "!.next/cache/**", "!.next/dev/**", "dist/**", "out/**"]
+      "outputs": [".output/**", ".next/**", "!.next/cache/**", "!.next/dev/**", "dist/**", "out/**"]
     },
     "export": { "outputs": ["out/**"] },
     "check-types": { "dependsOn": ["^check-types"] },
