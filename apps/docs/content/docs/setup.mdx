@@ -11,7 +11,7 @@ pnpm db:up
 pnpm dev
 ```
 
-`pnpm db:up` starts a local postgres from `docker/docker-compose.yml`. The api applies migrations on start and, when `SEED=demo`, fills an empty database with sample data.
+`pnpm db:up` starts a local postgres (`pgvector/pgvector:pg17`) from `docker/docker-compose.yml`. The api applies migrations on start and, when `SEED=demo`, fills an empty database with sample data.
 
 | App | Url |
 | --- | --- |

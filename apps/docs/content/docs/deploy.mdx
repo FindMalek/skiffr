@@ -28,4 +28,4 @@ Next apps are built with `output: "standalone"` and ship a healthcheck. Pass the
 
 ## Dokploy
 
-Create a project with a postgres database, add one application per app with build type Dockerfile, path `apps/<app>/Dockerfile` and `.` as the context, set the env keys, and attach your domains. Use the api service's internal address for `API_URL`.
+Create a project with a postgres database on the docker image `pgvector/pgvector:pg17` (answer embeddings need the `vector` extension), add one application per app with build type Dockerfile, path `apps/<app>/Dockerfile` and `.` as the context, set the env keys, and attach your domains. Use the api service's internal address for `API_URL`.
