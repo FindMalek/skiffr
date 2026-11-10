@@ -1,3 +1,6 @@
 export * from "./account"
+export * from "./answers"
+export * from "./jobs"
 export * from "./notes"
+export * from "./profile"
 export * from "./public"
