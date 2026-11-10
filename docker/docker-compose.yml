@@ -9,7 +9,7 @@ services:
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
-      - skiffr-pg:/var/lib/postgresql/data
+      - skiffr-pgvector-data:/var/lib/postgresql/data
 
 volumes:
-  skiffr-pg:
+  skiffr-pgvector-data:
