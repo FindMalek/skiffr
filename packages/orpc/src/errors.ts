@@ -21,3 +21,8 @@ export function errorMessage(error: unknown): string {
   if (error instanceof ORPCError && (error.status < 500 || error.code === "BAD_GATEWAY")) return error.message
   return "Something went wrong. Please try again."
 }
+
+/** The `ORPCError` code (`CONFLICT`, `NOT_FOUND`, ...) of a failed call, if it has one. */
+export function errorCode(error: unknown): string | undefined {
+  return error instanceof ORPCError ? error.code : undefined
+}
