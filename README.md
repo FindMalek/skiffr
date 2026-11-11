@@ -140,11 +140,16 @@ There are no releases, signed packages or Chrome Web Store listing yet.
 | `pnpm check` | biome format and fix |
 | `pnpm check-types` | typescript across the repo |
 | `pnpm test` | tests in every package |
+| `pnpm e2e` | build the extension and run the playwright e2e suite in `apps/e2e` |
 | `pnpm db:generate` / `db:migrate` / `db:seed` / `db:studio` | drizzle |
 | `pnpm zip` | zip the extension for upload |
 | `pnpm ui:add <component>` | add a shadcn component |
 
 Router tests run on pglite. To run them on real Postgres, set `TEST_DATABASE_URL` to a server url whose database name starts with `skiffr_test` (for example `postgres://skiffr:skiffr@localhost:5432/skiffr_test`). Each run creates and drops its own database.
+
+### e2e
+
+`apps/e2e` loads the built extension into Chromium (`channel: "chromium"`, headless) and drives it against fixture ats pages served on `127.0.0.1`, with a mock api that implements the `@skiffr/common` schemas. Run `pnpm e2e` (builds the extension first), or point `E2E_EXTENSION_DIR` at an unzipped release to test that instead: CI does this with the zip from the `extension` job. Install the browser once with `pnpm --filter e2e exec playwright install chromium`. Specs for features that have not landed are `test.fixme` in `apps/e2e/tests/pending.spec.ts`.
 
 ## Configuration
 

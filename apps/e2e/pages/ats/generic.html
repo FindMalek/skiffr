@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Careers - Join Acme</title></head>
+<body>
+<header><nav><a href="/">Home</a> <a href="/careers">Careers</a></nav></header>
+<main>
+  <h1>Apply for Backend Developer</h1>
+  <form action="/submit?ats=generic" method="post">
+    <p><label>Full name<br><input type="text" name="applicant_name" placeholder="Jane Doe"></label></p>
+    <p><label>Email address<br><input type="email" name="applicant_email"></label></p>
+    <p><label>Mobile number<br><input type="tel" name="mobile"></label></p>
+    <p><label>City<br><input type="text" name="city"></label></p>
+    <p><label for="site">Personal website</label><br><input id="site" type="url" name="site"></p>
+    <p><label for="exp">Years of experience</label><br><input id="exp" type="number" name="experience" min="0" max="50"></p>
+    <p><label for="start">Earliest start date</label><br><input id="start" type="date" name="start"></p>
+    <p><span id="work-mode">Preferred work mode</span><br>
+      <label><input type="radio" name="mode" value="remote"> Remote</label>
+      <label><input type="radio" name="mode" value="hybrid"> Hybrid</label>
+      <label><input type="radio" name="mode" value="onsite"> On-site</label></p>
+    <p><label for="about">Tell us about yourself</label><br><textarea id="about" name="about" rows="5" cols="50"></textarea></p>
+    <p><button type="submit">Send application</button></p>
+  </form>
+</main>
+</body>
+</html>
