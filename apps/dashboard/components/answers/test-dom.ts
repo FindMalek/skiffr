@@ -2,6 +2,12 @@ import { Window } from "happy-dom"
 
 /** A real DOM for tests that mount components: copies the happy-dom window's globals onto `globalThis`. */
 export function installDom(url = "http://localhost:3002/answers"): Window {
+  const registered = (globalThis as { window?: Window & { happyDOM?: { setURL(url: string): void } } }).window
+  if (registered?.happyDOM) {
+    registered.happyDOM.setURL(url)
+    ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+    return registered
+  }
   const window = new Window({ url, settings: { disableJavaScriptEvaluation: true, disableErrorCapturing: true } })
   const target = globalThis as Record<string, unknown>
   const own = new Set(["window", "document", "navigator", "location", "history", "localStorage", "sessionStorage"])
