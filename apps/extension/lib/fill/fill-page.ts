@@ -52,7 +52,7 @@ function resumeSlot(fields: CollectedField[]): CollectedField | undefined {
 }
 
 /** The value a person or the page already put in, empty when there is none. A prompt option is not a value. */
-function currentValue(field: CollectedField): string {
+export function currentValue(field: CollectedField): string {
   if (field.kind === "checkbox" || field.kind === "file") return ""
   if (field.kind === "combobox" && field.el.localName === "input") return (field.el as HTMLInputElement).value.trim()
   return readField(field).trim()

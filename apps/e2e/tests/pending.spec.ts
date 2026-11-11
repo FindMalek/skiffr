@@ -29,21 +29,6 @@ test.describe("detect and toast (#45)", () => {
 })
 
 test.describe("fill engine (#48)", () => {
-  test.fixme("fills profile fields from the api and never submits", async ({ context, fixtureServer, mockApi }) => {
-    const tab = await context.newPage()
-    await test.step("save the mock api url and token in the options page", async () => {})
-    await test.step(`open ${ATS_PAGES.greenhouse.path}`, () =>
-      tab.goto(`${fixtureServer.origin}${ATS_PAGES.greenhouse.path}`))
-    await test.step("trigger fill", async () => {})
-    await test.step("name, email, phone and links hold the profile values", async () => {})
-    await test.step("the mock api received one authorized map-fields request", async () => {
-      void mockApi.requests
-    })
-    await test.step("the fixture server saw no submission", async () => {
-      void fixtureServer.submissions
-    })
-  })
-
   test.fixme("fills a react-controlled input so its state updates", async () => {})
 })
 

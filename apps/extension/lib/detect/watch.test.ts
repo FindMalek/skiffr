@@ -100,7 +100,7 @@ test("re-checks without any mutation, for frames that looked hidden while still 
   const doc = window.document as unknown as Document
   let calls = 0
   const seen: boolean[] = []
-  const check = () => ({ isForm: ++calls > 1, ats: null, confidence: 1, reasons: [] })
+  const check = () => ({ isForm: ++calls > 1, ats: null, confidence: 1, reasons: [], container: null })
   const watcher = createFormWatcher({
     doc,
     throttleMs: 5,

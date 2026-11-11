@@ -5,12 +5,13 @@ declare namespace chrome {
   }
   namespace storage.local {
     function get(key: string): Promise<Record<string, { token: string } | undefined>>
+    function set(items: Record<string, unknown>): Promise<void>
   }
   namespace tabs {
     interface Tab {
       id?: number
     }
     function query(info: { active?: boolean; lastFocusedWindow?: boolean }): Promise<Tab[]>
-    function sendMessage(tabId: number, message: unknown): Promise<unknown>
+    function sendMessage(tabId: number, message: unknown, options?: { frameId?: number }): Promise<unknown>
   }
 }

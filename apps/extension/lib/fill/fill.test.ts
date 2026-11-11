@@ -242,7 +242,7 @@ describe("fillPage", () => {
     expect(submitted).toBe(false)
 
     const last = el(document, "#b")
-    expect(last.style.getPropertyValue("outline")).toContain("dashed")
+    expect(last.style.getPropertyValue("outline")).toContain("solid")
     expect(last.style.getPropertyPriority("outline")).toBe("important")
     expect(el(document, "#a").style.getPropertyValue("outline")).toBe("")
     summary.clearHighlights()

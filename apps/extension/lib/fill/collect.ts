@@ -395,6 +395,10 @@ export function collectFields(root: ParentNode = document): CollectedField[] {
 
 /** Descriptors split into requests that pass the `ai.mapFields` input limits. */
 export function descriptorBatches(fields: CollectedField[]): FieldDescriptor[][] {
+  return batchDescriptors(fields.map((field) => field.descriptor))
+}
+
+export function batchDescriptors(descriptors: FieldDescriptor[]): FieldDescriptor[][] {
   const size = (d: FieldDescriptor) =>
     [d.id, d.label, d.name, d.ariaLabel, d.placeholder, d.type, ...d.options].reduce(
       (sum, text) => sum + (text?.length ?? 0),
@@ -403,7 +407,7 @@ export function descriptorBatches(fields: CollectedField[]): FieldDescriptor[][]
   const batches: FieldDescriptor[][] = []
   let batch: FieldDescriptor[] = []
   let chars = 0
-  for (const { descriptor } of fields) {
+  for (const descriptor of descriptors) {
     const own = size(descriptor)
     if (batch.length > 0 && (batch.length >= AI_FIELDS_MAX || chars + own > AI_REQUEST_CHARS_MAX)) {
       batches.push(batch)
