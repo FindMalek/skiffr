@@ -261,7 +261,7 @@ test("an accepted value only counts for an answer that holds it, and a cleared o
     event("Website", "ana.dev", "  "),
     event("Nickname", "Ana", ""),
   ])
-  expect(result).toEqual({ recorded: 5, skipped: 0 })
+  expect(result).toMatchObject({ recorded: 5, skipped: 0 })
   expect(await answerOf(as().id, "website")).toMatchObject({ value: "ana.dev", timesUsed: 2, timesCorrected: 1 })
   expect(await answerOf(as().id, "linkedin")).toBeUndefined()
   expect(await answerOf(as().id, "nickname")).toBeUndefined()
@@ -281,7 +281,7 @@ test("password, hidden, file, payment, id and birth fields are never stored, log
     event("Date of birth", "", "1990-01-01"),
     event("Mystery", "", "hunter2", { type: "submit" }),
   ]
-  expect(await record(as, [...sensitive, event("Nickname", "", "Ana")])).toEqual({ recorded: 1, skipped: 7 })
+  expect(await record(as, [...sensitive, event("Nickname", "", "Ana")])).toMatchObject({ recorded: 1, skipped: 7 })
   expect(await db.select().from(answer).where(eq(answer.userId, as().id))).toHaveLength(1)
   expect(await db.select().from(fieldEvent).where(eq(fieldEvent.userId, as().id))).toHaveLength(1)
 
@@ -523,7 +523,7 @@ test("a retried batch changes nothing the second time, even when the retries ove
   const batchId = crypto.randomUUID()
   const send = (id: string) => record(as, [event("Preferred name", "Ana", "Ana")], { batchId: id })
   const results = await Promise.all([send(batchId), send(batchId), send(batchId)])
-  expect(results).toEqual([
+  expect(results).toMatchObject([
     { recorded: 1, skipped: 0 },
     { recorded: 1, skipped: 0 },
     { recorded: 1, skipped: 0 },
@@ -672,7 +672,10 @@ test("control characters and lone surrogates in page text are a 400, tabs and ne
       code: "BAD_REQUEST",
     })
   }
-  expect(await record(as, [event("Notice\nperiod", "", "line one\n\tline two")])).toEqual({ recorded: 1, skipped: 0 })
+  expect(await record(as, [event("Notice\nperiod", "", "line one\n\tline two")])).toMatchObject({
+    recorded: 1,
+    skipped: 0,
+  })
 })
 
 const choice = (id: string, label: string, options: string[], type = "select") => field(id, label, { type, options })
@@ -736,7 +739,7 @@ test("values that look like a card number, an iban or an ssn are never recorded 
     event("Years of experience", "", "15"),
     event("Long number", "", "1234567812345678"),
   ])
-  expect(result).toEqual({ recorded: 2, skipped: 3 })
+  expect(result).toMatchObject({ recorded: 2, skipped: 3 })
   await db
     .insert(answer)
     .values({ userId: as().id, normalizedLabel: "serial", rawLabel: "Serial", value: "4111111111111111" })
@@ -819,8 +822,8 @@ test("suggestions also purge old events of a user who stopped recording", async 
 test("a batch id reused for different events is refused, the same events are a no-op", async () => {
   const as = await newUser()
   const batchId = crypto.randomUUID()
-  expect(await record(as, [event("Nickname", "", "Ana")], { batchId })).toEqual({ recorded: 1, skipped: 0 })
-  expect(await record(as, [event("Nickname", "", "Ana")], { batchId })).toEqual({ recorded: 1, skipped: 0 })
+  expect(await record(as, [event("Nickname", "", "Ana")], { batchId })).toMatchObject({ recorded: 1, skipped: 0 })
+  expect(await record(as, [event("Nickname", "", "Ana")], { batchId })).toMatchObject({ recorded: 1, skipped: 0 })
   await expect(record(as, [event("Nickname", "", "Bea"), event("Other", "", "x")], { batchId })).rejects.toMatchObject({
     code: "CONFLICT",
   })
@@ -1081,7 +1084,7 @@ test("the cap keeps 500 forms per user and drops the least recently used", async
       userId: as().id,
       siteKey: `site${i}.dev`,
       formSignature: `sig${i}`,
-      fingerprints: [],
+      fieldKeys: [],
       fieldMap: {},
       lastUsedAt: new Date(base + i * 1_000),
     })),
@@ -1100,7 +1103,7 @@ test("forms unused for 180 days are purged when the user records again, newer on
     userId: as().id,
     siteKey,
     formSignature: siteKey,
-    fingerprints: [],
+    fieldKeys: [],
     fieldMap: {},
     lastUsedAt: new Date(Date.now() - days * DAY),
   })
@@ -1146,10 +1149,10 @@ test("site profiles are listed and forgotten per site, for their owner only", as
     value: "he/him",
   })
 
-  expect(await call(appRouter.learning.forgetSite, { siteKey: SITE }, other())).toEqual({ removed: 1 })
-  expect(await call(appRouter.learning.forgetSite, { siteKey: SITE }, other())).toEqual({ removed: 0 })
+  expect(await call(appRouter.learning.forgetSite, { siteKey: SITE }, other())).toEqual({ removedForms: 1 })
+  expect(await call(appRouter.learning.forgetSite, { siteKey: SITE }, other())).toEqual({ removedForms: 0 })
   expect(await call(appRouter.learning.siteProfiles, { limit: 50 }, as())).toHaveLength(2)
-  expect(await call(appRouter.learning.forgetSite, { siteKey: SITE }, as())).toEqual({ removed: 1 })
+  expect(await call(appRouter.learning.forgetSite, { siteKey: SITE }, as())).toEqual({ removedForms: 1 })
   expect(first((await lookupAt(as, SITE, [field("p", "Pronouns")])).matches)).not.toMatchObject({ source: "site" })
 })
 
@@ -1186,4 +1189,145 @@ test("the site profile of a deleted user goes with them", async () => {
   expect(
     await db.select({ n: sql<number>`count(*)::int` }).from(siteProfile).where(eq(siteProfile.userId, as().id)),
   ).toEqual([{ n: 0 }])
+})
+
+const entryOf = async (userId: string, key: string) => (await sitesOf(userId))[0]?.fieldMap[key]
+
+test("an entry copied from an answer keeps its source when the user accepts it, and still dies when the answer changes", async () => {
+  const as = await newUser()
+  await call(appRouter.answers.create, { rawLabel: "Preferred name", value: "Ana" }, as())
+  await record(as, [event("Preferred name", "Ana", "Ana", { source: "answer" })])
+  await record(as, [event("Preferred name", "Ana", "Ana", { source: "site" })])
+  expect(await entryOf(as().id, "preferred name|text")).toMatchObject({
+    source: "answer",
+    answerId: expect.any(String),
+  })
+  const ask = () => lookupAt(as, SITE, [field("n", "Preferred name")])
+  expect(first((await ask()).matches)).toMatchObject({ source: "site", value: "Ana" })
+
+  await call(appRouter.answers.create, { rawLabel: "Preferred name", value: "Anita" }, as())
+  expect(first((await ask()).matches)).toMatchObject({ source: "label", value: "Anita" })
+})
+
+test("a profile entry keeps its source and time when accepted, and a later record of the form doesn't bring a stale one back", async () => {
+  const as = await newUser()
+  const at = (days: number) => ({ now: () => new Date(Date.now() + days * DAY) })
+  const form = (source: "profile" | "site") => [
+    event("Email", "a@b.dev", "a@b.dev", { source }),
+    event("Pronouns", "x", "x", { source: "ai" }),
+  ]
+  await record(as, form("profile"), {}, at(0))
+  await db.insert(profile).values({ userId: as().id, data: {} as never, updatedAt: new Date(Date.now() + DAY) })
+  const savedAt = (await entryOf(as().id, "email|text"))?.savedAt
+
+  const ask = () => lookupAt(as, SITE, [field("e", "Email"), field("p", "Pronouns")])
+  expect((await ask()).matches.map((m) => m.source)).toEqual(["none", "site"])
+  await record(as, form("site"), {}, at(2))
+  expect(await entryOf(as().id, "email|text")).toMatchObject({ source: "profile", savedAt })
+  expect((await ask()).matches.map((m) => m.source)).toEqual(["none", "site"])
+})
+
+test("the exact form is found however many newer forms the site has", async () => {
+  const as = await newUser()
+  await record(as, [event("Pronouns", "", "she/her")])
+  await db.insert(siteProfile).values(
+    Array.from({ length: 25 }, (_, i) => ({
+      userId: as().id,
+      siteKey: SITE,
+      formSignature: `other${i}`,
+      fieldKeys: [`field ${i}|text`],
+      fieldMap: {},
+      lastUsedAt: new Date(Date.now() + (i + 1) * 1_000),
+    })),
+  )
+  await atSite(as, SITE_B, [event("Pronouns", "she/her", "they/them")])
+  expect(first((await lookupAt(as, SITE, [field("p", "Pronouns")])).matches)).toMatchObject({
+    source: "site",
+    value: "she/her",
+  })
+})
+
+test("a select whose options change every visit stays one form, and an unseen option set still matches", async () => {
+  const as = await newUser()
+  for (let i = 0; i < 40; i++) {
+    await record(as, [
+      event("Notice period", "2 weeks", "2 weeks", { type: "select", options: [`${i} days`, "2 weeks"], source: "ai" }),
+      event("Pronouns", "x", "x", { source: "ai" }),
+    ])
+  }
+  expect(await sitesOf(as().id)).toHaveLength(1)
+  const { matches } = await lookupAt(as, SITE, [
+    select("n", "Notice period", ["never seen", "2 weeks"]),
+    field("p", "Pronouns"),
+  ])
+  expect(matches).toMatchObject([
+    { source: "site", value: "2 weeks" },
+    { source: "site", value: "x" },
+  ])
+})
+
+test("one site keeps 20 forms and drops its own oldest, other sites are untouched", async () => {
+  const as = await newUser()
+  const row = (siteKey: string, i: number) => ({
+    userId: as().id,
+    siteKey,
+    formSignature: `${siteKey}${i}`,
+    fieldKeys: [],
+    fieldMap: {},
+    lastUsedAt: new Date(Date.now() - (100 - i) * 60_000),
+  })
+  await db.insert(siteProfile).values([...Array.from({ length: 20 }, (_, i) => row(SITE, i)), row(SITE_B, 0)])
+  await record(as, [event("Pronouns", "", "she/her")])
+  const rows = await sitesOf(as().id)
+  const signatures = rows.filter((r) => r.siteKey === SITE).map((r) => r.formSignature)
+  expect(signatures).toHaveLength(20)
+  expect(signatures).not.toContain(`${SITE}0`)
+  expect(signatures).toContain(`${SITE}1`)
+  expect(rows.filter((r) => r.siteKey === SITE_B)).toHaveLength(1)
+})
+
+test("record says whether the form was saved, and why not", async () => {
+  const as = await newUser()
+  const labels = ["Alpha one", "Beta two", "Gamma three", "Delta four", "Epsilon five", "Zeta six"]
+  const all = labels.map((label) => event(label, "x", "x", { source: "ai" }))
+  expect(await record(as, all)).toMatchObject({ siteProfile: { status: "saved" } })
+  expect(await record(as, all.slice(0, 2))).toMatchObject({
+    recorded: 2,
+    siteProfile: { status: "skipped", reason: "partial_form" },
+  })
+  expect(await sitesOf(as().id)).toHaveLength(1)
+  expect(await record(as, [event("Password", "", "hunter2", { type: "password" })])).toMatchObject({
+    recorded: 0,
+    siteProfile: { status: "skipped", reason: "no_learnable_fields" },
+  })
+})
+
+test("a full answer bank rejects the batch's answers but not its site profile", async () => {
+  const as = await newUser()
+  await db.insert(answer).values(
+    Array.from({ length: 2000 }, (_, i) => ({
+      userId: as().id,
+      normalizedLabel: `l${i}`,
+      rawLabel: `l${i}`,
+      value: "x",
+    })),
+  )
+  const events = [event("One more", "", "x"), event("Nickname", "Ana", "Ana", { source: "ai" })]
+  await expect(record(as, events)).rejects.toMatchObject({ code: "BAD_REQUEST" })
+  expect(await db.select().from(fieldEvent).where(eq(fieldEvent.userId, as().id))).toEqual([])
+  expect(await db.select().from(answer).where(eq(answer.normalizedLabel, "one more"))).toEqual([])
+  expect(Object.keys((await sitesOf(as().id))[0]!.fieldMap).sort()).toEqual(["nickname|text", "one more|text"])
+})
+
+test("forgetting a site while records of it run neither deadlocks nor leaves a half written form", async () => {
+  const as = await newUser()
+  const forms = Array.from({ length: 20 }, (_, i) =>
+    i % 2 === 0
+      ? record(as, [event("Alpha", "1", "1", { source: "ai" }), event("Beta", "2", "2", { source: "ai" })])
+      : call(appRouter.learning.forgetSite, { siteKey: SITE }, as()),
+  )
+  await Promise.all(forms)
+  const rows = await sitesOf(as().id)
+  expect(rows.length).toBeLessThanOrEqual(1)
+  for (const row of rows) expect(Object.keys(row.fieldMap).sort()).toEqual(["alpha|text", "beta|text"])
 })

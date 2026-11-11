@@ -3,7 +3,7 @@ CREATE TABLE "site_profile" (
 	"user_id" text NOT NULL,
 	"site_key" text NOT NULL,
 	"form_signature" text NOT NULL,
-	"fingerprints" jsonb NOT NULL,
+	"field_keys" jsonb NOT NULL,
 	"field_map" jsonb DEFAULT '{}'::jsonb NOT NULL,
 	"times_used" integer DEFAULT 0 NOT NULL,
 	"last_used_at" timestamp with time zone DEFAULT now() NOT NULL,

@@ -7,8 +7,8 @@ import {
   LEARNING_AUTOFILL_VALUE_MAX,
   SIMILARITY_MARGIN,
   SIMILARITY_MIN,
-  SITE_PROFILE_CANDIDATES_MAX,
   SITE_PROFILE_RETENTION_DAYS,
+  SITE_PROFILES_PER_SITE_MAX,
   SUGGEST_FLIP_FLOP_MIN,
   SUGGEST_KEEP_MIN,
   SUGGEST_STABLE_RUN,
@@ -57,12 +57,13 @@ import {
   applyEvents,
   entryIsFresh,
   evictLeastRecent,
-  formFingerprints,
+  formFieldKeys,
   formSignature,
-  pickSavedForm,
+  isPartialForm,
+  pickAlikeForm,
   type SiteEvent,
-  siteLock,
   stopsAutofill,
+  withSiteLock,
 } from "../lib/site-profile"
 import { protectedProcedure } from "../procedures"
 
@@ -121,79 +122,111 @@ async function purgeOld(db: Db, userId: string, now: Date): Promise<void> {
   }
 }
 
-/** Folds a batch into the site profile of its form, under one per-user lock taken after every answer lock, so writers can't deadlock. */
+/** The saved form for these fields: the exact one by its key, else the most alike of the site's forms (their map is read for that one only). */
+async function findSavedForm(db: Db, userId: string, siteKey: string, keys: string[]) {
+  const site = and(eq(siteProfile.userId, userId), eq(siteProfile.siteKey, siteKey))
+  const [exact] = await db
+    .select({ fieldMap: siteProfile.fieldMap })
+    .from(siteProfile)
+    .where(and(site, eq(siteProfile.formSignature, formSignature(keys))))
+  if (exact) return exact
+  const candidates = await db
+    .select({ id: siteProfile.id, fieldKeys: siteProfile.fieldKeys, lastUsedAt: siteProfile.lastUsedAt })
+    .from(siteProfile)
+    .where(site)
+    .orderBy(desc(siteProfile.lastUsedAt))
+    .limit(SITE_PROFILES_PER_SITE_MAX)
+  const alike = pickAlikeForm(candidates, keys)
+  if (!alike) return null
+  const [row] = await db
+    .select({ fieldMap: siteProfile.fieldMap })
+    .from(siteProfile)
+    .where(eq(siteProfile.id, alike.id))
+  return row ?? null
+}
+
+type SiteProfileStatus = { status: "saved" | "skipped"; reason?: "partial_form" | "no_learnable_fields" }
+
+/** Folds a batch into the site profile of its form. `withSiteLock` makes it the last lock of the transaction, after the answers. */
 async function saveSiteProfile(
   tx: Pick<Db, "select" | "insert" | "delete" | "execute">,
   userId: string,
   siteKey: string,
-  fingerprints: string[],
+  keys: string[],
   events: {
     event: { type?: string; source: SiteEvent["source"] }
     filled: string
     final: string
     outcome: SiteEvent["outcome"]
     normalizedLabel: string
-    fingerprint: string
+    fieldKey: string
   }[],
   now: Date,
-): Promise<void> {
-  await siteLock(tx, userId)
-  const signature = formSignature(fingerprints)
-  const accepted = events.filter((e) => e.outcome === "accepted" && e.event.source === "answer")
-  const globals = accepted.length
-    ? await tx
-        .select({ id: answer.id, normalizedLabel: answer.normalizedLabel, value: answer.value })
-        .from(answer)
-        .where(
-          and(
-            eq(answer.userId, userId),
-            inArray(
-              answer.normalizedLabel,
-              accepted.map((e) => e.normalizedLabel),
+): Promise<SiteProfileStatus> {
+  return withSiteLock(tx, userId, async () => {
+    const signature = formSignature(keys)
+    const [existing] = await tx
+      .select({ id: siteProfile.id, fieldMap: siteProfile.fieldMap })
+      .from(siteProfile)
+      .where(
+        and(eq(siteProfile.userId, userId), eq(siteProfile.siteKey, siteKey), eq(siteProfile.formSignature, signature)),
+      )
+    if (!existing) {
+      const [latest] = await tx
+        .select({ fieldKeys: siteProfile.fieldKeys })
+        .from(siteProfile)
+        .where(and(eq(siteProfile.userId, userId), eq(siteProfile.siteKey, siteKey)))
+        .orderBy(desc(siteProfile.lastUsedAt), desc(siteProfile.id))
+        .limit(1)
+      if (latest && isPartialForm(latest.fieldKeys, keys)) return { status: "skipped", reason: "partial_form" }
+    }
+    const fromAnswers = events.filter((e) => e.outcome === "accepted" && e.event.source === "answer")
+    const globals = fromAnswers.length
+      ? await tx
+          .select({ id: answer.id, normalizedLabel: answer.normalizedLabel, value: answer.value })
+          .from(answer)
+          .where(
+            and(
+              eq(answer.userId, userId),
+              inArray(
+                answer.normalizedLabel,
+                fromAnswers.map((e) => e.normalizedLabel),
+              ),
             ),
-          ),
-        )
-    : []
-  const siteEvents: SiteEvent[] = events.map((e) => ({
-    fingerprint: e.fingerprint,
-    normalizedLabel: e.normalizedLabel,
-    type: e.event.type,
-    outcome: e.outcome,
-    filled: e.filled,
-    final: e.final,
-    source: e.event.source,
-    answerId: globals.find((g) => g.normalizedLabel === e.normalizedLabel && g.value === e.final)?.id,
-  }))
-  const [existing] = await tx
-    .select({ id: siteProfile.id, fieldMap: siteProfile.fieldMap })
-    .from(siteProfile)
-    .where(
-      and(eq(siteProfile.userId, userId), eq(siteProfile.siteKey, siteKey), eq(siteProfile.formSignature, signature)),
-    )
-  const { fieldMap, accepted: acceptedCount } = applyEvents(existing?.fieldMap ?? {}, siteEvents)
-  if (!existing && Object.keys(fieldMap).length === 0) return
-  const [saved] = await tx
-    .insert(siteProfile)
-    .values({
-      userId,
-      siteKey,
-      formSignature: signature,
-      fingerprints,
-      fieldMap,
-      timesUsed: acceptedCount > 0 ? 1 : 0,
-      lastUsedAt: now,
-    })
-    .onConflictDoUpdate({
-      target: [siteProfile.userId, siteProfile.siteKey, siteProfile.formSignature],
-      set: {
+          )
+      : []
+    const siteEvents: SiteEvent[] = events.map((e) => ({
+      fieldKey: e.fieldKey,
+      normalizedLabel: e.normalizedLabel,
+      type: e.event.type,
+      outcome: e.outcome,
+      filled: e.filled,
+      final: e.final,
+      source: e.event.source,
+      answerId: globals.find((g) => g.normalizedLabel === e.normalizedLabel && g.value === e.final)?.id,
+    }))
+    const { fieldMap, accepted } = applyEvents(existing?.fieldMap ?? {}, siteEvents, now)
+    if (!existing && Object.keys(fieldMap).length === 0) return { status: "skipped", reason: "no_learnable_fields" }
+    const used = accepted > 0 ? 1 : 0
+    const [saved] = await tx
+      .insert(siteProfile)
+      .values({
+        userId,
+        siteKey,
+        formSignature: signature,
+        fieldKeys: keys,
         fieldMap,
-        timesUsed: sql`${siteProfile.timesUsed} + ${acceptedCount > 0 ? 1 : 0}`,
+        timesUsed: used,
         lastUsedAt: now,
-        updatedAt: now,
-      },
-    })
-    .returning({ id: siteProfile.id })
-  if (!existing && saved) await evictLeastRecent(tx, userId, saved.id)
+      })
+      .onConflictDoUpdate({
+        target: [siteProfile.userId, siteProfile.siteKey, siteProfile.formSignature],
+        set: { fieldMap, timesUsed: sql`${siteProfile.timesUsed} + ${used}`, lastUsedAt: now, updatedAt: now },
+      })
+      .returning({ id: siteProfile.id })
+    if (!existing && saved) await evictLeastRecent(tx, userId, siteKey, saved.id)
+    return { status: "saved" }
+  })
 }
 
 export const learningRouter = {
@@ -214,25 +247,8 @@ export const learningRouter = {
         learnable: isLearnableField(field),
       }))
       const usable = fields.filter((f) => f.learnable && f.normalizedLabel)
-      const savedForms =
-        usable.length === 0
-          ? []
-          : await context.db
-              .select({
-                formSignature: siteProfile.formSignature,
-                fingerprints: siteProfile.fingerprints,
-                fieldMap: siteProfile.fieldMap,
-                lastUsedAt: siteProfile.lastUsedAt,
-                updatedAt: siteProfile.updatedAt,
-              })
-              .from(siteProfile)
-              .where(and(eq(siteProfile.userId, userId), eq(siteProfile.siteKey, input.siteKey)))
-              .orderBy(desc(siteProfile.lastUsedAt))
-              .limit(SITE_PROFILE_CANDIDATES_MAX)
-      const saved = pickSavedForm(
-        savedForms,
-        usable.map((f) => f.fingerprint),
-      )
+      const keys = usable.map((f) => f.fieldKey)
+      const saved = usable.length === 0 ? null : await findSavedForm(context.db, userId, input.siteKey, keys)
       const profileUpdatedAt = Object.values(saved?.fieldMap ?? {}).some((entry) => entry.source === "profile")
         ? (await context.db.select({ updatedAt: profile.updatedAt }).from(profile).where(eq(profile.userId, userId)))[0]
             ?.updatedAt
@@ -281,14 +297,14 @@ export const learningRouter = {
 
       type Match = NonNullable<ReturnType<typeof toMatch>> | NonNullable<ReturnType<typeof toSiteMatch>>
       const toSiteMatch = (f: (typeof usable)[number]) => {
-        const entry = saved?.fieldMap[f.fingerprint]
+        const entry = saved?.fieldMap[f.fieldKey]
         if (!saved || !entry) return null
         const global = byLabel.get(f.normalizedLabel)
         if (global?.status === "rejected") return null
-        if (!entryIsFresh(entry, { answer: global, profileUpdatedAt, savedAt: saved.updatedAt })) return null
+        if (!entryIsFresh(entry, { answer: global, profileUpdatedAt })) return null
         const value = isSensitiveValue(entry.value)
           ? null
-          : usableValue({ value: entry.value, fingerprint: f.fingerprint }, f.field)
+          : usableValue({ value: entry.value, fingerprint: f.fieldKey }, f.field)
         if (value === null) return null
         return {
           fieldId: f.field.id,
@@ -394,17 +410,21 @@ export const learningRouter = {
           const filled = event.filledValue.trim()
           const final = event.finalValue.trim()
           const outcome = outcomeOf(filled, final)
-          const { normalizedLabel, fingerprint } = fingerprintOf(event)
-          return outcome && normalizedLabel ? [{ event, filled, final, outcome, normalizedLabel, fingerprint }] : []
+          const { normalizedLabel, fingerprint, fieldKey } = fingerprintOf(event)
+          return outcome && normalizedLabel
+            ? [{ event, filled, final, outcome, normalizedLabel, fingerprint, fieldKey }]
+            : []
         })
         .sort((a, b) => (a.normalizedLabel < b.normalizedLabel ? -1 : a.normalizedLabel > b.normalizedLabel ? 1 : 0))
       const result = { recorded: events.length, skipped: input.events.length - events.length }
-      if (events.length === 0) return result
+      if (events.length === 0) {
+        return { ...result, siteProfile: { status: "skipped" as const, reason: "no_learnable_fields" as const } }
+      }
       // The form is every learnable field the batch reports, filled or not, so it matches what lookup sends. A client can't choose the signature.
-      const formPrints = formFingerprints(
+      const formKeys = formFieldKeys(
         input.events.filter(isLearnableField).flatMap((event) => {
-          const { normalizedLabel, fingerprint } = fingerprintOf(event)
-          return normalizedLabel ? [fingerprint] : []
+          const { normalizedLabel, fieldKey } = fingerprintOf(event)
+          return normalizedLabel ? [fieldKey] : []
         }),
       )
 
@@ -430,105 +450,118 @@ export const learningRouter = {
             }
           }
 
-          const learnable = (e: (typeof events)[number]) =>
-            e.outcome === "corrected" && e.final.length <= LEARNING_AUTOFILL_VALUE_MAX
-          await assertAnswerRoom(
-            tx,
-            userId,
-            events.filter(learnable).map((e) => e.normalizedLabel),
-          )
-          await tx.insert(fieldEvent).values(
-            events.map((e) => ({
-              userId,
-              applicationId: input.applicationId ?? null,
-              siteKey: input.siteKey,
-              fingerprint: e.fingerprint,
-              normalizedLabel: e.normalizedLabel,
-              rawLabel: e.event.label,
-              fieldType: (e.event.type ?? "").toLowerCase(),
-              filledValue: e.filled,
-              finalValue: e.final,
-              source: e.event.source,
-              outcome: e.outcome,
-            })),
-          )
-
-          const touched: { id: string; normalizedLabel: string }[] = []
-          for (const e of events) {
-            const sameValue = and(
-              eq(answer.userId, userId),
-              eq(answer.normalizedLabel, e.normalizedLabel),
-              eq(answer.value, e.filled),
-            )
-            if (e.outcome === "accepted") {
-              await tx
-                .update(answer)
-                .set({ timesUsed: sql`${answer.timesUsed} + 1`, timesCleared: 0, updatedAt: now })
-                .where(sameValue)
-            } else if (e.outcome === "cleared") {
-              await tx
-                .update(answer)
-                .set({
-                  timesUsed: sql`${answer.timesUsed} + 1`,
-                  timesCorrected: sql`${answer.timesCorrected} + 1`,
-                  timesCleared: sql`${answer.timesCleared} + 1`,
-                  lastCorrectedAt: now,
-                  updatedAt: now,
-                })
-                .where(sameValue)
-            } else if (e.final.length > LEARNING_AUTOFILL_VALUE_MAX) {
-              await tx
-                .delete(answer)
-                .where(
-                  and(
-                    eq(answer.userId, userId),
-                    eq(answer.normalizedLabel, e.normalizedLabel),
-                    eq(answer.status, "learned"),
-                  ),
-                )
-            } else {
-              const [row] = await tx
-                .insert(answer)
-                .values({
+          // The answers part runs in a savepoint: a full answer bank skips it (and the events) but never the site profile below.
+          let capError: ORPCError<string, unknown> | null = null
+          const touched = await tx
+            .transaction(async (sp) => {
+              const learnable = (e: (typeof events)[number]) =>
+                e.outcome === "corrected" && e.final.length <= LEARNING_AUTOFILL_VALUE_MAX
+              await assertAnswerRoom(
+                sp,
+                userId,
+                events.filter(learnable).map((e) => e.normalizedLabel),
+              )
+              await sp.insert(fieldEvent).values(
+                events.map((e) => ({
                   userId,
+                  applicationId: input.applicationId ?? null,
+                  siteKey: input.siteKey,
+                  fingerprint: e.fingerprint,
                   normalizedLabel: e.normalizedLabel,
                   rawLabel: e.event.label,
-                  value: e.final,
-                  source: "autofill",
-                  timesCorrected: 1,
-                  lastCorrectedAt: now,
-                  fingerprint: e.fingerprint,
-                })
-                .onConflictDoUpdate({
-                  target: [answer.userId, answer.normalizedLabel],
-                  // An answer the user confirmed by hand keeps its value: the correction stays in the site profile.
-                  setWhere: or(ne(answer.status, "confirmed"), eq(answer.value, e.final)),
-                  set: {
-                    rawLabel: e.event.label,
-                    value: e.final,
-                    source: "autofill",
-                    fingerprint: e.fingerprint,
-                    timesUsed: sql`${answer.timesUsed} + case when ${answer.value} = ${e.filled} then 1 else 0 end`,
-                    timesCorrected: sql`${answer.timesCorrected} + 1`,
-                    timesCleared: 0,
-                    status: sql`case when ${answer.value} = ${e.final} then ${answer.status} when ${answer.status} = 'confirmed' then 'learned' else ${answer.status} end`,
-                    lastCorrectedAt: now,
-                    updatedAt: now,
-                  },
-                })
-                .returning({ id: answer.id })
-              if (row) touched.push({ id: row.id, normalizedLabel: e.normalizedLabel })
-            }
-          }
-          await saveSiteProfile(tx, userId, input.siteKey, formPrints, events, now)
-          return touched
+                  fieldType: (e.event.type ?? "").toLowerCase(),
+                  filledValue: e.filled,
+                  finalValue: e.final,
+                  source: e.event.source,
+                  outcome: e.outcome,
+                })),
+              )
+
+              const touched: { id: string; normalizedLabel: string }[] = []
+              for (const e of events) {
+                const sameValue = and(
+                  eq(answer.userId, userId),
+                  eq(answer.normalizedLabel, e.normalizedLabel),
+                  eq(answer.value, e.filled),
+                )
+                if (e.outcome === "accepted") {
+                  await sp
+                    .update(answer)
+                    .set({ timesUsed: sql`${answer.timesUsed} + 1`, timesCleared: 0, updatedAt: now })
+                    .where(sameValue)
+                } else if (e.outcome === "cleared") {
+                  await sp
+                    .update(answer)
+                    .set({
+                      timesUsed: sql`${answer.timesUsed} + 1`,
+                      timesCorrected: sql`${answer.timesCorrected} + 1`,
+                      timesCleared: sql`${answer.timesCleared} + 1`,
+                      lastCorrectedAt: now,
+                      updatedAt: now,
+                    })
+                    .where(sameValue)
+                } else if (e.final.length > LEARNING_AUTOFILL_VALUE_MAX) {
+                  await sp
+                    .delete(answer)
+                    .where(
+                      and(
+                        eq(answer.userId, userId),
+                        eq(answer.normalizedLabel, e.normalizedLabel),
+                        eq(answer.status, "learned"),
+                      ),
+                    )
+                } else {
+                  const [row] = await sp
+                    .insert(answer)
+                    .values({
+                      userId,
+                      normalizedLabel: e.normalizedLabel,
+                      rawLabel: e.event.label,
+                      value: e.final,
+                      source: "autofill",
+                      timesCorrected: 1,
+                      lastCorrectedAt: now,
+                      fingerprint: e.fingerprint,
+                    })
+                    .onConflictDoUpdate({
+                      target: [answer.userId, answer.normalizedLabel],
+                      // An answer the user confirmed by hand keeps its value: the correction stays in the site profile.
+                      setWhere: or(ne(answer.status, "confirmed"), eq(answer.value, e.final)),
+                      set: {
+                        rawLabel: e.event.label,
+                        value: e.final,
+                        source: "autofill",
+                        fingerprint: e.fingerprint,
+                        timesUsed: sql`${answer.timesUsed} + case when ${answer.value} = ${e.filled} then 1 else 0 end`,
+                        timesCorrected: sql`${answer.timesCorrected} + 1`,
+                        timesCleared: 0,
+                        lastCorrectedAt: now,
+                        updatedAt: now,
+                      },
+                    })
+                    .returning({ id: answer.id })
+                  if (row) touched.push({ id: row.id, normalizedLabel: e.normalizedLabel })
+                }
+              }
+              return touched
+            })
+            .catch((error: unknown) => {
+              if (error instanceof ORPCError && error.code === "BAD_REQUEST") {
+                capError = error
+                return []
+              }
+              throw error
+            })
+          const siteProfileStatus = await saveSiteProfile(tx, userId, input.siteKey, formKeys, events, now)
+          return { touched, capError, siteProfileStatus }
         }),
       )
-      if (learned === null) return result
+      if (learned === null) return { ...result, siteProfile: { status: "saved" as const } }
+      if (learned.capError) throw learned.capError
 
-      await embedMissing(context, "learning.record", userId, learned)
+      await embedMissing(context, "learning.record", userId, learned.touched)
       await purgeOld(context.db, userId, now)
-      return result
+      return { ...result, siteProfile: learned.siteProfileStatus }
     }),
 
   siteProfiles: protectedProcedure
@@ -554,7 +587,7 @@ export const learningRouter = {
         siteKey: row.siteKey,
         timesUsed: row.timesUsed,
         lastUsedAt: row.lastUsedAt,
-        fields: Object.entries(row.fieldMap).map(([fingerprint, entry]) => ({ fingerprint, ...entry })),
+        fields: Object.entries(row.fieldMap).map(([fieldKey, entry]) => ({ fieldKey, ...entry })),
       }))
     }),
 
@@ -562,19 +595,23 @@ export const learningRouter = {
     .route({
       method: "POST",
       path: "/learning/sites/forget",
-      summary: "Delete everything learned on one site",
+      summary: "Forget the learned form maps of one site: saved answers and logged corrections stay",
       tags: ["learning"],
     })
     .input(forgetSiteInputSchema)
     .output(forgetSiteOutputSchema)
     .handler(async ({ context, input }) => {
       const removed = await guardLearningDb("forgetSite", () =>
-        context.db
-          .delete(siteProfile)
-          .where(and(eq(siteProfile.userId, context.user.id), eq(siteProfile.siteKey, input.siteKey)))
-          .returning({ id: siteProfile.id }),
+        context.db.transaction((tx) =>
+          withSiteLock(tx, context.user.id, () =>
+            tx
+              .delete(siteProfile)
+              .where(and(eq(siteProfile.userId, context.user.id), eq(siteProfile.siteKey, input.siteKey)))
+              .returning({ id: siteProfile.id }),
+          ),
+        ),
       )
-      return { removed: removed.length }
+      return { removedForms: removed.length }
     }),
 
   suggestions: protectedProcedure

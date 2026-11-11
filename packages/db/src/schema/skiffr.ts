@@ -157,8 +157,9 @@ export const fieldEvent = pgTable(
 
 /**
  * What the user left in each field the last time they filled one form of a site, so the next visit fills the same without
- * asking a model. `form_signature` is the hash of the form's sorted field fingerprints, `fingerprints` those fingerprints
- * (a changed form is matched by their overlap) and `field_map` the learned value per fingerprint. The values are the
+ * asking a model. A field is identified by its label and control type (not its options). `form_signature` is the hash of
+ * the form's sorted field keys, `field_keys` those keys (a changed form is matched by their overlap) and `field_map` the
+ * learned value per key. The values are the
  * user's own data: never log them.
  */
 export const siteProfile = pgTable(
@@ -168,7 +169,7 @@ export const siteProfile = pgTable(
     userId: userId(),
     siteKey: text("site_key").notNull(),
     formSignature: text("form_signature").notNull(),
-    fingerprints: jsonb("fingerprints").$type<string[]>().notNull(),
+    fieldKeys: jsonb("field_keys").$type<string[]>().notNull(),
     fieldMap: jsonb("field_map").$type<SiteFieldMap>().notNull().default({}),
     timesUsed: integer("times_used").notNull().default(0),
     lastUsedAt: timestamp("last_used_at", { withTimezone: true }).notNull().defaultNow(),

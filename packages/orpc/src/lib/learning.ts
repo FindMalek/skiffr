@@ -8,17 +8,26 @@ import type { EmbeddingModel } from "ai"
 import { and, eq, inArray, isNull, sql } from "drizzle-orm"
 import { describeError, safeErrorFields } from "./errors"
 
-/** What identifies a field across forms: its normalized label, its control kind and the set of options it offers. */
+/**
+ * What identifies a field across forms: its normalized label, its control kind and the set of options it offers.
+ * `fieldKey` is the same without the options: what identifies the field inside a site's saved form, so a select whose
+ * options change between visits is still the same field.
+ */
 export function fingerprintOf(field: { label: string; type?: string; options?: string[] }): {
   normalizedLabel: string
   fingerprint: string
+  fieldKey: string
 } {
   const normalizedLabel = normalizeLabel(field.label)
   const options = [...new Set((field.options ?? []).map(normalizeLabel))].sort()
   const optionsHash =
     options.length > 0 ? createHash("sha256").update(options.join("\n")).digest("hex").slice(0, 16) : ""
   const type = (field.type ?? "").trim().toLowerCase()
-  return { normalizedLabel, fingerprint: `${normalizedLabel}|${type}|${optionsHash}` }
+  return {
+    normalizedLabel,
+    fingerprint: `${normalizedLabel}|${type}|${optionsHash}`,
+    fieldKey: `${normalizedLabel}|${type}`,
+  }
 }
 
 /** The question text that gets embedded and matched. */
