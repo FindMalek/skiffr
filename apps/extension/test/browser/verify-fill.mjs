@@ -153,7 +153,7 @@ for (const [name, url, rows, expected] of [
       JSON.stringify(again.counts),
     )
     const outline = await page2.evaluate(() => getComputedStyle(document.getElementById("summary")).outlineStyle)
-    check("react: low confidence field outlined", outline === "dashed", outline)
+    check("react: low confidence field outlined", outline === "solid", outline)
     await page2.evaluate(() => {
       window.__edits = []
       window.__stop = window.skiffrFill.watchEdits(document, window.__summary, (r) => window.__edits.push(r))
@@ -411,7 +411,7 @@ await (async () => {
     statusOf(res, "Do you need sponsorship?")?.status === "skipped" && dom.sp === "no",
     dom.sp,
   )
-  check("outline beats input#x { outline: none !important }", dom.outline === "dashed", dom.outline)
+  check("outline beats input#x { outline: none !important }", dom.outline === "solid", dom.outline)
   check(
     "beforeinput editor receives the text",
     dom.own === "hello own" && statusOf(res, "Own editor")?.status === "filled",

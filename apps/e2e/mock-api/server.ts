@@ -8,6 +8,8 @@ import {
   draftAnswerOutputSchema,
   type FieldDescriptor,
   type FieldMapping,
+  lookupInputSchema,
+  lookupOutputSchema,
   mapFieldsInputSchema,
   mapFieldsOutputSchema,
   profileDataSchema,
@@ -17,6 +19,18 @@ import type { z } from "zod"
 export const MOCK_TOKEN = "skp_e2e_fake_token_not_a_secret"
 
 export type MapFieldsHandler = (fields: FieldDescriptor[]) => FieldMapping[]
+
+export type LookupMatch =
+  | { fieldId: string; source: "none" }
+  | {
+      fieldId: string
+      source: "site" | "exact" | "label" | "similar"
+      value: string
+      autofill: boolean
+      answerId?: string
+      score?: number
+    }
+export type LookupHandler = (input: { siteKey: string; fields: { id: string; label: string }[] }) => LookupMatch[]
 
 export interface RecordedRequest {
   method: string
@@ -31,6 +45,8 @@ export interface MockApi {
   requests: RecordedRequest[]
   /** Replace the canned `ai.mapFields` answer. */
   onMapFields: (handler: MapFieldsHandler) => void
+  /** Replace the canned `learning.lookup` answer (no saved answers by default). */
+  onLookup: (handler: LookupHandler) => void
   /** Make the next request fail with this status (oRPC error body), then go back to normal. */
   failNext: (status: number, code?: string) => void
   reset: () => void
@@ -72,6 +88,8 @@ export const defaultMapFields: MapFieldsHandler = (fields) =>
     return { id: field.id, action: "profile", key: rule[1], confidence: 0.95, reason: "mock: matched rule" }
   })
 
+const noMatches: LookupHandler = ({ fields }) => fields.map(({ id }) => ({ fieldId: id, source: "none" }))
+
 const DRAFT: DraftAnswerResult = { ok: true, text: "Mock answer drafted from the profile." }
 
 class HttpError extends Error {
@@ -104,17 +122,29 @@ function parseInput<T extends z.ZodType>(schema: T, body: unknown): z.output<T> 
 export async function startMockApi(): Promise<MockApi> {
   const requests: RecordedRequest[] = []
   let mapFields: MapFieldsHandler = defaultMapFields
+  let lookup: LookupHandler = noMatches
   let failure: { status: number; code: string } | null = null
 
+  // oRPC's wire format: POST /rpc/<router>/<procedure> with `{ json: input }`, answered with `{ json: output }`
   const route = (method: string, path: string, body: unknown): unknown => {
-    if (method === "GET" && path === "/v1/profile") return applicantProfileSchema.parse(PROFILE)
-    if (method === "POST" && path === "/v1/ai/map-fields") {
+    if (method === "POST" && path === "/rpc/extension/whoami") {
+      return { user: { id: "user-e2e", name: "Ana Silva", email: "ana.silva@example.com" } }
+    }
+    if (method === "POST" && path === "/rpc/profile/get") return applicantProfileSchema.parse(PROFILE)
+    if (method === "POST" && path === "/rpc/ai/mapFields") {
       const input = parseInput(mapFieldsInputSchema, body)
       return mapFieldsOutputSchema.parse({ mappings: mapFields(input.fields) })
     }
-    if (method === "POST" && path === "/v1/ai/draft-answer") {
+    if (method === "POST" && path === "/rpc/ai/draftAnswer") {
       parseInput(draftAnswerInputSchema, body)
       return draftAnswerOutputSchema.parse(DRAFT)
+    }
+    if (method === "POST" && path === "/rpc/learning/lookup") {
+      const input = parseInput(lookupInputSchema, body)
+      const matches = lookup(input).map((match) =>
+        match.source === "none" ? match : { score: 1, timesUsed: 0, timesCorrected: 0, ...match },
+      )
+      return lookupOutputSchema.parse({ matches })
     }
     throw new HttpError(404, "NOT_FOUND", `The mock api has no ${method} ${path}`)
   }
@@ -128,7 +158,7 @@ export async function startMockApi(): Promise<MockApi> {
       try {
         const method = req.method ?? "GET"
         const path = new URL(req.url ?? "/", "http://mock.local").pathname
-        const body = await readJson(req)
+        const body = ((await readJson(req)) as { json?: unknown } | undefined)?.json
         const authorization = req.headers.authorization
         requests.push({ method, path, authorization, body })
         if (failure) {
@@ -137,10 +167,13 @@ export async function startMockApi(): Promise<MockApi> {
           throw new HttpError(status, code, "mock: forced failure")
         }
         if (authorization !== `Bearer ${MOCK_TOKEN}`) throw new HttpError(401, "UNAUTHORIZED", "Invalid token")
-        send(res, 200, route(method, path, body))
+        send(res, 200, { json: route(method, path, body), meta: [] })
       } catch (error) {
         const failed = error instanceof HttpError ? error : new HttpError(500, "INTERNAL_SERVER_ERROR", String(error))
-        send(res, failed.status, { defined: false, code: failed.code, status: failed.status, message: failed.message })
+        send(res, failed.status, {
+          json: { defined: false, code: failed.code, status: failed.status, message: failed.message },
+          meta: [],
+        })
       }
     })()
   })
@@ -153,12 +186,16 @@ export async function startMockApi(): Promise<MockApi> {
     onMapFields: (handler) => {
       mapFields = handler
     },
+    onLookup: (handler) => {
+      lookup = handler
+    },
     failNext: (status, code = "INTERNAL_SERVER_ERROR") => {
       failure = { status, code }
     },
     reset: () => {
       requests.length = 0
       mapFields = defaultMapFields
+      lookup = noMatches
       failure = null
     },
     stop: () => new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve()))),

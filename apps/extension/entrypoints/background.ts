@@ -1,14 +1,19 @@
 import { browser } from "wxt/browser"
 import { defineBackground } from "wxt/utils/define-background"
+import { apiFetch } from "@/lib/api"
 import { isTestConnectionMessage, testConnection } from "@/lib/connection"
 import { siteKey } from "@/lib/detect/ats"
 import { createFrameTracker, type FrameTracker } from "@/lib/detect/frames"
+import { createFillRequestHandler } from "@/lib/fill-request"
+import { createFillService } from "@/lib/fill-service"
 import {
   type FillMessage,
   isDisableSiteMessage,
   isFillFramesMessage,
+  isFillReportMessage,
   isFormDetectedMessage,
   isFrameNavigatedMessage,
+  isOpenOptionsMessage,
   isProbeFramesMessage,
   isSiteDisabledMessage,
   type SiteDisabledResponse,
@@ -67,6 +72,13 @@ async function hideStorageFromContentScripts(): Promise<void> {
   }
 }
 
+async function isTrustedFrame(tabId: number, frameId: number, documentId: string | undefined): Promise<boolean> {
+  const targets = await frames().fillTargets(tabId)
+  return targets.some(
+    (target) => target.frameId === frameId && (!target.documentId || target.documentId === documentId),
+  )
+}
+
 function toTab(tabId: number, message: unknown, options?: Browser.tabs.MessageSendOptions): void {
   browser.tabs.sendMessage(tabId, message, options).catch(() => {})
 }
@@ -79,6 +91,11 @@ type FrameSender = { tabId: number; frameId: number; url: string; documentId?: s
 
 async function handleFrameMessage(message: unknown, { tabId, frameId, url, documentId, origin }: FrameSender) {
   if (frameId !== 0) {
+    if (isFillReportMessage(message)) {
+      // only a frame that was told to fill may speak for the page, the top frame shows the one result
+      if (await isTrustedFrame(tabId, frameId, documentId)) toTab(tabId, message, { frameId: 0 })
+      return
+    }
     if (isFrameNavigatedMessage(message)) {
       const had = await frames().hasTrustedFrame(tabId)
       await frames().drop(tabId, frameId)
@@ -99,6 +116,8 @@ async function handleFrameMessage(message: unknown, { tabId, frameId, url, docum
   } else if (isFillFramesMessage(message)) {
     await frames().setTop(tabId, url)
     await fillChildFrames(tabId)
+  } else if (isOpenOptionsMessage(message)) {
+    await browser.runtime.openOptionsPage()
   } else if (isDisableSiteMessage(message)) {
     const key = siteKey(url)
     if (key) await disableSite(key)
@@ -133,8 +152,27 @@ function handleContentMessage(
 }
 
 export default defineBackground(() => {
+  const fillService = createFillService({ call: (run) => apiFetch(run) })
+  const fillRequests = createFillRequestHandler({
+    extensionId: browser.runtime.id,
+    extensionUrl: browser.runtime.getURL("/"),
+    service: fillService,
+    isTrustedFrame,
+  })
   browser.runtime.onMessage.addListener(handleContentMessage)
-  browser.tabs.onRemoved.addListener((tabId) => void frames().reset(tabId))
+  browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    const pending = fillRequests.handle(message, sender)
+    if (!pending) return false
+    pending.then(sendResponse, () => sendResponse({ ok: false, code: "failed" }))
+    return true
+  })
+  browser.storage.onChanged.addListener((changes, area) => {
+    if (area === "local" && changes.settings) fillService.clear()
+  })
+  browser.tabs.onRemoved.addListener((tabId) => {
+    fillRequests.forgetTab(tabId)
+    void frames().reset(tabId)
+  })
   browser.commands.onCommand.addListener((command) => {
     if (command === "fill") return requestFill()
   })

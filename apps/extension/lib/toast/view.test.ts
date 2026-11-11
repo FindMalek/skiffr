@@ -18,6 +18,8 @@ function setup() {
     onNo: () => calls.push("no"),
     onNever: () => calls.push("never"),
     onTimeout: () => calls.push("timeout"),
+    onSettings: () => calls.push("settings"),
+    onRetry: () => calls.push("retry"),
   })
   return { window, doc, view, calls }
 }
@@ -57,5 +59,81 @@ test("synthetic clicks and keys from the page do nothing", () => {
   const keydown = new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true })
   root?.querySelector(".toast")?.dispatchEvent(keydown as unknown as Event)
   expect(calls).toEqual([])
+  view.hide()
+})
+
+const tick = () => wait(30)
+
+test("a result replaces the question in place, announces in the live region and takes no focus", async () => {
+  const { doc, view, calls } = setup()
+  view.show()
+  await tick()
+  const root = hosts(doc)[0]?.shadowRoot
+  const title = () => root?.querySelector(".title")
+  expect(title()?.textContent).toBe("Autofill this application?")
+  view.showMessage({ text: "Could not reach the API", actions: ["retry", "settings"] })
+  expect(hosts(doc)).toHaveLength(1)
+  expect(title()?.textContent).toBe("Could not reach the API")
+  expect(title()?.getAttribute("aria-live")).toBe("polite")
+  expect([...(root?.querySelectorAll("button") ?? [])].map((b) => b.textContent)).toEqual([
+    "Retry",
+    "Open settings",
+    "Close",
+  ])
+  expect(doc.activeElement).toBe(doc.body)
+  expect(calls).toEqual([])
+  view.hide()
+})
+
+test("a result shown on its own keeps its text and closes itself", async () => {
+  const { doc, view } = setup()
+  view.showMessage({ text: "Filling your application…", busy: true })
+  await tick()
+  const root = hosts(doc)[0]?.shadowRoot
+  expect(root?.querySelector(".title")?.textContent).toBe("Filling your application…")
+  expect(root?.querySelectorAll("button")).toHaveLength(0)
+  view.showMessage({ text: "Filled 2 fields" })
+  expect(root?.querySelector(".title")?.textContent).toBe("Filled 2 fields")
+  expect([...(root?.querySelectorAll("button") ?? [])].map((b) => b.textContent)).toEqual(["Close"])
+  view.hide()
+  expect(hosts(doc)).toHaveLength(0)
+})
+
+test("the toast asks again after a result was closed", async () => {
+  const { doc, view } = setup()
+  view.showMessage({ text: "Nothing to fill" })
+  view.hide()
+  view.show()
+  await tick()
+  expect(hosts(doc)[0]?.shadowRoot?.querySelector(".title")?.textContent).toBe("Autofill this application?")
+  view.hide()
+})
+
+test("after a keyboard answer the result takes the focus the question had, a mouse answer does not", async () => {
+  const { window, doc, view } = setup()
+  view.show()
+  await tick()
+  const root = hosts(doc)[0]?.shadowRoot
+  const click = (detail: number) => {
+    const event = new window.MouseEvent("click", { bubbles: true, detail })
+    Object.defineProperty(event, "isTrusted", { value: true })
+    root?.querySelector('[data-action="yes"]')?.dispatchEvent(event as unknown as Event)
+  }
+  click(0)
+  view.hide()
+  view.showMessage({ text: "Filling…", busy: true })
+  const toast = () => hosts(doc)[0]?.shadowRoot?.querySelector(".toast")
+  expect(hosts(doc)[0]?.shadowRoot?.activeElement).toBe(toast() ?? null)
+  view.hide()
+
+  view.show()
+  await tick()
+  const root2 = hosts(doc)[0]?.shadowRoot
+  const mouse = new window.MouseEvent("click", { bubbles: true, detail: 1 })
+  Object.defineProperty(mouse, "isTrusted", { value: true })
+  root2?.querySelector('[data-action="yes"]')?.dispatchEvent(mouse as unknown as Event)
+  view.hide()
+  view.showMessage({ text: "Filling…", busy: true })
+  expect(hosts(doc)[0]?.shadowRoot?.activeElement ?? null).toBeNull()
   view.hide()
 })
