@@ -1,4 +1,3 @@
-import { detectApplicationForm } from "./detect/score"
 import {
   type CollectedField,
   collectFields,
@@ -9,6 +8,7 @@ import {
   highlightField,
 } from "./fill"
 import { FILL_CONFIDENCE_REVIEW, FILL_FIELDS_MAX, type FillErrorCode } from "./fill-config"
+import { createNoiseFilter, type NoiseFilter } from "./fill-scope"
 
 export type MappingResult = Pick<FillPageInput, "mapping" | "values" | "files"> & {
   /** Fields with a saved answer from a similar question: outlined for the person, never filled. */
@@ -49,34 +49,11 @@ export function setMappingProvider(next: MappingProvider | null): void {
 const NEVER_ASKED = new Set(["password", "hidden", "file"])
 const SENSITIVE_AUTOCOMPLETE = /(^|\s)(current-password|new-password|one-time-code|cc-[a-z-]+)(\s|$)/i
 
-const NOISE_FORM = /newsletter|subscri|comment|search/i
-
-/** A search box, or a form for a newsletter, comments or search: never part of an application. */
-function inNoiseForm(el: HTMLElement): boolean {
-  const form = el.closest("form, [role=search]")
-  if (!form) return false
-  if (form.getAttribute("role") === "search") return true
-  const submits = Array.from(form.querySelectorAll("button, input[type=submit]"))
-    .slice(0, 4)
-    .map((button) => button.textContent || (button as HTMLInputElement).value || "")
-  const own = ["id", "class", "action", "name", "aria-label"].map((name) => form.getAttribute(name) ?? "")
-  return NOISE_FORM.test([...own, ...submits].join(" "))
-}
-
-/** A whole page is scoped to the form the detector picked; a page it found no form on is used as it is, minus the noise. */
-function scopeOf(root: ParentNode): { root: ParentNode; scoped: boolean } {
-  if (root.nodeType !== 9) return { root, scoped: true }
-  const doc = root as Document
-  const container = detectApplicationForm(doc).container
-  if (container && container !== doc.body && container !== doc.documentElement) return { root: container, scoped: true }
-  return { root: doc, scoped: false }
-}
-
 /** Fields worth asking about: never secrets, uploads or search boxes, and never one that already holds a value, so typed text stays on the page. */
-function askable(field: CollectedField, scoped: boolean): boolean {
+function askable(field: CollectedField, isNoise: NoiseFilter): boolean {
   if (field.kind === "file" || NEVER_ASKED.has(field.descriptor.type ?? "") || field.descriptor.type === "search")
     return false
-  if (!scoped && inNoiseForm(field.el)) return false
+  if (isNoise(field.el)) return false
   if (SENSITIVE_AUTOCOMPLETE.test(field.info.autocomplete ?? "")) return false
   return currentValue(field) === ""
 }
@@ -95,10 +72,11 @@ const hrefOf = (root: ParentNode): string => ((root as Document).location ?? roo
 async function run(start: ParentNode): Promise<FillOutcome> {
   try {
     clearOutlines()
-    const { root, scoped } = scopeOf(start)
+    const root = start
     const href = hrefOf(start)
+    const isNoise = createNoiseFilter((start.nodeType === 9 ? start : start.ownerDocument) as Document)
     const asked = collectFields(root)
-      .filter((field) => askable(field, scoped))
+      .filter((field) => askable(field, isNoise))
       .slice(0, FILL_FIELDS_MAX)
     const mapped = asked.length > 0 ? await provider(asked) : { mapping: [], values: {} }
     if (!mapped) return { ok: false, code: "failed", reason: "no mapping provider" }
@@ -120,7 +98,7 @@ async function run(start: ParentNode): Promise<FillOutcome> {
     let suggested = 0
     for (const field of fields) {
       if (!wanted.has(field.id) || currentValue(field) !== "") continue
-      release.push(highlightField(field, "Skiffr has a suggestion for this field, please check"))
+      release.push(highlightField(field, "skiffr has a suggestion for this field, please check"))
       suggested++
     }
     clearOutlines = () => {

@@ -27,7 +27,7 @@ function outline(el: HTMLElement, note: string): () => void {
 }
 
 /** Outlines a field for review, with a text for assistive technology that goes with it. Hidden native controls get their label outlined instead. */
-export function highlightField(field: CollectedField, note = "Filled by Skiffr, please check"): () => void {
+export function highlightField(field: CollectedField, note = "Filled by skiffr, please check"): () => void {
   const grouped = field.choices.length > 0 && field.kind !== "select" && field.kind !== "combobox"
   const members = grouped ? field.choices : [{ el: field.el }]
   const undo = members.map(({ el }) => {

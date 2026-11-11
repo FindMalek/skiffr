@@ -20,6 +20,7 @@ import {
   FILL_CONFIDENCE_REVIEW,
   type FillErrorCode,
   LEARNED_CONFIDENCE,
+  PROFILE_READ_DEADLINE_MS,
   PROFILE_TTL_MS,
   REQUEST_DEADLINE_MS,
   RETRY_BACKOFF_MS,
@@ -152,11 +153,16 @@ export function createFillService({
     }
   }
 
-  /** Flattened profile, kept in memory for a minute so several frames and a quick retry share one read. */
-  function profileValues(ctx: Run): Promise<Record<string, string> | null> {
+  /**
+   * Flattened profile, kept in memory for a minute so several frames and a quick retry share one read. The read is
+   * shared, so it has a signal and a deadline of its own: no one waiter (a tab that closes) can cancel it for the others.
+   */
+  function sharedProfile(): Promise<Record<string, string> | null> {
     if (cache && now() - cache.at < PROFILE_TTL_MS) return Promise.resolve(cache.values)
+    if (inflight) return inflight
     const mine = generation
-    inflight ??= api(ctx, RETRY_READS, CALL_TIMEOUT_MS.profile, (client, signal) =>
+    const own: Run = { deadline: now() + PROFILE_READ_DEADLINE_MS, generation: mine }
+    inflight = api(own, RETRY_READS, CALL_TIMEOUT_MS.profile, (client, signal) =>
       client.profile.get(undefined, { signal }),
     )
       .then((profile) => {
@@ -171,6 +177,21 @@ export function createFillService({
         if (mine === generation) inflight = null
       })
     return inflight
+  }
+
+  /** One waiter on the shared read: it gives up on its own tab's signal and deadline without touching the read. */
+  function waitForProfile(ctx: Run): Promise<Record<string, string> | null> {
+    let stop: () => void = () => {}
+    const bail = new Promise<never>((_, reject) => {
+      const timer = setTimeout(() => reject(new FillError("timeout")), Math.max(0, ctx.deadline - now()))
+      const onAbort = () => reject(new FillError("failed"))
+      ctx.signal?.addEventListener("abort", onAbort, { once: true })
+      stop = () => {
+        clearTimeout(timer)
+        ctx.signal?.removeEventListener("abort", onAbort)
+      }
+    })
+    return Promise.race([sharedProfile(), bail]).finally(stop)
   }
 
   async function lookup(ctx: Run, fields: FillField[], siteKey: string): Promise<Map<string, Learned | "suggest">> {
@@ -203,7 +224,11 @@ export function createFillService({
   }
 
   /** Batches run one after the other; one that fails ends the loop and keeps what the earlier ones gave. */
-  async function mapAll(ctx: Run, fields: FillField[]): Promise<{ mappings: FieldMapping[]; problem?: unknown }> {
+  async function mapAll(
+    ctx: Run,
+    fields: FillField[],
+    onBatch: (batch: FieldMapping[]) => void,
+  ): Promise<{ mappings: FieldMapping[]; problem?: unknown }> {
     const descriptors: FieldDescriptor[] = []
     for (const field of fields) {
       const parsed = fieldDescriptorSchema.safeParse(field)
@@ -216,7 +241,9 @@ export function createFillService({
         const out = await api(ctx, RETRY_PAID, CALL_TIMEOUT_MS.mapFields, (client, signal) =>
           client.ai.mapFields({ fields: batch.slice(0, AI_FIELDS_MAX) }, { signal }),
         )
-        mappings.push(...out.mappings.filter((mapping) => known.has(mapping.id)))
+        const kept = out.mappings.filter((mapping) => known.has(mapping.id))
+        mappings.push(...kept)
+        onBatch(kept)
       } catch (error) {
         const code = classify(error)
         if (mappings.length === 0 || FATAL.has(code) || code === "changed") throw error
@@ -238,11 +265,6 @@ export function createFillService({
       problems.push(code)
     }
 
-    // read next to the lookup, so a slow model call cannot use up the budget the profile still needs
-    const profileRead = profileValues(ctx).then(
-      (values) => ({ values }),
-      (error: unknown) => ({ error }),
-    )
     let learned = new Map<string, Learned | "suggest">()
     try {
       learned = await lookup(ctx, fields, request.siteKey)
@@ -254,11 +276,21 @@ export function createFillService({
       failed(error)
     }
 
+    // read as soon as a model answer wants the profile, while the other batches are still running
+    let profileRead: Promise<{ values: Record<string, string> | null } | { error: unknown }> | null = null
+    const startProfile = (batch: FieldMapping[]): void => {
+      if (profileRead || !batch.some((m) => m.action === "profile" && m.confidence >= FILL_CONFIDENCE_MIN)) return
+      profileRead = waitForProfile(ctx).then(
+        (values) => ({ values }),
+        (error: unknown) => ({ error }),
+      )
+    }
+
     const needsModel = fields.filter((field) => typeof learned.get(field.id) !== "object")
     let mappings: FieldMapping[] = []
     if (needsModel.length > 0) {
       try {
-        const done = await mapAll(ctx, needsModel)
+        const done = await mapAll(ctx, needsModel, startProfile)
         mappings = done.mappings
         if (done.problem) failed(done.problem)
       } catch (error) {
@@ -267,8 +299,8 @@ export function createFillService({
     }
 
     let profile: Record<string, string> | null = null
-    if (mappings.some((m) => m.action === "profile" && m.confidence >= FILL_CONFIDENCE_MIN)) {
-      const read = await profileRead
+    if (profileRead) {
+      const read = await (profileRead as Promise<{ values: Record<string, string> | null } | { error: unknown }>)
       if ("error" in read) failed(read.error)
       else {
         profile = read.values

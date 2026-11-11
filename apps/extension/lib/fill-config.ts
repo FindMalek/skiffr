@@ -10,6 +10,8 @@ export const PROFILE_TTL_MS = 60_000
 export const CALL_TIMEOUT_MS = { lookup: 8_000, profile: 8_000, mapFields: 30_000 } as const
 /** One budget for all calls of a request, retries and batches included, so a hanging api is not minutes of "Filling…". */
 export const REQUEST_DEADLINE_MS = 45_000
+/** The shared profile read has its own budget: two tries and the pause between them. */
+export const PROFILE_READ_DEADLINE_MS = 20_000
 export const RETRY_BACKOFF_MS = 600
 export const REQUEST_LIMIT = { max: 10, windowMs: 60_000 } as const
 /** How long a content script waits for the worker before it gives up on a fill. */
@@ -31,11 +33,11 @@ export type FillErrorCode = (typeof FILL_ERROR_CODES)[number]
 
 /** What the in-page result says for each failure. */
 export const FILL_ERROR_TEXT: Record<FillErrorCode, string> = {
-  "not-configured": "Skiffr is not connected yet. Add your token in the settings.",
-  rejected: "Skiffr no longer accepts this connection. It may have been revoked: reconnect in the settings.",
-  unavailable: "Skiffr had a problem. Try again in a moment.",
+  "not-configured": "skiffr is not connected yet. Add your token in the settings.",
+  rejected: "skiffr no longer accepts this connection. It may have been revoked: reconnect in the settings.",
+  unavailable: "skiffr had a problem. Try again in a moment.",
   unreachable: "Could not reach skiffr. Check your connection or the server address in settings.",
-  timeout: "Skiffr took too long to answer. Try again.",
+  timeout: "skiffr took too long to answer. Try again.",
   "no-profile": "No profile saved yet. Fill in your profile in the dashboard first.",
   busy: "Too many fill requests in a row. Wait a moment and try again.",
   invalid: "This page could not be filled.",

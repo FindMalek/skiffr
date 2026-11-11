@@ -27,6 +27,8 @@ const HOST_STYLE: Record<string, string> = {
   bottom: "16px",
   "z-index": "2147483647",
   contain: "layout style",
+  // `all: initial` leaves direction alone, so a right to left page would mirror the toast
+  direction: "ltr",
 }
 
 function button(doc: Document, label: string, action: string, className = ""): HTMLButtonElement {
@@ -41,6 +43,11 @@ function button(doc: Document, label: string, action: string, className = ""): H
 // a fresh tag name per page load, so a page cannot select the toast by a fixed name
 const HOST_TAG = `x-${Math.random().toString(36).slice(2, 10).padEnd(8, "a")}`
 
+function afterFrameOf(doc: Document): (fn: () => void) => void {
+  return (fn) =>
+    doc.defaultView?.requestAnimationFrame ? doc.defaultView.requestAnimationFrame(fn) : setTimeout(fn, 0)
+}
+
 export function createToastView(doc: Document, handlers: ToastHandlers): ToastView {
   let host: HTMLElement | null = null
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -49,12 +56,14 @@ export function createToastView(doc: Document, handlers: ToastHandlers): ToastVi
   let observer: MutationObserver | null = null
   let watchedRoot: Element | null = null
 
+  const afterFrame = afterFrameOf(doc)
   let currentTitle = ASK_TITLE
   let dismissMs = AUTO_DISMISS_MS
   let onDismiss: () => void = handlers.onTimeout
   let titleEl: HTMLElement | null = null
   let toastEl: HTMLElement | null = null
-  // set when the last action came from the keyboard: the focus it had is gone with the question, so the answer takes it
+  // set when the answer to the question came from the keyboard: the focus it had is gone with the question, so the
+  // messages that follow take it, and take it back when filling the page moved it into a field
   let fromKeyboard = false
   let rowEl: HTMLElement | null = null
   let primary: (() => void) | null = handlers.onYes
@@ -75,7 +84,7 @@ export function createToastView(doc: Document, handlers: ToastHandlers): ToastVi
     const toast = doc.createElement("div")
     toast.className = "toast"
     toast.setAttribute("role", "dialog")
-    toast.setAttribute("aria-label", "Skiffr autofill")
+    toast.setAttribute("aria-label", "skiffr autofill")
     toast.tabIndex = -1
 
     const title = doc.createElement("p")
@@ -98,7 +107,7 @@ export function createToastView(doc: Document, handlers: ToastHandlers): ToastVi
       yes: handlers.onYes,
       no: handlers.onNo,
       never: handlers.onNever,
-      close: () => view.hide(),
+      close: () => dismiss(),
       settings: () => handlers.onSettings?.(),
       retry: () => handlers.onRetry?.(),
     }
@@ -129,9 +138,7 @@ export function createToastView(doc: Document, handlers: ToastHandlers): ToastVi
 
     toast.append(title, row)
     root.append(style, toast)
-    const frame =
-      doc.defaultView?.requestAnimationFrame.bind(doc.defaultView) ?? ((fn: () => void) => setTimeout(fn, 0))
-    frame(() => {
+    afterFrame(() => {
       title.textContent = currentTitle
       toast.classList.add("in")
     })
@@ -178,8 +185,14 @@ export function createToastView(doc: Document, handlers: ToastHandlers): ToastVi
     watch(root)
   }
 
+  function dismiss(): void {
+    fromKeyboard = false
+    view.hide()
+  }
+
   const view: ToastView = {
     show() {
+      fromKeyboard = false
       if (host) {
         ensureMounted()
         return
@@ -189,9 +202,9 @@ export function createToastView(doc: Document, handlers: ToastHandlers): ToastVi
     },
     showMessage({ text, actions = [], busy = false }) {
       dismissMs = busy ? 0 : MESSAGE_DISMISS_MS
-      onDismiss = () => view.hide()
+      onDismiss = () => dismiss()
       primary = null
-      onEscape = () => view.hide()
+      onEscape = () => dismiss()
       currentTitle = text
       const fresh = !host
       if (fresh) mount()
@@ -203,8 +216,11 @@ export function createToastView(doc: Document, handlers: ToastHandlers): ToastVi
       const buttons = actions.map((action, i) => button(doc, ACTION_LABEL[action], action, i === 0 ? "primary" : ""))
       if (!busy) buttons.push(button(doc, "Close", "close", "link"))
       rowEl.replaceChildren(...buttons)
-      if (fromKeyboard) toastEl?.focus({ preventScroll: true })
-      fromKeyboard = false
+      if (fromKeyboard) {
+        // a node that was only just attached cannot always take focus before its first frame, so try again then
+        toastEl?.focus({ preventScroll: true })
+        if (fresh) afterFrame(() => host && doc.activeElement !== host && toastEl?.focus({ preventScroll: true }))
+      }
       arm()
     },
     hide() {

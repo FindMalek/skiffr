@@ -3,21 +3,19 @@ import { resultMessage } from "./result"
 
 const none = { filled: 0, review: 0, suggested: 0 }
 
-test("filled fields, the ones to check and the suggestions are told apart", () => {
-  expect(resultMessage({ filled: 2, review: 0, suggested: 1 }, false)?.text).toBe(
-    "Filled 2 fields. 1 more is outlined in amber for you to check.",
+test("everything outlined is said once, as one number", () => {
+  expect(resultMessage({ filled: 7, review: 2, suggested: 1 }, false)?.text).toBe(
+    "Filled 7 fields. 3 outlined in amber for you to check.",
   )
-  expect(resultMessage({ filled: 5, review: 2, suggested: 0 }, false)?.text).toBe(
-    "Filled 5 fields. 2 of them are outlined in amber to check.",
-  )
+  expect(resultMessage({ filled: 5, review: 0, suggested: 0 }, false)?.text).toBe("Filled 5 fields.")
   expect(resultMessage({ filled: 1, review: 1, suggested: 0 }, false)?.text).toBe(
-    "Filled 1 field. 1 of them is outlined in amber to check.",
+    "Filled 1 field. 1 outlined in amber for you to check.",
   )
 })
 
 test("suggestions alone never read as filled", () => {
   const message = resultMessage({ ...none, suggested: 2 }, false)
-  expect(message?.text).toBe("Nothing filled. 2 suggestions are outlined for you to check.")
+  expect(message?.text).toBe("Nothing filled. 2 suggestions outlined in amber for you to check.")
   expect(message?.text).not.toContain("Filled")
 })
 

@@ -140,3 +140,24 @@ test("a site entry from the lookup wins over the model's mapping", async ({
   await expect(page.locator(FIELDS.first)).toHaveValue("Ana Maria")
   await expect(page.locator(FIELDS.last)).toHaveValue("Silva")
 })
+
+test("after Enter on Yes the keyboard focus stays on the toast, also once the form was filled", async ({
+  context,
+  serviceWorker,
+  fixtureServer,
+  mockApi,
+}) => {
+  await connect(serviceWorker, mockApi)
+  const { page, toast } = await openApplication(context, fixtureServer.origin)
+
+  await toast.focus("yes")
+  await page.keyboard.press("Enter")
+
+  await toast.waitFor((s) => s.title !== null && FILLED.test(s.title))
+  await expect(page.locator(FIELDS.first)).toHaveValue("Ana")
+  // filling moves the focus through the page's fields: the result must take it back from them
+  for (const wait of [50, 300, 1_500]) {
+    await page.waitForTimeout(wait)
+    expect(await toast.activeTag()).toMatch(/^x-/)
+  }
+})

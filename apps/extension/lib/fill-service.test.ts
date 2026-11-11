@@ -540,3 +540,34 @@ describe("settings change, deadline and cancel", () => {
     expect(seen.lookup).toEqual([])
   })
 })
+
+describe("the profile read", () => {
+  test("is not made when no model answer wants a profile value", async () => {
+    const { service, seen } = setup({
+      matches: () => [{ fieldId: "a", source: "site", value: "Ana", autofill: true }],
+      map: () => [{ id: "b", action: "generate", value: "No", confidence: 0.9, reason: "" }],
+    })
+    await service.run(request([field("a", "x"), field("b", "y")]))
+    expect(seen.profile).toBe(0)
+  })
+
+  test("a tab that closes while waiting does not cancel the read the other tab waits on", async () => {
+    let release: (value: unknown) => void = () => {}
+    const { service, seen } = setup({
+      map: (ids) => ids.map((id) => profileMap(id, "identity.firstName")),
+      profile: () => new Promise((resolve) => (release = resolve)),
+    })
+    const closing = new AbortController()
+    const first = service.run(request([field("a", "Name")]), closing.signal)
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    const second = service.run(request([field("b", "Other")]))
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    closing.abort()
+    release(PROFILE)
+    expect((await first).ok).toBe(false)
+    const out = await second
+    if (!out.ok) throw new Error("expected ok")
+    expect(out.values).toEqual({ "identity.firstName": "Ana" })
+    expect(seen.profile).toBe(1)
+  })
+})

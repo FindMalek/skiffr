@@ -62,6 +62,26 @@ export class ToastDriver {
     return last
   }
 
+  /** Puts the keyboard focus on one of the toast's buttons, as tabbing to it would. */
+  async focus(action: string): Promise<void> {
+    const button = (await this.snapshot()).buttons.find((candidate) => candidate.action === action)
+    if (!button) throw new Error(`The toast has no ${action} button`)
+    await this.cdp.send("DOM.focus", { nodeId: button.nodeId })
+  }
+
+  /** The tag of the page's focused element: the toast's own host while it holds the focus, `body` when nothing does. */
+  activeTag(): Promise<string> {
+    return this.page.evaluate(() => document.activeElement?.tagName.toLowerCase() ?? "none")
+  }
+
+  /** The reading direction the toast resolves to: its host is the only element the page's own direction can reach. */
+  hostDirection(): Promise<string> {
+    return this.page.evaluate(() => {
+      const host = [...document.documentElement.children].find((el) => el.tagName.startsWith("X-"))
+      return host ? getComputedStyle(host).direction : "none"
+    })
+  }
+
   /** A real mouse click on the button, so it is a trusted event like a person's. */
   async click(action: string): Promise<void> {
     const button = (await this.snapshot()).buttons.find((candidate) => candidate.action === action)

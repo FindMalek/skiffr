@@ -1,4 +1,4 @@
-import { afterEach, expect, spyOn, test } from "bun:test"
+import { afterEach, describe, expect, spyOn, test } from "bun:test"
 import { Window } from "happy-dom"
 import { createWorkerProvider } from "./fill-client"
 import { FILL_CONFIDENCE_REVIEW } from "./fill-config"
@@ -247,36 +247,92 @@ function sink() {
   return { sent, send }
 }
 
-test("only the detected application form is asked about: a search box and a newsletter box stay out", async () => {
+const APPLICATION = `
+  <label>First name <input name="first_name" autocomplete="given-name"></label>
+  <label>Last name <input name="last_name"></label>
+  <label>Email <input type="email" name="email"></label>`
+
+/** The labels a fill sends for a page, and the page to look at the fields afterwards. */
+async function labelsSent(html: string, title = "Apply for Senior Engineer") {
   const window = new Window({ url: "https://careers.example/apply" })
-  window.document.title = "Apply for Senior Engineer"
-  window.document.write(`
-    <form role="search" action="/s"><input type="search" name="q" aria-label="Search jobs"></form>
-    <form id="news" action="/newsletter"><label>Newsletter email <input type="email" name="nl"></label><button>Subscribe</button></form>
-    <form id="app">
-      <label>First name <input name="first_name"></label>
-      <label>Last name <input name="last_name"></label>
-      <label>Email <input type="email" name="email"></label>
-      <button type="submit">Submit application</button>
-    </form>`)
+  window.document.title = title
+  window.document.write(html)
   const doc = window.document as unknown as Document
   const { sent, send } = sink()
   setMappingProvider(createWorkerProvider(send, SITE))
-  const outcome = await handleFill(doc)
-  expect(sent[0]?.fields.map((f) => f.label)).toEqual(["First name", "Last name", "Email"])
-  expect(outcome.ok && outcome.filled).toBe(3)
-  expect(input(doc, "nl").value).toBe("")
-  expect(input(doc, "q").value).toBe("")
-})
-
-test("a page with no detectable form still never asks about search boxes or newsletter forms", async () => {
-  const { doc } = page(`
-    <input type="search" name="q" aria-label="Search">
-    <form id="news" action="/newsletter"><label>Email <input type="email" name="nl"></label></form>`)
-  const { sent, send } = sink()
-  setMappingProvider(createWorkerProvider(send, SITE))
   await handleFill(doc)
-  expect(sent).toEqual([])
+  return { labels: sent[0]?.fields.map((f) => f.label) ?? [], doc }
+}
+
+describe("what a fill reads: everything except clear noise", () => {
+  test("two forms on one page: both are read", async () => {
+    const { labels } = await labelsSent(`
+      <form id="a">${APPLICATION}<button type="submit">Next</button></form>
+      <form id="b"><label>Phone <input name="phone"></label><label>City <input name="city"></label></form>`)
+    expect(labels).toEqual(["First name", "Last name", "Email", "Phone", "City"])
+  })
+
+  test("a dialog with fields outside its form: all of them are read", async () => {
+    const { labels } = await labelsSent(`
+      <div role="dialog" aria-label="Apply">
+        <form>${APPLICATION}<button type="submit">Apply</button></form>
+        <label>Portfolio <input name="portfolio"></label>
+      </div>`)
+    expect(labels.map((label) => label?.replace(/^Apply: /, ""))).toEqual([
+      "First name",
+      "Last name",
+      "Email",
+      "Portfolio",
+    ])
+  })
+
+  test("a small form next to inputs in a sibling div, no form tag around them: all are read", async () => {
+    const { labels } = await labelsSent(`
+      <div id="app">
+        <div class="step"><form>${APPLICATION}</form></div>
+        <div class="more">
+          <label>Phone <input name="phone"></label><label>City <input name="city"></label>
+          <label>Website <input name="website"></label><label>Notice period <input name="notice"></label>
+        </div>
+        <button>Apply now</button>
+      </div>`)
+    expect(labels).toEqual(["First name", "Last name", "Email", "Phone", "City", "Website", "Notice period"])
+  })
+
+  test("an input tied to the form by its form attribute from outside it is read", async () => {
+    const { labels } = await labelsSent(`
+      <form id="main">${APPLICATION}<button type="submit">Apply</button></form>
+      <footer><label>Phone <input name="phone" form="main"></label></footer>`)
+    expect(labels).toContain("Phone")
+  })
+
+  test("an application form whose id, class or action say search or comment is not skipped", async () => {
+    const { labels } = await labelsSent(`
+      <form id="search-jobs-application" class="comment-box" action="/search/comments">${APPLICATION}<button type="submit">Apply</button></form>`)
+    expect(labels).toEqual(["First name", "Last name", "Email"])
+  })
+
+  test("search, newsletter and a cookie dialog stay out, only the application is read", async () => {
+    const { labels, doc } = await labelsSent(`
+      <form role="search"><input type="search" name="q" aria-label="Search jobs"></form>
+      <form action="/x"><label>Your email <input type="email" name="nl"></label><button>Subscribe</button></form>
+      <div role="dialog" aria-label="Cookie preferences"><label>Name on card? <input name="c"></label></div>
+      <div role="dialog" aria-label="Chat"><label>Your question <input name="chat"></label></div>
+      <form aria-label="Leave a comment"><label>Comment <textarea name="comment"></textarea></label></form>
+      <form id="app">${APPLICATION}<button type="submit">Submit application</button></form>`)
+    expect(labels).toEqual(["First name", "Last name", "Email"])
+    expect(input(doc, "nl").value).toBe("")
+  })
+
+  test("a page with no detectable form still never asks about search boxes or newsletter forms", async () => {
+    const { labels } = await labelsSent(
+      `<input type="search" name="q" aria-label="Search">
+       <form action="/x"><label>Email <input type="email" name="nl"></label><button>Sign up for the newsletter</button></form>
+       <label>Nickname <input name="nick"></label>`,
+      "Home",
+    )
+    expect(labels).toEqual(["Nickname"])
+  })
 })
 
 test("a form the page swapped out during the request counts as not filled", async () => {
