@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Careers at Initech</title></head>
+<body>
+<div id="app"><h1>Open roles</h1><a href="/roles/1" id="open">Designer</a></div>
+<script>
+  const app = document.getElementById("app")
+  document.getElementById("open").addEventListener("click", (event) => {
+    event.preventDefault()
+    history.pushState({}, "", "/spa-apply.html?role=1")
+    setTimeout(() => {
+      app.innerHTML = `<h1>Designer</h1><form>
+        <input name="full_name" placeholder="Full name"><input type="email" placeholder="Email">
+        <input type="tel" placeholder="Phone"><input type="file" name="resume" aria-label="Resume"><button type="submit">Apply</button></form>`
+    }, 300)
+  })
+</script>
+</body></html>

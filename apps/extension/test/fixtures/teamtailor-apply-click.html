@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Senior Designer - Initech Careers</title></head>
+<body>
+<h1>Senior Designer</h1>
+<p>Join our design team.</p>
+<button id="apply" type="button">Apply for this job</button>
+<div id="panel" hidden>
+  <form>
+    <label>First name <input name="first_name"></label>
+    <label>Last name <input name="last_name"></label>
+    <label>Email <input type="email" name="email"></label>
+    <label>Phone <input type="tel" name="phone"></label>
+    <label>Resume <input type="file" name="resume"></label>
+    <button type="submit">Send application</button>
+  </form>
+</div>
+<script>
+  // custom domain careers page, the form is already in the dom but hidden until the Apply button is clicked
+  document.getElementById("apply").addEventListener("click", () => {
+    setTimeout(() => { document.getElementById("panel").hidden = false }, 400)
+  })
+</script>
+</body></html>

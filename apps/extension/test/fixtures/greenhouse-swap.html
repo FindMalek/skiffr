@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Job Application for Staff Engineer at Acme</title></head>
+<body>
+<h1>Staff Engineer</h1>
+<form id="application-form" action="#" method="post">
+  <h2>Apply for this job</h2>
+  <div class="input-wrapper"><label for="first_name">First Name<span>*</span></label><input id="first_name" name="first_name" type="text" required></div>
+  <div class="input-wrapper"><label for="last_name">Last Name<span>*</span></label><input id="last_name" name="last_name" type="text" required></div>
+  <div class="input-wrapper"><label for="email">Email<span>*</span></label><input id="email" name="email" type="text" required></div>
+  <div class="input-wrapper"><label for="phone">Phone</label><input id="phone" name="phone" type="text"></div>
+  <div class="file-upload"><label id="resume-label">Resume/CV<span>*</span></label><input id="resume" type="file" aria-labelledby="resume-label"></div>
+  <button type="submit">Submit application</button>
+</form>
+<script>
+  // job-boards.greenhouse.io hydrates by replacing the whole <html> element about 1.3s after load
+  const markup = document.body.innerHTML.split("<script>")[0]
+  setTimeout(() => {
+    const next = document.implementation.createHTMLDocument(document.title).documentElement
+    next.querySelector("body").innerHTML = markup
+    document.replaceChild(document.adoptNode(next), document.documentElement)
+    window.__swapped = true
+  }, 1300)
+</script>
+</body></html>

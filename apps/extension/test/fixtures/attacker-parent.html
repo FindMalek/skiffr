@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Weather</title></head>
+<body>
+<h1>Weather today</h1>
+<iframe id="ad" title="ad" width="500" height="400"></iframe>
+<script>
+  // the frame lives on another origin than this page
+  const flood = new URLSearchParams(location.search).get("flood") ? "#flood" : ""
+  document.getElementById("ad").src = "https://127.0.0.1:ATTACKER_PORT/attacker-frame.html" + flood
+</script>
+</body></html>

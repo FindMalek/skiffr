@@ -21,3 +21,18 @@ export async function setSettings(
   await area.set({ [SETTINGS_KEY]: parsed })
   return parsed
 }
+
+const DISABLED_SITES_KEY = "disabledSites"
+
+export async function getDisabledSites(area: StorageArea = browser.storage.local): Promise<string[]> {
+  const stored = await area.get(DISABLED_SITES_KEY)
+  const value = stored[DISABLED_SITES_KEY]
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []
+}
+
+export async function disableSite(hostname: string, area: StorageArea = browser.storage.local): Promise<void> {
+  const sites = await getDisabledSites(area)
+  const host = hostname.toLowerCase()
+  if (!host || sites.includes(host)) return
+  await area.set({ [DISABLED_SITES_KEY]: [...sites, host] })
+}

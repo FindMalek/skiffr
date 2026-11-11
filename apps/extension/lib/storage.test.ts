@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { DEFAULT_SETTINGS, getSettings, setSettings } from "./storage"
+import { DEFAULT_SETTINGS, disableSite, getDisabledSites, getSettings, setSettings } from "./storage"
 
 function fakeArea(initial: Record<string, unknown> = {}) {
   const data = { ...initial }
@@ -19,4 +19,11 @@ test("settings round trip with a trimmed api url", async () => {
 
 test("bad stored settings fall back to defaults", async () => {
   expect(await getSettings(fakeArea({ settings: { apiUrl: "nope" } }))).toEqual(DEFAULT_SETTINGS)
+})
+
+test("disabled sites are stored once per lowercase hostname", async () => {
+  const area = fakeArea()
+  await disableSite("Jobs.Example.com", area)
+  await disableSite("jobs.example.com", area)
+  expect(await getDisabledSites(area)).toEqual(["jobs.example.com"])
 })

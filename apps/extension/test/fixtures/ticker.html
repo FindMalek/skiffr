@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Careers at Initech</title></head>
+<body>
+<h1>Careers</h1>
+<div id="ticker"></div>
+<div id="slot"></div>
+<script>
+  // a live ticker mutating every 100ms starves a trailing debounce, the form shows up at 3s
+  let n = 0
+  setInterval(() => { document.getElementById("ticker").textContent = `open roles: ${n++}` }, 100)
+  setTimeout(() => {
+    document.getElementById("slot").innerHTML = `<form><h2>Apply</h2>
+      <input name="full_name" placeholder="Full name"><input type="email" placeholder="Email">
+      <input type="tel" placeholder="Phone"><input type="file" name="resume" aria-label="Resume"><button type="submit">Apply</button></form>`
+  }, 3000)
+</script>
+</body></html>
