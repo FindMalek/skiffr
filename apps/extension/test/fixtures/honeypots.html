@@ -1,0 +1,81 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>honeypots</title>
+<style>
+  body { font: 14px sans-serif; margin: 0; padding: 8px 16px; }
+  .row { margin: 4px 0; min-height: 26px; }
+  .legit-far { margin-top: 3600px; }
+  .scroller { height: 60px; overflow: auto; border: 1px solid #999; }
+  .spacer { height: 200px; }
+  #banner { position: fixed; top: 0; left: 0; right: 0; height: 12px; background: #eee; opacity: 0.9; z-index: 50; }
+</style>
+<div id="banner"></div>
+<form id="app" onsubmit="event.preventDefault(); window.__submitted = true"></form>
+<script>
+  const trap = (n, css) => `<input aria-label="TRAP ${n}" name="trap${n}" data-trap="${n}" ${css}>`
+  const parent = (n, style) => `<div style="${style}">${trap(n, "")}</div>`
+  const frame = (n, style) =>
+    `<iframe title="f${n}" style="${style}" srcdoc="<label for='x'>TRAP ${n}</label><input id='x' name='trap${n}' data-trap='${n}'>"></iframe>`
+  const cases = [
+    trap(1, 'style="display:none"'),
+    parent(2, "display:none"),
+    trap(3, 'style="visibility:hidden"'),
+    parent(4, "visibility:hidden"),
+    trap(5, 'style="opacity:0"'),
+    parent(6, "opacity:0"),
+    `<div style="opacity:0"><div>${trap(7, "")}</div></div>`,
+    parent(8, "height:0;overflow:hidden"),
+    parent(9, "max-height:0;overflow:hidden"),
+    parent(10, "width:0;overflow:hidden"),
+    trap(11, 'style="width:0;height:0;padding:0;border:0"'),
+    `<div style="position:absolute;clip:rect(0,0,0,0);width:100px;height:20px">${trap(12, "")}</div>`,
+    parent(13, "clip-path:inset(100%)"),
+    trap(14, 'style="clip-path:inset(50%)"'),
+    `<div style="position:relative;height:24px">${trap(15, "")}<div style="position:absolute;inset:0;background:#fff;z-index:10"></div></div>`,
+    parent(16, "content-visibility:hidden;contain-intrinsic-size:100px 24px"),
+    parent(17, "filter:opacity(0)"),
+    trap(18, 'style="filter:opacity(0)"'),
+    `<div style="position:absolute;left:9999px">${trap(19, "")}</div>`,
+    trap(20, 'style="position:absolute;left:-9999px"'),
+    trap(21, 'style="position:absolute;top:-9999px"'),
+    parent(22, "transform:translateX(-9999px)"),
+    `<div style="position:fixed;left:200vw;top:20px">${trap(23, "")}</div>`,
+    trap(24, 'aria-hidden="true"'),
+    `<div aria-hidden="true">${trap(25, "")}</div>`,
+    `<div hidden>${trap(26, "")}</div>`,
+    `<details><summary>more</summary>${trap(27, "")}</details>`,
+    `<input aria-label="TRAP 28" name="website" data-trap="28" tabindex="-1" autocomplete="off">`,
+    frame(29, "display:none"),
+    frame(30, "width:0;height:0;border:0"),
+    frame(31, "opacity:0"),
+    frame(32, "position:absolute;left:-9999px;width:200px;height:50px"),
+    `<div style="display:none" id="shadow-host-trap"></div>`,
+    trap(34, 'style="width:1px;height:1px;padding:0;border:0"'),
+  ]
+  const form = document.getElementById("app")
+  form.innerHTML =
+    cases.map((html) => `<div class="row">${html}</div>`).join("") +
+    `<div class="row"><label for="l1">LEGIT visible</label><input id="l1" name="l1"></div>
+     <div class="row"><label for="l2">LEGIT checkbox</label><input id="l2" type="checkbox" style="opacity:0;position:absolute"></div>
+     <div class="row"><iframe title="visible" style="width:300px;height:40px;border:0" srcdoc="<label for='x'>LEGIT framed</label><input id='x' name='framed'>"></iframe></div>
+     <div class="row" id="shadow-legit"></div>
+     <div class="scroller"><div class="spacer"></div><label for="l3">LEGIT scrolled</label><input id="l3" name="l3"></div>
+     <div class="row legit-far"><label for="l4">LEGIT below the fold</label><input id="l4" name="l4"></div>`
+  const ok = document.getElementById("shadow-host-trap").attachShadow({ mode: "open" })
+  ok.innerHTML = '<label for="s">TRAP 33</label><input id="s" name="trap33" data-trap="33">'
+  document.getElementById("shadow-legit").attachShadow({ mode: "open" }).innerHTML =
+    '<label for="s">LEGIT shadow</label><input id="s" name="shadow">'
+
+  const deep = (root, out = []) => {
+    for (const el of root.querySelectorAll("*")) {
+      if (el.matches("input")) out.push(el)
+      if (el.shadowRoot) deep(el.shadowRoot, out)
+      if (el.localName === "iframe" && el.contentDocument) deep(el.contentDocument, out)
+    }
+    return out
+  }
+  window.__trapValues = () => deep(document).filter((i) => i.dataset.trap).map((i) => [i.dataset.trap, i.value])
+  window.__state = () => ({})
+  window.__submitted = false
+</script>
+<script src="./entry.js"></script>

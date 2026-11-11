@@ -1,5 +1,6 @@
 import type { ProfileData, ProfileFields } from "@skiffr/common/schemas"
-import { index, integer, jsonb, pgEnum, pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core"
+import { getTableColumns } from "drizzle-orm"
+import { index, integer, jsonb, pgEnum, pgTable, text, timestamp, unique, uuid, vector } from "drizzle-orm/pg-core"
 import { user } from "./auth"
 
 const userId = () =>
@@ -30,7 +31,8 @@ export const profile = pgTable("profile", {
   updatedAt: updatedAt(),
 })
 
-// The embedding vector(1536) column is a follow-up: the local postgres image (postgres:17-alpine) has no pgvector.
+export const EMBEDDING_DIMENSIONS = 1536
+
 export const answer = pgTable(
   "answer",
   {
@@ -42,11 +44,16 @@ export const answer = pgTable(
     source: answerSource("source").notNull().default("manual"),
     timesUsed: integer("times_used").notNull().default(0),
     timesCorrected: integer("times_corrected").notNull().default(0),
+    embedding: vector("embedding", { dimensions: EMBEDDING_DIMENSIONS }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [unique("answer_user_label_unique").on(t.userId, t.normalizedLabel)],
 )
+
+const { embedding: _embedding, ...answerPublicColumns } = getTableColumns(answer)
+/** Every answer column except the embedding, which never leaves the server. Use it for selects and returning. */
+export const answerColumns = answerPublicColumns
 
 export const job = pgTable(
   "job",
@@ -104,4 +111,22 @@ export const jobSource = pgTable(
     createdAt: createdAt(),
   },
   (t) => [unique("job_source_user_url_unique").on(t.userId, t.url)],
+)
+
+/** Personal access tokens for the extension. Only the sha-256 of the secret is stored; `prefix` and `last4` are for display. */
+export const apiToken = pgTable(
+  "api_token",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: userId(),
+    name: text("name").notNull(),
+    prefix: text("prefix").notNull(),
+    last4: text("last4").notNull(),
+    tokenHash: text("token_hash").notNull().unique(),
+    createdAt: createdAt(),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (t) => [index("api_token_user_idx").on(t.userId)],
 )

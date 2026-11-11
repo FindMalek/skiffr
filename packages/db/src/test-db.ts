@@ -5,6 +5,19 @@ import { runMigrations } from "./migrate"
 
 const PREFIX = "skiffr_test"
 
+const onlyStrings = (value: unknown): string => {
+  if (typeof value !== "string") {
+    throw new TypeError("A date reached the driver as an object: bind it through a typed column or pass an ISO string")
+  }
+  return value
+}
+
+/**
+ * pglite turns a `Date` into text by itself, postgres-js (the production driver) throws on one. Tests on pglite pass these
+ * as `serializers` so a `Date` interpolated into a raw `sql` template fails here too, not only in the postgres run.
+ */
+export const strictDateSerializers = { 1082: onlyStrings, 1114: onlyStrings, 1184: onlyStrings }
+
 export function assertTestUrl(url: string): URL {
   const parsed = new URL(url)
   const name = parsed.pathname.slice(1)
