@@ -65,7 +65,7 @@ function alreadyHas(field: CollectedField, value: string): string | null {
   return current
 }
 
-/** Applies a field mapping in document order. Never submits, never clicks a button, never touches password or hidden inputs. */
+/** Applies a field mapping in document order. Never submits and never clicks submit, next or apply buttons; it only clicks checkboxes, radios and custom dropdowns with their options. Never touches password or hidden inputs. */
 export async function fillPage(input: FillPageInput): Promise<FillSummary> {
   const done = beginFill()
   try {

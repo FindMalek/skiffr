@@ -18,4 +18,4 @@ Anything that leaks or alters a user's data, or acts on a page without the user 
 
 ## Supported versions
 
-Skiffr is pre-release. Only the latest `main` is supported.
+Skiffr is in early development. Only the latest `main` is supported.

@@ -107,7 +107,7 @@ Sign in to the dashboard with `ADMIN_EMAIL` and `ADMIN_PASSWORD` from `.env`, sa
 
 ### Load the extension (development only)
 
-The extension does not fill pages yet, so this is for developers: you can check the options page and the connection to your api. It needs Chrome 142 or newer, or a Chromium browser of the same age (Arc, Brave, Edge).
+The extension does not fill pages yet, so this is for developers: you can check the options page and the connection to your api. It needs Chrome 142 or newer (the manifest minimum; the token isolation below is the reason), or a Chromium browser of the same age (Arc, Brave, Edge).
 
 ```bash
 pnpm --filter extension build
@@ -171,7 +171,7 @@ Your profile and answers live in your Postgres. The extension does not fill page
 - **To the language model provider you configured (Groq by default):** the same field descriptors, plus the names of your profile keys, plus the values of a short allowlist of keys: first and last name, city, country, work authorization, links, and a few free-form fields such as headline, skills or availability. Email, phone, address, pay, ids and dates of birth are not in the allowlist and are never sent. Password, hidden and file inputs are dropped before the request. Page text is wrapped as untrusted data in the prompt. When you ask for a drafted answer, it also gets the question, the job description and up to 5 of your earlier answers. Source: `packages/ai/src/shared-keys.ts`.
 - **To OpenAI, only if you set `OPENAI_API_KEY` (learning):** the normalized question label, to compute an embedding. Never the answer.
 - **Never:** form submission. The fill engine does not submit a form, click submit, next or apply buttons, or touch password or hidden inputs. It sets a file only on a resume or CV slot and only when handed one, and clicks only the controls it fills (checkboxes, radios, custom dropdowns and their own options).
-- **Tokens:** the background worker and the extension's options page read the token and call the api. Content scripts on web pages are kept from it by `storage.local.setAccessLevel("TRUSTED_CONTEXTS")`, which needs Chrome 142 or newer (the manifest's `minimum_chrome_version`). The server stores a SHA-256 hash.
+- **Tokens:** the background worker and the extension's options page read the token and call the api. Content scripts on web pages are kept from it by `storage.local.setAccessLevel("TRUSTED_CONTEXTS")`, which the extension relies on, so the manifest requires Chrome 142 or newer (`minimum_chrome_version`). The server stores a SHA-256 hash.
 - **Learned answers:** labels for secrets, card and bank data, government and tax ids, birth dates and equal opportunity categories are skipped by the learning code, and so are values that look like a card number (Luhn), an IBAN or a US social security number, whatever the field is called. Stored embeddings never leave the api.
 - **The event log:** for every filled field the api keeps one row with the raw label, the filled value and the final value, per user. Rows older than 90 days are deleted, but only when the extension records events or asks for suggestions, and 500 rows at a time. On a quiet account older rows can stay. Rows are removed with the user (foreign key `on delete cascade`). There is no self-service account deletion in the dashboard yet.
 
