@@ -116,3 +116,37 @@ test("an opaque origin reported by the sender is recorded as opaque", async () =
   await tracker.report(1, 6, { url: "https://initech.example/embed", documentId: "b", origin: "null" })
   expect(await tracker.hasTrustedFrame(1)).toBe(false)
 })
+
+const GH = "https://job-boards.greenhouse.io/initech/jobs/1"
+
+test("a new top document drops what the old page reported, including an early report from its own child", async () => {
+  const tracker = createFrameTracker(memory())
+  await tracker.startTop(1, TOP, "top-1")
+  await tracker.report(1, 7, { url: GH, documentId: "old-child" })
+  await tracker.report(1, 8, { url: GH, documentId: "early-child" })
+  expect(await tracker.startTop(1, "https://acme.example/blog", "top-2")).toBe("new-document")
+  expect(await tracker.hasTrustedFrame(1)).toBe(false)
+})
+
+test("the same top document keeps its records when only the url changes", async () => {
+  const tracker = createFrameTracker(memory())
+  await tracker.startTop(1, TOP, "top-1")
+  await tracker.report(1, 7, { url: GH, documentId: "child" })
+  expect(await tracker.startTop(1, `${TOP}#apply`, "top-1")).toBe("same-document")
+  expect(await ids(tracker)).toEqual([7])
+})
+
+test("without a top documentId every start counts as a new document", async () => {
+  const tracker = createFrameTracker(memory())
+  await tracker.startTop(1, TOP, undefined)
+  await tracker.report(1, 7, { url: GH, documentId: "child" })
+  expect(await tracker.startTop(1, TOP, undefined)).toBe("new-document")
+  expect(await ids(tracker)).toEqual([])
+})
+
+test("a report that arrives after the new top started is kept", async () => {
+  const tracker = createFrameTracker(memory())
+  await tracker.startTop(1, TOP, "top-2")
+  await tracker.report(1, 7, { url: GH, documentId: "child" })
+  expect(await ids(tracker)).toEqual([7])
+})

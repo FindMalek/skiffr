@@ -310,6 +310,54 @@ await Promise.all(
   await page.close()
 }
 
+// same document url changes must not wipe what the embed reported
+{
+  const records = async () => {
+    const { frameReports = {} } = await worker.evaluate(() => chrome.storage.session.get("frameReports"))
+    return JSON.stringify(
+      Object.values(frameReports).map((tab) =>
+        Object.entries(tab.frames).map(([id, rec]) => [id, rec.documentId, rec.url]),
+      ),
+    )
+  }
+  const page = await open(at("careers.initech.test", "/careers?f=careers-embed"))
+  check("same document changes: toast on the embed page", (await waitToast(page, 4000)) !== null)
+  const frame = page.frames().find((f) => f.url().includes("boards.greenhouse.io"))
+  await sleep(2500)
+  const before = await records()
+  await page.evaluate(() => {
+    history.replaceState({}, "", "?replaced=1")
+    history.pushState({}, "", "?pushed=1")
+    location.hash = "#apply"
+  })
+  await sleep(600)
+  check("same document changes: toast is back after the url changes", (await waitToast(page, 4000)) !== null)
+  check(
+    "same document changes: the stored frame records are unchanged",
+    before !== "[]" && (await records()) === before,
+    before,
+  )
+  await clickToast(page, "yes")
+  await sleep(800)
+  check("same document changes: yes still fills the embed frame", frame !== undefined && (await fills(frame)) === 1)
+  await page.close()
+}
+
+// race: the same tab flips between an embed page and a newsletter page, no stale toast and no missed toast
+{
+  const page = await context.newPage()
+  let wrong = 0
+  for (let round = 0; round < 20; round++) {
+    await page.goto(at("careers.initech.test", `/careers?f=careers-embed&n=${round}`), { waitUntil: "load" })
+    if ((await waitToast(page, 5000)) === null) wrong++
+    await page.goto(at("acme.test", `/blog?f=newsletter&n=${round}`), { waitUntil: "load" })
+    await sleep(900)
+    if ((await toasts(page)).length > 0) wrong++
+  }
+  check("race: 20 alternating navigations, embed always shows and newsletter never does", wrong === 0, `wrong=${wrong}`)
+  await page.close()
+}
+
 // flood control: a pushState loop in a frame
 {
   const page = await open(at("weather.test", "/?f=attacker-parent&flood=1"))

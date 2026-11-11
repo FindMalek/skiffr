@@ -89,8 +89,9 @@ async function handleFrameMessage(message: unknown, { tabId, frameId, url, docum
     return
   }
   if (isProbeFramesMessage(message)) {
-    await frames().setTop(tabId, url)
-    await relayChildReports(tabId)
+    // a new top document ends every frame reported so far, children are asked to report again
+    if ((await frames().startTop(tabId, url, documentId)) === "new-document") toTab(tabId, { type: "report-again" })
+    else await relayChildReports(tabId)
   } else if (isFillFramesMessage(message)) {
     await frames().setTop(tabId, url)
     await fillChildFrames(tabId)
@@ -107,6 +108,7 @@ function handleContentMessage(
 ): boolean {
   const tabId = sender.tab?.id
   if (tabId === undefined || sender.frameId === undefined || !sender.url) return false
+  if (sender.documentLifecycle && sender.documentLifecycle !== "active") return false
   if (sender.frameId === 0 && isSiteDisabledMessage(message)) {
     const key = siteKey(sender.url)
     getDisabledSites()
@@ -129,10 +131,6 @@ function handleContentMessage(
 export default defineBackground(() => {
   browser.runtime.onMessage.addListener(handleContentMessage)
   browser.tabs.onRemoved.addListener((tabId) => void frames().reset(tabId))
-  // a top level navigation ends every frame reported so far; same document url changes do not
-  browser.tabs.onUpdated.addListener((tabId, info) => {
-    if (info.status === "loading") void frames().reset(tabId)
-  })
   browser.commands.onCommand.addListener((command) => {
     if (command === "fill") return requestFill()
   })

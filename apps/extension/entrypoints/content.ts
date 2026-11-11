@@ -11,6 +11,7 @@ import {
   type FrameNavigatedMessage,
   isFillMessage,
   isFormDetectedMessage,
+  isReportAgainMessage,
   type ProbeFramesMessage,
   type SiteDisabledMessage,
   type SiteDisabledResponse,
@@ -47,6 +48,7 @@ export default defineContentScript({
   main(ctx) {
     const isTop = window === window.top
     let formInChildFrame = false
+    let formHere = false
 
     let toastState = INITIAL_TOAST_STATE
     const view = createToastView(document, {
@@ -80,6 +82,7 @@ export default defineContentScript({
       : Promise.resolve()
 
     function onFormHere(): void {
+      formHere = true
       if (isTop) void siteChecked.then(() => dispatch("detected"))
       else send({ type: "form-detected" })
     }
@@ -95,6 +98,7 @@ export default defineContentScript({
       if (location.href === lastHref) return
       lastHref = location.href
       formInChildFrame = false
+      formHere = false
       dispatch("navigated")
       if (!isTop) send({ type: "frame-navigated" })
       watcher.start()
@@ -109,6 +113,8 @@ export default defineContentScript({
       } else if (isTop && isFormDetectedMessage(message)) {
         formInChildFrame = true
         void siteChecked.then(() => dispatch("detected"))
+      } else if (!isTop && isReportAgainMessage(message) && formHere) {
+        send({ type: "form-detected" })
       }
     })
 

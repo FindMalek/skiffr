@@ -9,7 +9,7 @@ export type FrameRecord = {
   at: number
 }
 export type FillTarget = { frameId: number; documentId?: string }
-type TabFrames = { top: string | null; frames: Record<string, FrameRecord> }
+type TabFrames = { top: string | null; topDocumentId?: string; frames: Record<string, FrameRecord> }
 type Reports = Record<string, TabFrames>
 
 export type FrameReport = { url: string; documentId?: string; origin?: string }
@@ -21,6 +21,11 @@ export type FrameStorage = {
 
 export type FrameTracker = {
   setTop: (tabId: number, url: string) => Promise<void>
+  /**
+   * The top frame's content script started or its url changed. A different top documentId (or none known) means a
+   * new top document, so everything reported so far belongs to a page that is gone and is dropped.
+   */
+  startTop: (tabId: number, url: string, documentId: string | undefined) => Promise<"new-document" | "same-document">
   report: (tabId: number, frameId: number, report: FrameReport, now?: number) => Promise<"new" | "duplicate">
   drop: (tabId: number, frameId: number) => Promise<void>
   /** Frames that may be told to fill. */
@@ -79,6 +84,17 @@ export function createFrameTracker(storage: FrameStorage): FrameTracker {
       const reports = await load()
       tabOf(reports, tabId).top = url
       await storage.set({ [STORAGE_KEY]: reports })
+    },
+    async startTop(tabId, url, documentId) {
+      const reports = await load()
+      const known = reports[tabId]
+      const same = known !== undefined && documentId !== undefined && known.topDocumentId === documentId
+      const tab = same ? known : { top: url, frames: {} }
+      tab.top = url
+      tab.topDocumentId = documentId
+      reports[tabId] = tab
+      await storage.set({ [STORAGE_KEY]: reports })
+      return same ? "same-document" : "new-document"
     },
     async report(tabId, frameId, report, now = Date.now()) {
       const reports = await load()
