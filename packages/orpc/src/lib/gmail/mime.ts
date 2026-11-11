@@ -52,6 +52,18 @@ export function readMessage(message: GmailMessage): ReadMessage {
   return found
 }
 
-/** A sender that failed spf, dkim or dmarc is somebody else pretending to be a job board. */
-export const failedAuthentication = (authentication: string | null): boolean =>
-  authentication !== null && /\b(?:spf|dkim|dmarc)=fail\b/i.test(authentication)
+/**
+ * Fails closed: only a `dmarc=pass` for the sender's own domain counts. A missing header, `dmarc=none`, a softfail or a
+ * pass for some other domain is somebody else pretending to be the sender. DMARC alone decides, so a failed secondary
+ * dkim signature next to a passing dmarc does not lose a real alert.
+ */
+export function senderAuthenticated(authentication: string | null, address: string): boolean {
+  if (authentication === null) return false
+  const host = address.slice(address.indexOf("@") + 1).toLowerCase()
+  for (const segment of authentication.split(";")) {
+    if (!/^\s*dmarc=pass\b/i.test(segment)) continue
+    const domain = segment.match(/\bheader\.from=([a-z0-9.-]+)/i)?.[1]?.toLowerCase()
+    if (domain === host) return true
+  }
+  return false
+}

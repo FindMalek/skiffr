@@ -53,7 +53,7 @@ Set all three of the first group or none: a half set fails at start. Without the
 
 ## 3. Schedule
 
-By default the api reads mail itself. With several api replicas, one of them (chosen with a Postgres advisory lock) does it, and another takes over if it stops. The mailbox being read is also leased in the database, so a **Sync now** click and the schedule never run one mailbox at once.
+By default the api reads mail itself. With several api replicas, one of them (chosen with a Postgres advisory lock) does it, and another takes over if it stops. The mailbox being read is also leased in the database, so a **Sync now** click and the schedule never run one mailbox at once. The advisory lock belongs to one database session, so `DATABASE_URL` must be a direct Postgres connection, not a transaction pooler such as pgbouncer in transaction mode.
 
 To run it as a Dokploy scheduled job instead, set `GMAIL_SCHEDULER=off` on the api and add a job to the api service with the command `bun run gmail:sync` (it runs from `apps/api`, reads the same environment, does one pass over every due mailbox and exits). Run it every 15 minutes.
 
@@ -61,7 +61,7 @@ A run reads at most 200 listed emails and handles at most 50 new ones. A rate li
 
 ## Privacy model
 
-- **Reads** only unread inbox emails from the watched senders. The sender is checked again on the real address, and emails that fail Gmail's own spf, dkim or dmarc check are skipped. Attachments are never opened.
+- **Reads** only unread inbox emails from the watched senders. The sender is checked again on the real address, and an email is only read when Gmail's own `Authentication-Results` shows a dmarc pass for the sender's domain. No header, `dmarc=none` or a fail is skipped. This is best effort: a sender whose domain does not enforce dmarc can only be trusted as far as Gmail's check goes. Attachments are never opened.
 - **Stores** per email: Gmail's message id, the board, an outcome and counts. Per job: title, company, link. Not the email body, subject or sender address. Your Gmail address and the encrypted refresh token are kept on your connection.
 - **Encryption**: the refresh token is sealed with AES-256-GCM, a random IV per value and the user id as additional data, so a token copied to another row doesn't open. The key is `GMAIL_ENCRYPTION_KEY`. Tokens are never returned by the api and never logged, and neither is any email text. Access tokens live in memory for a few minutes.
 - **Session only**: the Gmail calls need a signed-in browser session. An extension token can't call them.

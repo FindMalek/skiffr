@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm"
 import { syncNow } from "./accounts"
 import { INDEED_ALERT, LINKEDIN_ALERT, NEWSLETTER } from "./fixtures"
 import { type MockGoogle, startMockGoogle } from "./mock-google"
+import { DEFAULT_SENDERS } from "./senders"
 import { dueAccountIds, LIST_MAX, PROCESS_MAX, syncAccount } from "./sync"
 import {
   captureConsole,
@@ -16,7 +17,25 @@ import {
   NOW,
 } from "./test-support"
 
-const USERS = ["ana", "ben", "cy", "dee", "eli", "fay", "gus", "hal", "ivy", "jo", "kim", "lee", "max", "ned", "oli"]
+const USERS = [
+  "ana",
+  "ben",
+  "cy",
+  "dee",
+  "eli",
+  "fay",
+  "gus",
+  "hal",
+  "ivy",
+  "jo",
+  "kim",
+  "lee",
+  "max",
+  "ned",
+  "oli",
+  "pat",
+  "quinn",
+]
 let db: Db
 let drop: () => Promise<void>
 let mock: MockGoogle
@@ -133,24 +152,58 @@ test("mail without jobs, from the wrong sender or failing authentication is left
   expect((await messagesOf("dee")).map((m) => m.outcome).sort()).toEqual(["no_jobs", "skipped", "skipped", "skipped"])
 })
 
-test("the same posting is queued once: across runs, emails and boards", async () => {
+test("a sender is trusted only with a dmarc pass for its own domain", async () => {
+  const { id } = await connectAccount(db, mock, "pat")
+  const dmarcPass = "mx.google.com; dkim=fail header.d=other.example; dmarc=pass (p=REJECT) header.from=linkedin.com"
+  mock.add({ id: "k1", from: LINKEDIN_FROM, html: LINKEDIN_ALERT, authentication: null })
+  mock.add({ id: "k2", from: LINKEDIN_FROM, html: LINKEDIN_ALERT, authentication: "mx.google.com; dmarc=none" })
+  mock.add({ id: "k3", from: LINKEDIN_FROM, html: LINKEDIN_ALERT, authentication: "mx.google.com; spf=softfail" })
+  mock.add({
+    id: "k4",
+    from: LINKEDIN_FROM,
+    html: LINKEDIN_ALERT,
+    authentication: "mx.google.com; dmarc=pass header.from=evil.example",
+  })
+  mock.add({
+    id: "k5",
+    from: "<a@evil.example>, <jobalerts-noreply@linkedin.com>",
+    html: LINKEDIN_ALERT,
+    authentication: dmarcPass,
+  })
+
+  expect(await syncAccount(deps(), id)).toMatchObject({ imported: 0, skipped: 5 })
+
+  mock.add({ id: "k6", from: LINKEDIN_FROM, html: LINKEDIN_ALERT, authentication: dmarcPass })
+  expect(await syncAccount(deps(), id)).toMatchObject({ imported: 1, skipped: 0 })
+})
+
+test("the same posting is queued once: across runs and emails", async () => {
   const { id } = await connectAccount(db, mock, "eli")
   mock.add({ id: "e1", from: LINKEDIN_FROM, html: LINKEDIN_ALERT })
   mock.add({ id: "e2", from: LINKEDIN_FROM, html: LINKEDIN_ALERT })
-  // the same job as linkedin's "Backend Developer" at Globex, seen by indeed's alert under another id
-  mock.add({
-    id: "e3",
-    from: INDEED_FROM,
-    html: '<div><a href="https://www.indeed.com/viewjob?jk=ffffffffffffffff">Backend Developer</a><div>Globex</div></div>',
-  })
 
   const result = await syncAccount(deps(), id)
 
   expect(await jobsOf("eli")).toHaveLength(2)
-  // newest first: indeed adds "Backend Developer", the first linkedin email adds the other job, the repeat adds nothing
-  expect(result).toMatchObject({ imported: 2, duplicates: 1 })
+  expect(result).toMatchObject({ imported: 1, duplicates: 1 })
   // duplicates are tidied too: they are the same jobs, already queued
-  expect(["e1", "e2", "e3"].every(tidied)).toBe(true)
+  expect(["e1", "e2"].every(tidied)).toBe(true)
+})
+
+test("an email from another sender with the same title and company never suppresses a board's jobs", async () => {
+  const { id } = await connectAccount(db, mock, "quinn", { senders: [...DEFAULT_SENDERS, "@spam.example"] })
+  mock.add({
+    id: "l1",
+    from: "jobs@spam.example",
+    html: '<div><a href="https://phish.example/apply">Senior Software Engineer</a><div>Acme Labs</div></div>',
+  })
+  mock.add({ id: "l2", from: LINKEDIN_FROM, html: LINKEDIN_ALERT })
+
+  const result = await syncAccount(deps(), id)
+
+  expect(result).toMatchObject({ imported: 2, duplicates: 0 })
+  expect((await jobsOf("quinn")).map((j) => j.canonicalId)).toContain("linkedin:3912345678")
+  expect(tidied("l2")).toBe(true)
 })
 
 test("the label is created once and made again if the user deleted it", async () => {

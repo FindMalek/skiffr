@@ -57,13 +57,16 @@ const schema = z.object({
 
 const GMAIL_KEYS = ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GMAIL_ENCRYPTION_KEY"] as const
 
+const isRandomKey = (value: string) =>
+  /^[A-Za-z0-9+/]{43}=$/.test(value) && new Set(Buffer.from(value, "base64")).size >= 8
+
 const apiSchema = schema.superRefine((env, ctx) => {
   const set = GMAIL_KEYS.filter((key) => env[key])
   if (set.length > 0 && set.length < GMAIL_KEYS.length) {
     for (const key of GMAIL_KEYS.filter((key) => !env[key]))
       ctx.addIssue({ code: "custom", path: [key], message: `required once ${set.join(" or ")} is set (gmail import)` })
   }
-  if (env.GMAIL_ENCRYPTION_KEY && Buffer.from(env.GMAIL_ENCRYPTION_KEY, "base64").length !== 32) {
+  if (env.GMAIL_ENCRYPTION_KEY && !isRandomKey(env.GMAIL_ENCRYPTION_KEY)) {
     ctx.addIssue({
       code: "custom",
       path: ["GMAIL_ENCRYPTION_KEY"],

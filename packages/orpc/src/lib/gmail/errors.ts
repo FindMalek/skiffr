@@ -55,3 +55,10 @@ export function logSyncFailure(accountId: string, error: unknown, extra?: Record
   else fields.name = error instanceof Error && /^[A-Za-z0-9_]{1,40}$/.test(error.name) ? error.name : "Error"
   console.error("[gmail] sync failed", fields)
 }
+
+/** What a log line may say about a failed connect: the step and the kind and status of Google's answer, never the code, a token or an address. */
+export function logConnectFailure(step: string, error: unknown) {
+  const fields: Record<string, unknown> = { step }
+  if (error instanceof GoogleError) Object.assign(fields, { kind: error.kind, status: error.status })
+  console.error("[gmail] connect failed", fields)
+}

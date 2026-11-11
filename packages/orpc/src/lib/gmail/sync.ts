@@ -1,10 +1,10 @@
 import { GMAIL_LABEL } from "@skiffr/common/constants"
 import { type Db, gmailAccount, gmailMessage, gmailMessageJob, job } from "@skiffr/db"
-import { and, eq, inArray, isNull, lt, ne, or, sql } from "drizzle-orm"
+import { and, eq, inArray, isNull, lt, or, sql } from "drizzle-orm"
 import { CryptoError, open } from "./crypto"
 import { GoogleError, logSyncFailure, type SyncError, syncErrorOf } from "./errors"
 import { ensureLabel, type GmailApi, type GmailRuntime, gmail, refreshAccessToken } from "./google"
-import { failedAuthentication, readMessage } from "./mime"
+import { readMessage, senderAuthenticated } from "./mime"
 import { parseEmail } from "./parsers"
 import { buildQuery, fromAddress, isWatched, providerOf } from "./senders"
 
@@ -189,21 +189,6 @@ async function store(
     const source = `gmail:${provider}`
     const added: string[] = []
     for (const candidate of candidates) {
-      // The same posting seen by another board's alert (same title and company) is not queued twice.
-      const [twin] = await tx
-        .select({ id: job.id })
-        .from(job)
-        .where(
-          and(
-            eq(job.userId, account.userId),
-            sql`lower(${job.title}) = ${candidate.title.toLowerCase()}`,
-            sql`lower(${job.company}) = ${candidate.company.toLowerCase()}`,
-            sql`${job.source} like 'gmail:%'`,
-            ne(job.source, source),
-          ),
-        )
-        .limit(1)
-      if (twin) continue
       const [created] = await tx
         .insert(job)
         .values({
@@ -245,7 +230,7 @@ async function readOne(
   }
   const read = readMessage(message)
   const address = read.from ? fromAddress(read.from) : null
-  if (!address || !isWatched(address, account.senders) || failedAuthentication(read.authentication)) {
+  if (!address || !isWatched(address, account.senders) || !senderAuthenticated(read.authentication, address)) {
     return { provider: "other", outcome: "skipped", candidates: [] }
   }
   const provider = providerOf(address)

@@ -23,38 +23,12 @@ import { Field, FieldLabel } from "@skiffr/ui/components/field"
 import { Input } from "@skiffr/ui/components/input"
 import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query"
 import { MailIcon, RefreshCwIcon, TriangleAlertIcon, XIcon } from "lucide-react"
-import { type FormEvent, useState } from "react"
+import { type FormEvent, useEffect, useState } from "react"
 import { toast } from "sonner"
 import { LocalDate } from "@/components/local-date"
+import { errorFor, noticeFor } from "@/lib/gmail-copy"
 
 const CONNECT_URL = "/api/gmail/connect"
-
-const NOTICES: Record<string, { ok: boolean; text: string }> = {
-  connected: { ok: true, text: "Gmail is connected. skiffr will read your job alerts from now on." },
-  denied: { ok: false, text: "You cancelled at Google, so nothing was connected." },
-  invalid_state: {
-    ok: false,
-    text: "That sign-in link expired or was already used. Press Connect Gmail to start again.",
-  },
-  exchange_failed: { ok: false, text: "Google did not accept the sign-in. Try again." },
-  no_refresh_token: { ok: false, text: "Google did not give lasting access. Try again and accept every permission." },
-  scope_missing: {
-    ok: false,
-    text: "The permission to read and tidy your mail was not granted. Try again and tick it.",
-  },
-  already_connected: { ok: false, text: "That Gmail address is already connected to another skiffr account." },
-  not_configured: { ok: false, text: "Gmail import is not set up on this server." },
-  google_error: { ok: false, text: "Google could not be reached. Try again in a minute." },
-}
-
-const ERRORS: Record<string, string> = {
-  auth: "Google no longer accepts the saved access. It was revoked, or expired (Google limits apps in testing mode to 7 days).",
-  scope: "The permission to read and tidy your mail is missing.",
-  rate_limited: "Google asked skiffr to slow down. It tries again on its own.",
-  upstream: "Google had a problem. It tries again on its own.",
-  network: "Google could not be reached. It tries again on its own.",
-  internal: "Something went wrong on our side. It tries again on its own.",
-}
 
 const SOURCES: Record<string, string> = {
   "gmail:linkedin": "LinkedIn",
@@ -86,12 +60,12 @@ function PrivacyNote() {
       <CardContent>
         <ul className="flex list-disc flex-col gap-2 pl-5 text-sm">
           <li>
-            <strong>Reads</strong> only unread inbox emails from the senders you watch, from the last 14 days. Nothing
-            else in your mailbox is opened.
+            <strong>Reads</strong> only unread inbox emails from the last 14 days that Gmail matches to the senders you
+            watch. A match on a display name is opened too, and skipped when the address is not one you watch.
           </li>
           <li>
             <strong>Stores</strong> the job title, company, link and Gmail's message id. Not the email body, the subject
-            or the sender. The access token is encrypted on this server.
+            or the sender. The refresh token is encrypted on this server.
           </li>
           <li>
             <strong>Changes</strong> an email only when it held jobs: marks it read, takes it out of the inbox and adds
@@ -318,7 +292,7 @@ function Connection({ status }: { status: GmailStatus }) {
       <CardContent className="flex flex-col gap-4">
         {status.lastError && !needsReconnect && (
           <p role="status" className="text-muted-foreground text-xs">
-            {ERRORS[status.lastError] ?? ERRORS.internal}
+            {errorFor(status.lastError)}
           </p>
         )}
         <div className="flex flex-wrap gap-2">
@@ -357,7 +331,13 @@ function Connection({ status }: { status: GmailStatus }) {
 
 export function GmailSettings({ notice, docsUrl }: { notice: string | null; docsUrl: string }) {
   const { data: status } = useSuspenseQuery(orpc.gmail.status.queryOptions())
-  const message = notice ? NOTICES[notice] : undefined
+  const message = noticeFor(notice)
+  useEffect(() => {
+    if (!notice) return
+    const url = new URL(window.location.href)
+    url.searchParams.delete("gmail")
+    window.history.replaceState(window.history.state, "", url)
+  }, [notice])
   const connectButton = (label: string) => (
     <a href={CONNECT_URL} className={buttonVariants({ className: "self-start" })}>
       <MailIcon data-icon="inline-start" />
@@ -402,8 +382,11 @@ export function GmailSettings({ notice, docsUrl }: { notice: string | null; docs
             <CardHeader>
               <CardTitle>Connect Gmail</CardTitle>
               <CardDescription>
-                Let skiffr read your LinkedIn, Indeed and Glassdoor job alerts and put the jobs in your queue. Google
-                asks you to allow it to read and change labels on your mail.
+                Let skiffr read your LinkedIn, Indeed and Glassdoor job alerts and put the jobs in your queue. Google's
+                consent screen says skiffr can read, compose and send email from your Gmail account: that is how Google
+                words the one permission needed to mark an email read and label it. skiffr never sends or deletes
+                anything. Until the app is verified, Google may first show "Google hasn't verified this app": choose
+                Advanced, then continue.
               </CardDescription>
             </CardHeader>
             <CardContent>{connectButton("Connect Gmail")}</CardContent>
@@ -415,10 +398,7 @@ export function GmailSettings({ notice, docsUrl }: { notice: string | null; docs
             <TriangleAlertIcon />
             <AlertTitle>Reconnect Gmail</AlertTitle>
             <AlertDescription>
-              <p>
-                {ERRORS[status.lastError ?? "auth"] ?? ERRORS.auth} skiffr stopped reading your mail until you connect
-                again.
-              </p>
+              <p>{errorFor(status.lastError ?? "auth")} skiffr stopped reading your mail until you connect again.</p>
               {status.configured && <div className="mt-2">{connectButton("Reconnect Gmail")}</div>}
             </AlertDescription>
           </Alert>

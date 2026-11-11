@@ -76,6 +76,13 @@ test("connect needs a cookie session, refuses tokens and other methods, and says
   expect((await get("/gmail/connect", as("ana"), unconfigured)).status).toBe(404)
 })
 
+test("connect can be started from skiffr itself or by typing the address, not from another site", async () => {
+  for (const site of ["cross-site", "same-site"])
+    expect((await get("/gmail/connect", { ...as("ana"), "sec-fetch-site": site })).status, site).toBe(403)
+  for (const site of ["same-origin", "none"])
+    expect((await get("/gmail/connect", { ...as("ana"), "sec-fetch-site": site })).status, site).toBe(302)
+})
+
 test("the whole consent: connect, google, callback, back on the settings page with a status and nothing secret in the url", async () => {
   const logs = [spyOn(console, "error"), spyOn(console, "warn"), spyOn(console, "info"), spyOn(console, "log")].map(
     (s) => s.mockImplementation(() => {}),

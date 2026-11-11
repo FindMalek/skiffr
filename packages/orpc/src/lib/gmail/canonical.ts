@@ -1,4 +1,5 @@
 import { SHORT_TEXT_MAX, URL_MAX } from "@skiffr/common/constants"
+import { GLASSDOOR_HOST, INDEED_HOST, LINKEDIN_HOST, WELLFOUND_HOST } from "./boards"
 import { sha256 } from "./crypto"
 
 export type CanonicalUrl =
@@ -24,11 +25,6 @@ const TRACKER_HOST =
 const TRACKER_PATH = /^\/(?:ls\/click|redirect|track|click|clk|e\/c\/|r\/|u\/|rc\/clk\/dl|pagead\/clk)/i
 const TRACKING_PARAM =
   /^(?:utm_.*|mc_.*|trk.*|track.*|ref|refid|referrer|source|src|campaign|gclid|fbclid|msclkid|dclid|_hs.*|mkt_tok|midtoken|midsig|eid|lipi|lgtl|otptoken|gh_src|lever-.*|sid|cid|click_?id|trackingid|vjs|tk|from|fccid|sk|bb|xkcb|advn|adid)$/i
-
-const LINKEDIN = /(?:^|\.)linkedin\.com$/
-const INDEED = /(?:^|\.)indeed\.(?:com|[a-z]{2,3}|co\.[a-z]{2})$/
-const GLASSDOOR = /(?:^|\.)glassdoor\.(?:com|[a-z]{2,3}|co\.[a-z]{2})$/
-const WELLFOUND = /(?:^|\.)(?:wellfound\.com|angel\.co)$/
 
 function parse(raw: string): URL | null {
   if (raw.length > RAW_URL_MAX) return null
@@ -60,23 +56,23 @@ function job(url: string, canonicalId: string): CanonicalUrl | null {
 function known(url: URL): CanonicalUrl | null | undefined {
   const host = url.hostname.toLowerCase()
   const param = (...names: string[]) => names.map((name) => url.searchParams.get(name)).find(Boolean) ?? null
-  if (LINKEDIN.test(host)) {
+  if (LINKEDIN_HOST.test(host)) {
     const id =
       url.pathname.match(/\/jobs\/view\/(?:[^/?#]*-)?(\d{5,})/)?.[1] ??
       (/\/jobs\//.test(url.pathname) ? param("currentJobId")?.match(/^\d{5,}$/)?.[0] : undefined)
     return id ? job(`https://www.linkedin.com/jobs/view/${id}`, `linkedin:${id}`) : undefined
   }
-  if (INDEED.test(host)) {
+  if (INDEED_HOST.test(host)) {
     const jk = param("jk", "vjk")
     if (!jk) return undefined
     return /^[A-Za-z0-9]{8,40}$/.test(jk) ? job(`https://${host}/viewjob?jk=${jk}`, `indeed:${jk}`) : null
   }
-  if (GLASSDOOR.test(host)) {
+  if (GLASSDOOR_HOST.test(host)) {
     const id = param("jl", "jobListingId")
     if (!id) return undefined
     return /^\d{5,}$/.test(id) ? job(`https://${host}/job-listing/j?jl=${id}`, `glassdoor:${id}`) : null
   }
-  if (WELLFOUND.test(host)) {
+  if (WELLFOUND_HOST.test(host)) {
     const id = url.pathname.match(/\/jobs\/(\d{4,})/)?.[1]
     return id ? job(`https://wellfound.com/jobs/${id}`, `wellfound:${id}`) : undefined
   }
@@ -112,9 +108,9 @@ export function canonicalizeJobUrl(raw: string, depth = 0): CanonicalUrl | null 
   }
   if (
     looksLikeTracker(url) ||
-    LINKEDIN.test(url.hostname) ||
-    INDEED.test(url.hostname) ||
-    GLASSDOOR.test(url.hostname)
+    LINKEDIN_HOST.test(url.hostname) ||
+    INDEED_HOST.test(url.hostname) ||
+    GLASSDOOR_HOST.test(url.hostname)
   ) {
     url.hash = ""
     url.username = ""

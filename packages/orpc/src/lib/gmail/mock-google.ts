@@ -15,7 +15,8 @@ export interface MockMessage {
   text?: string
   unread?: boolean
   inbox?: boolean
-  authentication?: string
+  /** Gmail's `Authentication-Results`; by default a dmarc pass for the sender's domain, `null` leaves the header out. */
+  authentication?: string | null
   /** Extra attachment parts (name only): they carry data the parser must never open. */
   attachment?: string
   /** Pad the html part with this many extra characters. */
@@ -93,10 +94,15 @@ function payload(message: StoredMessage) {
   if (message.attachment) {
     parts.push({ mimeType: "application/pdf", filename: message.attachment, body: { size: 10, attachmentId: "att-1" } })
   }
+  const domain = message.from.match(/@([^>\s]+)>?\s*$/)?.[1]
+  const authentication =
+    message.authentication === undefined && domain
+      ? `mx.google.com; dkim=pass header.d=${domain}; dmarc=pass (p=NONE sp=NONE dis=NONE) header.from=${domain}`
+      : message.authentication
   const headers = [
     { name: "From", value: message.from },
     { name: "Subject", value: "Job alert" },
-    ...(message.authentication ? [{ name: "Authentication-Results", value: message.authentication }] : []),
+    ...(authentication ? [{ name: "Authentication-Results", value: authentication }] : []),
   ]
   return { mimeType: "multipart/mixed", headers, body: { size: 0 }, parts }
 }

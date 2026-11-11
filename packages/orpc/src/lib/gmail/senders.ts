@@ -46,10 +46,12 @@ export function buildQuery(senders: readonly string[], newerThanDays = 14): stri
   return `is:unread in:inbox from:(${from}) newer_than:${newerThanDays}d`
 }
 
-/** The address out of a `From` header (`Name <a@b.com>` or `a@b.com`), lowercased. */
+/** The address out of a `From` header (`Name <a@b.com>` or `a@b.com`), lowercased; null when it holds more than one mailbox. */
 export function fromAddress(header: string): string | null {
-  const bracketed = header.match(/<([^<>\s]+)>\s*$/)
-  const candidate = (bracketed?.[1] ?? header).trim().toLowerCase()
+  const unquoted = header.replace(/"(?:[^"\\]|\\.)*"/g, "")
+  if (unquoted.split("@").length !== 2) return null
+  const bracketed = unquoted.match(/<([^<>\s]+)>\s*$/)
+  const candidate = (bracketed?.[1] ?? unquoted).trim().toLowerCase()
   return ADDRESS.test(candidate) ? candidate : null
 }
 

@@ -3,10 +3,10 @@ import { type Db, gmailAccount } from "@skiffr/db"
 import { and, eq, isNull, lt, or } from "drizzle-orm"
 import { describeError } from "../errors"
 import { open, seal } from "./crypto"
-import { GoogleError } from "./errors"
+import { GoogleError, logConnectFailure } from "./errors"
 import { ensureLabel, exchangeCode, type GmailRuntime, gmail, revokeToken } from "./google"
 import { DEFAULT_SENDERS } from "./senders"
-import { MANUAL_SYNC_GAP_MS, type SyncDeps, type SyncSummary, syncAccount } from "./sync"
+import { MANUAL_SYNC_GAP_MS, type SyncDeps, type SyncSummary, syncAccount, type TokenCache } from "./sync"
 
 /** Codes the callback puts in the redirect, so the page can say what happened without carrying anything from Google. */
 export const CONNECT_REASONS = [
@@ -37,7 +37,8 @@ export async function completeConnect(
   let tokens: Awaited<ReturnType<typeof exchangeCode>>
   try {
     tokens = await exchangeCode(runtime, input.code, input.verifier)
-  } catch {
+  } catch (error) {
+    logConnectFailure("exchange", error)
     return "exchange_failed"
   }
   const undo = async (reason: ConnectReason) => {
@@ -54,6 +55,7 @@ export async function completeConnect(
     email = await api.getProfile()
     labelId = await ensureLabel(api, GMAIL_LABEL)
   } catch (error) {
+    logConnectFailure("profile", error)
     return undo(error instanceof GoogleError && error.kind === "scope" ? "scope_missing" : "google_error")
   }
 
@@ -89,6 +91,7 @@ export async function completeConnect(
   } catch (error) {
     // The mailbox belongs to another skiffr user: unique on the address.
     const taken = describeError(error).code === "23505"
+    if (!taken) logConnectFailure("store", error)
     return undo(taken ? "already_connected" : "google_error")
   }
 }
@@ -98,6 +101,7 @@ export async function disconnect(
   db: Db,
   runtime: GmailRuntime | null,
   userId: string,
+  tokens?: TokenCache,
 ): Promise<{ revoked: boolean } | null> {
   const [account] = await db.select().from(gmailAccount).where(eq(gmailAccount.userId, userId))
   if (!account) return null
@@ -108,6 +112,7 @@ export async function disconnect(
     } catch {}
   }
   await db.delete(gmailAccount).where(eq(gmailAccount.id, account.id))
+  tokens?.delete(account.id)
   return { revoked }
 }
 

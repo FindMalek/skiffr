@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "bun:test"
+import { afterAll, afterEach, beforeAll, beforeEach, expect, spyOn, test } from "bun:test"
 import { type Db, gmailAccount, gmailMessage, job } from "@skiffr/db"
 import { eq } from "drizzle-orm"
 import { completeConnect, disconnect } from "./accounts"
@@ -176,13 +176,36 @@ test("disconnecting revokes the grant at google and deletes the account and its 
   await syncAccount({ db, runtime: h.runtime, now: () => NOW, tokens: h.tokens }, account.id)
   expect(await db.select().from(gmailMessage).where(eq(gmailMessage.userId, "cy"))).toHaveLength(1)
   const issued = [...mock.refreshTokens][0]!
+  expect(h.tokens.get(account.id, NOW)).toBeDefined()
 
-  expect(await disconnect(db, h.runtime, "cy")).toEqual({ revoked: true })
+  expect(await disconnect(db, h.runtime, "cy", h.tokens)).toEqual({ revoked: true })
 
+  expect(h.tokens.get(account.id, NOW)).toBeUndefined()
   expect(mock.revoked).toContain(issued)
   expect(mock.refreshTokens.has(issued)).toBe(false)
   expect(await accountOf("cy")).toBeUndefined()
   expect(await db.select().from(gmailMessage).where(eq(gmailMessage.userId, "cy"))).toEqual([])
   expect(await db.select().from(job).where(eq(job.userId, "cy"))).toHaveLength(2)
   expect(await disconnect(db, h.runtime, "cy")).toBeNull()
+})
+
+test("a failed exchange is logged with the kind and status of google's answer and nothing else", async () => {
+  const flow = await consent("ben")
+  const verified = await consumeFlow(db, KEY, flow.returned, "ben", NOW)
+  mock.fail({ match: /POST \/token/, status: 400, body: { error: "invalid_grant" } })
+  const logged = spyOn(console, "error").mockImplementation(() => {})
+
+  const reason = await completeConnect(db, h.runtime, {
+    userId: "ben",
+    code: flow.code,
+    verifier: verified!.verifier,
+    now: NOW,
+  })
+
+  const lines = JSON.stringify(logged.mock.calls)
+  logged.mockRestore()
+  expect(reason).toBe("exchange_failed")
+  expect(lines).toContain('"step":"exchange"')
+  expect(lines).toContain('"status":400')
+  expect(lines).not.toContain(flow.code)
 })

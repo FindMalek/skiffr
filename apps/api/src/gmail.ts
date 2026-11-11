@@ -46,6 +46,8 @@ export async function handleGmail(
   const now = services.now()
 
   if (pathname === "/gmail/connect") {
+    const site = request.headers.get("sec-fetch-site")
+    if (site && site !== "same-origin" && site !== "none") return refuse(403, "Start the connection from skiffr.")
     const { state, challenge } = await startFlow(
       services.db,
       gmail.runtime.key,

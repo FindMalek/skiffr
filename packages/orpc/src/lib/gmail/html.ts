@@ -47,13 +47,14 @@ export function tokenize(html: string): Token[] {
   let block: string[] = []
 
   const flush = () => {
-    const text = cleanText(block.join(" "), 300)
+    const text = cleanText(block.join(""), 300)
     block = []
     if (text) push({ type: "text", text })
   }
+  const gap = () => (anchor ? anchor.text : block).push(" ")
   const closeAnchor = () => {
     if (!anchor) return
-    push({ type: "link", href: anchor.href, text: cleanText(anchor.text.join(" "), 300) })
+    push({ type: "link", href: anchor.href, text: cleanText(anchor.text.join(""), 300) })
     anchor = null
   }
 
@@ -65,14 +66,12 @@ export function tokenize(html: string): Token[] {
           return
         }
         if (skipped) return
+        gap()
         if (name === "a") {
           closeAnchor()
           flush()
           anchor = { href: attributes.href ?? "", text: [] }
-        } else if (BLOCK.has(name)) {
-          if (anchor) anchor.text.push(" ")
-          else flush()
-        }
+        } else if (BLOCK.has(name) && !anchor) flush()
       },
       ontext(data) {
         if (skipped) return
@@ -84,6 +83,7 @@ export function tokenize(html: string): Token[] {
           return
         }
         if (skipped) return
+        gap()
         if (name === "a") closeAnchor()
         else if (BLOCK.has(name) && !anchor) flush()
       },

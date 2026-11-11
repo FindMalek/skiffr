@@ -14,6 +14,28 @@ import { parseEmail } from "./parsers"
 import { buildQuery, fromAddress, isWatched, normalizeSender, providerOf } from "./senders"
 import { cleanText } from "./text"
 
+test("entities in titles and companies are decoded without gaps", () => {
+  const jobs = parseEmail("linkedin", {
+    html: '<a href="https://www.linkedin.com/jobs/view/1234567">R&amp;D Engineer, Women&#39;s Health, C&#43;&#43;</a><p>AT&amp;T &eacute;</p><p>Remote</p>',
+  })
+  expect(jobs.map((j) => [j.title, j.company])).toEqual([["R&D Engineer, Women's Health, C++", "AT&T é"]])
+})
+
+test("only real vendor domains count as a board", () => {
+  const id = "abcdef0123456789"
+  for (const host of ["indeed.xyz", "evil.indeed.cc", "indeed.top"])
+    expect(canonicalizeJobUrl(`https://www.${host}/viewjob?jk=${id}`)).toMatchObject({
+      canonicalId: expect.not.stringMatching(/^indeed:/),
+    })
+  expect(canonicalizeJobUrl(`https://uk.indeed.com/viewjob?jk=${id}`)).toMatchObject({ canonicalId: `indeed:${id}` })
+  expect(canonicalizeJobUrl(`https://www.indeed.co.uk/viewjob?jk=${id}`)).toMatchObject({ canonicalId: `indeed:${id}` })
+  expect(canonicalizeJobUrl("https://www.glassdoor.tk/job-listing/j?jl=1234567")).toMatchObject({
+    canonicalId: expect.not.stringMatching(/^glassdoor:/),
+  })
+  const html = `<a href="https://www.indeed.xyz/viewjob?jk=${id}">Backend Developer</a><p>Globex</p>`
+  expect(parseEmail("indeed", { html })).toEqual([])
+})
+
 test("linkedin alert (approximated layout): jobs, companies and locations, tracking stripped", () => {
   const jobs = parseEmail("linkedin", { html: LINKEDIN_ALERT })
   expect(jobs).toEqual([
@@ -125,6 +147,8 @@ test("senders: validated, normalized and matched on the real address", () => {
     "is:unread in:inbox from:(jobs@site.com OR other.com) newer_than:14d",
   )
   expect(fromAddress('"Jobs <jobs@site.com>" <evil@x.example>')).toBe("evil@x.example")
+  expect(fromAddress("<a@x.example>, <jobs@linkedin.com>")).toBeNull()
+  expect(fromAddress('"Doe, Jo" <jobs@linkedin.com>')).toBe("jobs@linkedin.com")
   expect(isWatched("evil@x.example", ["jobs@site.com"])).toBe(false)
   expect(isWatched("anyone@mail.other.com", ["@other.com"])).toBe(true)
   expect(isWatched("anyone@notother.com", ["@other.com"])).toBe(false)
@@ -135,13 +159,27 @@ test("senders: validated, normalized and matched on the real address", () => {
   ]).toEqual(["linkedin", "indeed", "other"])
 })
 
+const randomKey = (seed: number) =>
+  Buffer.from(Array.from({ length: 32 }, (_, i) => (i * 7 + seed) % 256)).toString("base64")
+
 test("sealed values open only with the key and the owner they were sealed for", () => {
-  const key = parseKey(Buffer.alloc(32, 7).toString("base64"))
+  const key = parseKey(randomKey(7))
   const sealed = seal(key, "refresh-token-value", "ana")
   expect(sealed).not.toContain("refresh-token-value")
   expect(open(key, sealed, "ana")).toBe("refresh-token-value")
   expect(seal(key, "refresh-token-value", "ana")).not.toBe(sealed)
   expect(() => open(key, sealed, "ben")).toThrow()
-  expect(() => open(parseKey(Buffer.alloc(32, 8).toString("base64")), sealed, "ana")).toThrow()
+  expect(() => open(parseKey(randomKey(8)), sealed, "ana")).toThrow()
   expect(() => open(key, `${sealed}x`, "ana")).toThrow()
+})
+
+test("a key that is not 32 random bytes of strict base64 is refused", () => {
+  for (const weak of [
+    Buffer.alloc(32).toString("base64"),
+    "A".repeat(43),
+    "correct horse battery staple correct",
+    "short",
+  ])
+    expect(() => parseKey(weak), weak).toThrow()
+  expect(parseKey(randomKey(1))).toHaveLength(32)
 })

@@ -228,7 +228,12 @@ export const gmailRouter = {
     })
     .output(gmailDisconnectSchema)
     .handler(async ({ context }) => {
-      const result = await disconnect(context.db, context.gmail?.runtime ?? null, context.user.id)
+      const result = await disconnect(
+        context.db,
+        context.gmail?.runtime ?? null,
+        context.user.id,
+        context.gmail?.tokens,
+      )
       if (!result) throw new ORPCError("NOT_FOUND", { message: NOT_CONNECTED })
       return result
     }),
