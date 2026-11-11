@@ -1,0 +1,72 @@
+---
+title: Gmail job emails
+description: Turn LinkedIn, Indeed and Glassdoor job alerts into queued jobs.
+---
+
+skiffr can read the job alert emails in your Gmail inbox and put the jobs in your queue. It is off until the person running skiffr creates a Google OAuth client and sets three variables. Each user then connects their own mailbox from the dashboard under **Gmail**.
+
+Gmail import is verified against a local stand-in for Google's API in the tests. It has not been run against real Google yet, so expect small fixes the first time you connect.
+
+## What it does
+
+Every 15 minutes (and when you press **Sync now**) skiffr looks for unread inbox mail of the last 14 days from the senders you watch. For each email it finds the jobs (title, company, link), adds new ones to your queue with the source `gmail:linkedin`, `gmail:indeed` and so on, and only then tidies the email: marks it read, takes it out of the inbox and adds the `skiffr/jobs` label.
+
+- An email with no jobs in it is left exactly where it is.
+- Emails are never deleted, trashed or sent.
+- The same posting is queued once: by its id (`linkedin:<id>`, `indeed:<jk>`, otherwise host and path with tracking parameters removed), and across boards by title and company.
+- Links in emails are never opened by the server. A click-tracking link whose posting can't be read from the link itself is stored as it came and shown with a "Tracking link" badge.
+- Default senders are LinkedIn, Indeed, Glassdoor, Wellfound and ZipRecruiter alert addresses. They are a best-effort starting point: edit them if your alerts come from another address.
+
+The layouts of the alert emails are not documented by the boards and change. The parsers are written from approximations of them, so an email they can't read gives no jobs and stays in your inbox. Report the sender and board in an issue, without the email.
+
+## 1. Create the Google OAuth client
+
+1. In the [Google Cloud console](https://console.cloud.google.com/) create a project and enable the **Gmail API**.
+2. Open **Google Auth Platform** (formerly OAuth consent screen). Choose the **External** user type, fill in the app name and your email.
+3. Under **Data access** add the scope `https://www.googleapis.com/auth/gmail.modify`. It is the smallest scope that can read mail and change labels. Google marks it **restricted**.
+4. Under **Clients** create a client of type **Web application**. Add this authorized redirect URI, exactly:
+
+   ```text
+   <DASHBOARD_URL>/api/gmail/callback
+   ```
+
+   For example `https://app.example.com/api/gmail/callback`. The callback goes through the dashboard because that is where the session cookie lives. To use another address set `GOOGLE_REDIRECT_URI`, it must match the client.
+5. Copy the client id and secret into the environment (below).
+
+### Testing mode expires the connection after 7 days
+
+A new consent screen starts in **Testing**. Google expires refresh tokens of apps in testing after 7 days, and skiffr then shows "Needs reconnecting" every week. For your own use, press **Publish app** to move it to production.
+
+Without Google's verification this works with a warning screen ("Google hasn't verified this app", choose Advanced, then continue) and a limit of 100 users for the life of the client. Because `gmail.modify` is a restricted scope, a public app serving other people has to pass Google's verification and an annual security assessment. For one person or a small team on a self-hosted skiffr that is usually not worth it: stay unverified, and everyone connects through the warning screen.
+
+## 2. Environment
+
+| Key | What it is |
+| --- | --- |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | the OAuth client from step 1 |
+| `GMAIL_ENCRYPTION_KEY` | 32 random bytes, base64: `openssl rand -base64 32`. Seals the stored refresh tokens. If you lose or change it, everyone has to connect again |
+| `GOOGLE_REDIRECT_URI` | optional, defaults to `<DASHBOARD_URL>/api/gmail/callback` |
+| `GMAIL_SYNC_INTERVAL_MINUTES` | optional, default 15. The real interval varies by 20% so replicas and restarts don't line up |
+| `GMAIL_SCHEDULER` | `on` (default) or `off`, see below |
+
+Set all three of the first group or none: a half set fails at start. Without them the Gmail page says it is not set up, `/gmail/connect` answers 404 and nothing is scheduled.
+
+## 3. Schedule
+
+By default the api reads mail itself. With several api replicas, one of them (chosen with a Postgres advisory lock) does it, and another takes over if it stops. The mailbox being read is also leased in the database, so a **Sync now** click and the schedule never run one mailbox at once.
+
+To run it as a Dokploy scheduled job instead, set `GMAIL_SCHEDULER=off` on the api and add a job to the api service with the command `bun run gmail:sync` (it runs from `apps/api`, reads the same environment, does one pass over every due mailbox and exits). Run it every 15 minutes.
+
+A run reads at most 200 listed emails and handles at most 50 new ones. A rate limit or a Google error stops that mailbox until later and the next run picks up where it stopped. If Google no longer accepts the saved access, the mailbox is marked **Needs reconnecting** and nothing retries it.
+
+## Privacy model
+
+- **Reads** only unread inbox emails from the watched senders. The sender is checked again on the real address, and emails that fail Gmail's own spf, dkim or dmarc check are skipped. Attachments are never opened.
+- **Stores** per email: Gmail's message id, the board, an outcome and counts. Per job: title, company, link. Not the email body, subject or sender address. Your Gmail address and the encrypted refresh token are kept on your connection.
+- **Encryption**: the refresh token is sealed with AES-256-GCM, a random IV per value and the user id as additional data, so a token copied to another row doesn't open. The key is `GMAIL_ENCRYPTION_KEY`. Tokens are never returned by the api and never logged, and neither is any email text. Access tokens live in memory for a few minutes.
+- **Session only**: the Gmail calls need a signed-in browser session. An extension token can't call them.
+- **Text from emails** is attacker-controlled. It is stored as plain text with control and direction characters removed, cut to 200 characters, and shown as text, never as HTML.
+
+## Revoking
+
+Press **Disconnect** on the Gmail page: skiffr revokes its access at Google, deletes the connection, the watched senders and its list of read emails. Jobs already queued, your emails and the `skiffr/jobs` label stay. You can also remove skiffr at [myaccount.google.com/permissions](https://myaccount.google.com/permissions), skiffr then shows "Needs reconnecting". Deleting a user deletes their connection with them.

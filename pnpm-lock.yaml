@@ -96,6 +96,9 @@ catalogs:
     fumadocs-ui:
       specifier: 16.17.8
       version: 16.17.8
+    htmlparser2:
+      specifier: 10.1.0
+      version: 10.1.0
     lucide-react:
       specifier: 1.59.0
       version: 1.59.0
@@ -629,6 +632,9 @@ importers:
       drizzle-orm:
         specifier: 'catalog:'
         version: 0.45.4(@electric-sql/pglite@0.5.16)(@opentelemetry/api@1.10.0)(bun-types@1.4.3)(kysely@0.29.6)(pg@8.23.1)(postgres@3.4.9)
+      htmlparser2:
+        specifier: 'catalog:'
+        version: 10.1.0
       react:
         specifier: 'catalog:'
         version: 19.3.0

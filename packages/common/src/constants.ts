@@ -69,3 +69,10 @@ export const SITE_PROFILE_OVERLAP_MIN = 0.8
 /** A record covering less than this share of a known form it is a strict subset of is not saved as a form of its own. */
 export const SITE_PROFILE_PARTIAL_MAX = 0.5
 export const SITE_FIELD_SOURCES = ["answer", "profile", "literal"] as const
+export const GMAIL_ACCOUNT_STATUSES = ["active", "needs_reconnect", "disabled"] as const
+export const GMAIL_MESSAGE_OUTCOMES = ["imported", "duplicate", "no_jobs", "skipped", "failed"] as const
+export const GMAIL_SENDERS_MAX = 30
+export const GMAIL_SENDER_MAX = 120
+export const GMAIL_LABEL = "skiffr/jobs"
+export const GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.modify"
+export const GMAIL_RECENT_MAX = 50

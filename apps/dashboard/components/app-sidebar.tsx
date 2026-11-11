@@ -14,7 +14,15 @@ import {
   SidebarMenuItem,
   SidebarRail,
 } from "@skiffr/ui/components/sidebar"
-import { LayoutDashboardIcon, LogOutIcon, NotebookPenIcon, PuzzleIcon, SettingsIcon, UsersIcon } from "lucide-react"
+import {
+  LayoutDashboardIcon,
+  LogOutIcon,
+  MailIcon,
+  NotebookPenIcon,
+  PuzzleIcon,
+  SettingsIcon,
+  UsersIcon,
+} from "lucide-react"
 import type { Route } from "next"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
@@ -31,8 +39,18 @@ const NAV: { href: Route; label: string; icon: typeof LayoutDashboardIcon; admin
   { href: "/notes", label: "Notes", icon: NotebookPenIcon },
   { href: "/extension", label: "Extension", icon: PuzzleIcon },
   { href: "/users", label: "Users", icon: UsersIcon, admin: true },
+  { href: "/settings/gmail", label: "Gmail", icon: MailIcon },
   { href: "/settings", label: "Settings", icon: SettingsIcon },
 ]
+
+/** The most specific nav entry wins, so `/settings/gmail` doesn't also light up Settings. */
+function isActive(href: string, pathname: string): boolean {
+  if (href === "/") return pathname === "/"
+  const owns = (candidate: string) => pathname === candidate || pathname.startsWith(`${candidate}/`)
+  return (
+    owns(href) && !NAV.some((other) => other.href !== href && other.href.startsWith(`${href}/`) && owns(other.href))
+  )
+}
 
 export function AppSidebar({ me }: { me: Me }) {
   const pathname = usePathname()
@@ -60,7 +78,7 @@ export function AppSidebar({ me }: { me: Me }) {
                 <SidebarMenuItem key={item.href}>
                   <SidebarMenuButton
                     tooltip={item.label}
-                    isActive={item.href === "/" ? pathname === "/" : pathname.startsWith(item.href)}
+                    isActive={isActive(item.href, pathname)}
                     render={<Link href={item.href} />}
                   >
                     <item.icon />
