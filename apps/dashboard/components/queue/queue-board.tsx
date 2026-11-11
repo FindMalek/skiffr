@@ -92,7 +92,7 @@ function OpenNext({ disabled }: { disabled: boolean }) {
   }
 
   return (
-    <Button disabled={disabled || !shown} onClick={open} className="max-w-full">
+    <Button disabled={disabled || !shown} onClick={open} className="min-w-0 max-w-full">
       <ExternalLinkIcon data-icon="inline-start" />
       <span className="truncate">
         {shown ? `Open next: ${displayText(shown.company, 24)}, ${displayText(shown.title, 32)}` : "Open next"}

@@ -400,7 +400,7 @@ test("indeed's country domains are matched from an explicit list", () => {
     "de.indeed.com",
     "indeed.ca",
     "indeed.com.br",
-    "www.indeed.co.jp",
+    "www.indeed.jp",
     "indeed.com.sg",
   ]) {
     expect(id(`https://${host}/viewjob?jk=abcdef0123456789`), host).toBe("indeed:abcdef0123456789")
