@@ -2,15 +2,11 @@ import { ORPCError } from "@orpc/client"
 import type { ExtensionSettings } from "@skiffr/common"
 import { apiFetch, NotConfiguredError } from "./api"
 
-export type TestConnectionMessage = { type: "test-connection" }
+export { isTestConnectionMessage, type TestConnectionMessage } from "./messages"
 
 export type ConnectionResult =
   | { ok: true; name: string }
   | { ok: false; reason: "missing-token" | "rejected" | "unavailable" | "unreachable" }
-
-export function isTestConnectionMessage(value: unknown): value is TestConnectionMessage {
-  return typeof value === "object" && value !== null && (value as { type?: unknown }).type === "test-connection"
-}
 
 /** What the options page says for each failure. */
 export const CONNECTION_TEXT = {

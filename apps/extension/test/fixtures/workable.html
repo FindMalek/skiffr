@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Data Analyst - Acme</title></head>
+<body>
+<main><h1>Data Analyst</h1>
+<form data-ui="application-form">
+  <fieldset><legend>Personal information</legend>
+  <div><label for="firstname">First name</label><input id="firstname" name="firstname" data-ui="firstname" autocomplete="given-name"></div>
+  <div><label for="lastname">Last name</label><input id="lastname" name="lastname" data-ui="lastname" autocomplete="family-name"></div>
+  <div><label for="email">Email</label><input id="email" name="email" type="email" data-ui="email" autocomplete="email"></div>
+  <div><label for="phone">Phone</label><input id="phone" name="phone" type="tel" data-ui="phone" autocomplete="tel"></div>
+  </fieldset>
+  <div data-ui="resume"><span>Resume</span><input type="file" name="resume" style="display:none"></div>
+  <div><label for="cover">Cover letter</label><textarea id="cover" name="cover_letter"></textarea></div>
+  <button type="submit">Submit application</button>
+</form></main>
+</body></html>
