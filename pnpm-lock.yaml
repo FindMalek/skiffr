@@ -374,6 +374,9 @@ importers:
       '@orpc/client':
         specifier: 'catalog:'
         version: 1.15.7(@opentelemetry/api@1.10.0)
+      '@skiffr/ai':
+        specifier: workspace:*
+        version: link:../../packages/ai
       '@skiffr/common':
         specifier: workspace:*
         version: link:../../packages/common

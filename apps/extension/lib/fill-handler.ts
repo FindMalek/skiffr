@@ -2,6 +2,7 @@ import {
   type CollectedField,
   collectFields,
   currentValue,
+  type FieldMapping,
   type FillPageInput,
   type FillSummary,
   fillPage,
@@ -38,12 +39,26 @@ export class FillRequestError extends Error {
   }
 }
 
+export type FillObserver = (done: {
+  root: ParentNode
+  /** The fields that were asked about and are still on the page. */
+  fields: CollectedField[]
+  mapping: FieldMapping[]
+  summary: FillSummary
+}) => void
+
 const NO_PROVIDER: MappingProvider = async () => null
 let provider: MappingProvider = NO_PROVIDER
+let observer: FillObserver | null = null
 
 /** Where the field mapping comes from. Until one is set nothing is filled. */
 export function setMappingProvider(next: MappingProvider | null): void {
   provider = next ?? NO_PROVIDER
+}
+
+/** Told after each fill that asked about fields, so what the person does next can be learned from. */
+export function setFillObserver(next: FillObserver | null): void {
+  observer = next
 }
 
 const NEVER_ASKED = new Set(["password", "hidden", "file"])
@@ -104,6 +119,7 @@ async function run(start: ParentNode): Promise<FillOutcome> {
     clearOutlines = () => {
       for (const undo of release.splice(0)) undo()
     }
+    if (fields.length > 0) observer?.({ root, fields, mapping: mapped.mapping, summary })
     const alive = new Set(fields.filter((field) => field.el.isConnected).map((field) => field.id))
     const filled = summary.fields.filter((f) => f.status === "filled" && alive.has(f.id))
     const review = filled.filter((f) => f.lowConfidence).length

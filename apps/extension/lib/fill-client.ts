@@ -6,7 +6,7 @@ import { type FillField, type FillRequestMessage, fillResponseSchema } from "./m
 
 export type SendToWorker = (message: FillRequestMessage) => Promise<unknown>
 
-function toFillField({ descriptor, info }: CollectedField): FillField {
+export function toFillField({ descriptor, info }: CollectedField): FillField {
   const autocomplete = info.autocomplete?.trim().slice(0, 100)
   return {
     id: descriptor.id,

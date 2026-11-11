@@ -13,6 +13,8 @@ import {
   mapFieldsInputSchema,
   mapFieldsOutputSchema,
   profileDataSchema,
+  recordInputSchema,
+  recordOutputSchema,
 } from "@skiffr/common/schemas"
 import type { z } from "zod"
 
@@ -32,6 +34,8 @@ export type LookupMatch =
     }
 export type LookupHandler = (input: { siteKey: string; fields: { id: string; label: string }[] }) => LookupMatch[]
 
+export type RecordedBatch = z.output<typeof recordInputSchema>
+
 export interface RecordedRequest {
   method: string
   path: string
@@ -43,6 +47,8 @@ export interface MockApi {
   url: string
   /** Every request the extension made, in order. A test that must not touch the network asserts this is empty. */
   requests: RecordedRequest[]
+  /** Batches `learning.record` accepted, in order. A repeat of a batch id with the same events is answered but not added. */
+  records: RecordedBatch[]
   /** Replace the canned `ai.mapFields` answer. */
   onMapFields: (handler: MapFieldsHandler) => void
   /** Replace the canned `learning.lookup` answer (no saved answers by default). */
@@ -88,9 +94,17 @@ export const defaultMapFields: MapFieldsHandler = (fields) =>
     return { id: field.id, action: "profile", key: rule[1], confidence: 0.95, reason: "mock: matched rule" }
   })
 
-const noMatches: LookupHandler = ({ fields }) => fields.map(({ id }) => ({ fieldId: id, source: "none" }))
+const labelKey = (label: string): string => label.trim().toLowerCase()
 
 const DRAFT: DraftAnswerResult = { ok: true, text: "Mock answer drafted from the profile." }
+
+const recordedOutput = (input: RecordedBatch) =>
+  recordOutputSchema.parse({
+    recorded: input.events.length,
+    skipped: 0,
+    siteProfile: { status: "saved" },
+    answers: { status: "saved", skipped: 0 },
+  })
 
 class HttpError extends Error {
   constructor(
@@ -122,7 +136,18 @@ function parseInput<T extends z.ZodType>(schema: T, body: unknown): z.output<T> 
 export async function startMockApi(): Promise<MockApi> {
   const requests: RecordedRequest[] = []
   let mapFields: MapFieldsHandler = defaultMapFields
-  let lookup: LookupHandler = noMatches
+  const records: RecordedBatch[] = []
+  const batches = new Map<string, string>()
+  /** What the person corrected to, by question: the answers a real server would learn. */
+  const learned = new Map<string, string>()
+  const fromLearned: LookupHandler = ({ fields }) =>
+    fields.map(({ id, label }): LookupMatch => {
+      const value = learned.get(labelKey(label))
+      return value === undefined
+        ? { fieldId: id, source: "none" }
+        : { fieldId: id, source: "label", value, autofill: true }
+    })
+  let lookup: LookupHandler = fromLearned
   let failure: { status: number; code: string } | null = null
 
   // oRPC's wire format: POST /rpc/<router>/<procedure> with `{ json: input }`, answered with `{ json: output }`
@@ -145,6 +170,23 @@ export async function startMockApi(): Promise<MockApi> {
         match.source === "none" ? match : { score: 1, timesUsed: 0, timesCorrected: 0, ...match },
       )
       return lookupOutputSchema.parse({ matches })
+    }
+    if (method === "POST" && path === "/rpc/learning/record") {
+      const input = parseInput(recordInputSchema, body)
+      const same = JSON.stringify(input)
+      if (input.batchId) {
+        const seen = batches.get(input.batchId)
+        if (seen !== undefined && seen !== same) {
+          throw new HttpError(409, "CONFLICT", "That batch id was already used for different events.")
+        }
+        batches.set(input.batchId, same)
+        if (seen !== undefined) return recordedOutput(input)
+      }
+      records.push(input)
+      for (const { label, filledValue, finalValue } of input.events) {
+        if (finalValue && finalValue !== filledValue) learned.set(labelKey(label), finalValue)
+      }
+      return recordedOutput(input)
     }
     throw new HttpError(404, "NOT_FOUND", `The mock api has no ${method} ${path}`)
   }
@@ -183,6 +225,7 @@ export async function startMockApi(): Promise<MockApi> {
   return {
     url: `http://127.0.0.1:${port}`,
     requests,
+    records,
     onMapFields: (handler) => {
       mapFields = handler
     },
@@ -195,7 +238,10 @@ export async function startMockApi(): Promise<MockApi> {
     reset: () => {
       requests.length = 0
       mapFields = defaultMapFields
-      lookup = noMatches
+      lookup = fromLearned
+      records.length = 0
+      batches.clear()
+      learned.clear()
       failure = null
     },
     stop: () => new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve()))),
