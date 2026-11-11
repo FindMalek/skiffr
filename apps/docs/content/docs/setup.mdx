@@ -24,6 +24,16 @@ The pgvector image is debian based, the old alpine based postgres image used a d
 
 Sign in to the dashboard with `ADMIN_EMAIL` and `ADMIN_PASSWORD` from `.env`. The admin is created or reset on every api start.
 
+## Load the extension
+
+The extension is not part of `pnpm dev`. It needs Chrome 142 or a Chromium browser of the same age.
+
+```bash
+pnpm --filter extension build
+```
+
+In `chrome://extensions` turn on developer mode, choose Load unpacked and pick `apps/extension/.output/chrome-mv3`. Create a token on the dashboard's Extension page, then set the api url (`http://localhost:3001`) and the token in the extension options and press test connection. `Ctrl+Shift+F` (`Cmd+Shift+F` on macOS) is the fill shortcut, remap it at `chrome://extensions/shortcuts`.
+
 ## Working on one app
 
 ```bash

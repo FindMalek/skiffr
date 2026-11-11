@@ -26,4 +26,16 @@ There is one `.env` at the repo root. Every app loads it, and `packages/env` val
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | the first admin, created or reset on every api start |
 | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | optional github sign-in |
 
+## Models and extension
+
+| Key | What it is |
+| --- | --- |
+| `AI_MODEL` | `provider:model`, default `groq:openai/gpt-oss-120b`. Providers: `groq`, `openai`, `anthropic` |
+| `GROQ_API_KEY` | needed for the default model. Without any matching key the ai endpoints answer "No AI provider key is configured" and the rest keeps working |
+| `OPENAI_API_KEY` | optional. Embeddings (`text-embedding-3-small`) for similar-question suggestions, see [how skiffr learns](/docs/learning) |
+| `ANTHROPIC_API_KEY` | only if `AI_MODEL` points at an `anthropic:` model |
+| `EXTENSION_ORIGINS` | optional, comma separated `chrome-extension://<id>` origins allowed to call the api. Unset allows any extension holding a valid token |
+
+What each provider receives is listed in [privacy and data flow](/docs/privacy).
+
 Keys for modules you left out of the project are not in `.env.example`. Adding a key means adding it to the zod schema in `packages/env` first.

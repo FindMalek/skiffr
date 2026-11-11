@@ -1,29 +1,48 @@
+import { Badge } from "@skiffr/ui/components/badge"
 import { Button } from "@skiffr/ui/components/button"
+import { Kbd, KbdGroup } from "@skiffr/ui/components/kbd"
 import { ArrowRightIcon } from "lucide-react"
-import type { Route } from "next"
 import { SITE } from "@/lib/site"
-import { StatusWindow } from "./status-window"
-import { Wordmark } from "./wordmark"
+import { MockForm } from "./mock-form"
 
-export async function Hero({ dashboardUrl, docsUrl }: { dashboardUrl: string; docsUrl: string }) {
-  const copy = { badge: SITE.badge, start: "Get started", docs: "API docs" }
+export function Hero() {
   return (
-    <section className="mx-auto flex w-full max-w-4xl flex-col items-center gap-6 px-6 py-10 text-center">
-      <span className="inline-flex items-center gap-1.5 border bg-card/80 px-2.5 py-0.5 font-mono text-muted-foreground text-xs uppercase tracking-wide">
-        <span className="size-1.5 rounded-full bg-primary" />
-        {copy.badge}
-      </span>
-      <Wordmark text={SITE.name} />
-      <p className="max-w-lg text-lg text-muted-foreground leading-relaxed">{SITE.tagline}</p>
-      <div className="flex flex-wrap items-center justify-center gap-3">
-        <Button size="lg" render={<a href={`${dashboardUrl}/sign-up` as Route} />} nativeButton={false}>
-          {copy.start} <ArrowRightIcon data-icon="inline-end" />
-        </Button>
-        <Button size="lg" variant="outline" render={<a href={docsUrl} />} nativeButton={false}>
-          {copy.docs}
-        </Button>
+    <section aria-labelledby="hero-title" className="mx-auto w-full max-w-6xl px-4 py-12 sm:px-6 sm:py-20">
+      <div className="grid items-center gap-10 lg:grid-cols-2 lg:gap-14">
+        <div className="flex flex-col items-start gap-6">
+          <Badge variant="outline" className="font-mono uppercase tracking-wide">
+            {SITE.badge}
+          </Badge>
+          <h1 id="hero-title" className="font-bold font-heading text-4xl tracking-tight text-balance sm:text-6xl">
+            Job applications that fill themselves, and need fewer fixes each time.
+          </h1>
+          <p className="max-w-xl text-lg text-muted-foreground leading-relaxed">
+            skiffr is an open-source Chrome extension. It fills application forms from your own profile, never submits
+            anything, and learns from every correction you make. You host the data yourself.
+          </p>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button size="lg" render={<a href={`${SITE.repo}#install-from-a-ci-build`} />} nativeButton={false}>
+              Get the extension <ArrowRightIcon data-icon="inline-end" />
+            </Button>
+            <Button size="lg" variant="outline" render={<a href={SITE.repo} />} nativeButton={false}>
+              View on GitHub
+            </Button>
+          </div>
+          <p className="flex flex-wrap items-center gap-2 text-muted-foreground text-sm">
+            Fill the page with
+            <KbdGroup>
+              <Kbd className="text-foreground">Ctrl</Kbd>
+              <Kbd className="text-foreground">Shift</Kbd>
+              <Kbd className="text-foreground">F</Kbd>
+            </KbdGroup>
+            or <Kbd className="text-foreground">Cmd</Kbd> on macOS.
+          </p>
+        </div>
+        <figure className="flex flex-col gap-2">
+          <MockForm step="detect" />
+          <figcaption className="text-muted-foreground text-xs">Illustration, not a screenshot.</figcaption>
+        </figure>
       </div>
-      <StatusWindow />
     </section>
   )
 }

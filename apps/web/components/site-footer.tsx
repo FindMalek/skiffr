@@ -14,8 +14,8 @@ function GithubMark({ className }: { className?: string }) {
 export async function SiteFooter() {
   const repo = await getRepo()
   return (
-    <footer className="w-full border-t px-6 py-3.5">
-      <div className="mx-auto flex max-w-4xl flex-col items-center justify-between gap-2 font-mono text-xs sm:flex-row">
+    <footer className="w-full border-t px-4 py-3.5 sm:px-6">
+      <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 font-mono text-xs sm:flex-row">
         <span className="text-muted-foreground">
           <span className="font-medium text-foreground">{SITE.name}</span> · {SITE.license}
         </span>
@@ -25,7 +25,7 @@ export async function SiteFooter() {
               href={repo.url}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex items-center gap-1.5 border bg-card px-2.5 py-1 transition-colors hover:border-foreground/30"
+              className="inline-flex items-center gap-1.5 border bg-card px-2.5 py-1 outline-none transition-colors hover:border-foreground/30 focus-visible:ring-2 focus-visible:ring-ring"
             >
               <GithubMark className="size-3.5" />
               <span className="hidden text-muted-foreground sm:inline">{repo.name}</span>

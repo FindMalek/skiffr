@@ -1,0 +1,51 @@
+---
+title: Privacy and data flow
+description: Exactly what leaves your machine, and where it goes.
+---
+
+skiffr is self-hosted. Your profile, answers and tokens are in your own Postgres, behind your own api. There are no analytics, and the extension talks to no server except the api you configured.
+
+## Data flow
+
+```text
+web page -> extension -> your api -> your Postgres
+                            |
+                            +-> language model provider (Groq by default)
+                            +-> embeddings provider (OpenAI, optional)
+```
+
+## What goes where
+
+| To | What | When |
+| --- | --- | --- |
+| your api | field labels, names, placeholders, types and option texts of the form, the values you correct, your token | when you fill |
+| language model provider | the same field descriptors, your profile key names, and the values of an allowlist of profile keys | when a field needs mapping or an answer is drafted |
+| embeddings provider | the normalized question label | only with `OPENAI_API_KEY`, and only for learning |
+| nobody | form submissions | never |
+
+### What the model sees of your profile
+
+Key names are always sent, so the model can pick one. Values are sent only for the allowlist in `packages/ai/src/shared-keys.ts`:
+
+- first and last name, city, country, work authorization and sponsorship, all links
+- free-form fields labelled preferred name, headline, summary, experience, years of experience, skills, languages, notice period, availability, linkedin, github, portfolio or website
+
+Email, phone, address, pay, ids and dates of birth are not on the list and stay out of every prompt. A value over 60 characters is not previewed in field mapping. Drafting an answer also sends the question, the job description and up to 5 of your earlier answers.
+
+Password, hidden and file inputs are removed in code before a request is built. Text from pages and job posts is put in the prompt as escaped data blocks, and the model is told to treat it as data. The model's reply is checked in code: a profile key it invents becomes a skip.
+
+The provider keeps what its own terms say. Leave the keys unset to send nothing: mapping and drafting then answer "No AI provider key is configured".
+
+### What the extension does on a page
+
+- the content script is injected on all pages, because an application form can be on any careers site
+- the fill engine never submits a form, never clicks a button, and never touches password, hidden or file inputs
+- fields a person cannot see or reach (honeypots) are skipped
+
+### Tokens
+
+The extension authenticates with a personal access token that starts with `skp_`. The server keeps its SHA-256 hash and a short display tail, never the token. In the extension it sits in storage restricted to trusted contexts, and only the background worker reads it and calls the api, content scripts on web pages never get it. A token can only call a fixed list of procedures (`TOKEN_PROCEDURES` in `packages/orpc/src/procedures.ts`): profile, answers, jobs, applications and the two ai calls. Account, auth and token management need a signed-in session. Set `EXTENSION_ORIGINS` to pin the api to your own extension id.
+
+## Reporting a problem
+
+Report vulnerabilities privately through GitHub, see `SECURITY.md` in the repo root.

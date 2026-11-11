@@ -5,6 +5,11 @@ export function siteUrl(): string {
   return (process.env.WEB_URL ?? "http://localhost:3000").replace(/\/$/, "")
 }
 
+/** Where the docs site lives, read per request like the site url. */
+export function docsUrl(): string {
+  return (process.env.DOCS_URL ?? "http://localhost:3003").replace(/\/$/, "")
+}
+
 /** Previews and local runs stay out of search results. */
 export function isIndexable(): boolean {
   return !process.env.DEPLOY_ENV?.startsWith("pr-") && new URL(siteUrl()).hostname !== "localhost"
