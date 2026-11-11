@@ -1,0 +1,21 @@
+{
+  "name": "e2e",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "e2e": "playwright test",
+    "check-types": "tsc --noEmit",
+    "snapshot": "node tools/snapshot-form.ts"
+  },
+  "dependencies": {
+    "@skiffr/common": "workspace:*",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@playwright/test": "catalog:",
+    "@skiffr/config": "workspace:*",
+    "@types/node": "catalog:",
+    "typescript": "catalog:"
+  }
+}

@@ -18,3 +18,5 @@ next-env.d.ts
 
 .output/
 .wxt/
+playwright-report/
+test-results/

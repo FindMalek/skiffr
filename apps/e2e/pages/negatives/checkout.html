@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Checkout - Acme Store</title></head>
+<body>
+<main>
+  <h1>Checkout</h1>
+  <form action="/submit?neg=checkout" method="post">
+    <fieldset><legend>Shipping</legend>
+      <label for="ship-name">Full name</label><input id="ship-name" name="ship-name" type="text" autocomplete="shipping name">
+      <label for="ship-email">Email</label><input id="ship-email" name="email" type="email" autocomplete="email">
+      <label for="ship-address">Address</label><input id="ship-address" name="ship-address" type="text" autocomplete="shipping street-address">
+      <label for="ship-zip">Postal code</label><input id="ship-zip" name="ship-zip" type="text" autocomplete="shipping postal-code">
+    </fieldset>
+    <fieldset><legend>Payment</legend>
+      <label for="cc-number">Card number</label><input id="cc-number" name="cc-number" type="text" inputmode="numeric" autocomplete="cc-number">
+      <label for="cc-exp">Expiry</label><input id="cc-exp" name="cc-exp" type="text" autocomplete="cc-exp" placeholder="MM / YY">
+      <label for="cc-csc">CVC</label><input id="cc-csc" name="cc-csc" type="text" autocomplete="cc-csc">
+    </fieldset>
+    <button type="submit">Pay now</button>
+  </form>
+</main>
+</body>
+</html>

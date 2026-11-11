@@ -15,6 +15,12 @@
       "inputs": ["$TURBO_DEFAULT$", ".env*"],
       "outputs": [".output/**", ".next/**", "!.next/cache/**", "!.next/dev/**", "dist/**", "out/**"]
     },
+    "zip": {
+      "dependsOn": ["^build"],
+      "inputs": ["$TURBO_DEFAULT$", ".env*"],
+      "outputs": [".output/**"]
+    },
+    "e2e": { "dependsOn": ["extension#build"], "cache": false },
     "export": { "outputs": ["out/**"] },
     "check-types": { "dependsOn": ["^check-types"] },
     "test": {},

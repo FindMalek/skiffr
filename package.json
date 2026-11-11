@@ -7,6 +7,8 @@
     "dev:web": "turbo dev -F web -F api",
     "dev:dashboard": "turbo dev -F dashboard -F api",
     "build": "turbo build",
+    "zip": "turbo zip",
+    "e2e": "turbo e2e",
     "check-types": "turbo check-types",
     "test": "turbo test",
     "lint": "biome ci . && oxlint",
