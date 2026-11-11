@@ -35,3 +35,28 @@ export const TOKEN_ACTIVE_MAX = 20
 /** Revoked and expired tokens stay listed this long. */
 export const TOKEN_HISTORY_DAYS = 30
 export const TOKEN_LIST_MAX = 100
+export const EMBEDDING_DIMENSIONS = 1536
+export const EMBEDDING_TEXTS_MAX = 100
+export const EMBEDDING_TEXT_MAX = 300
+export const ANSWER_STATUSES = ["learned", "confirmed", "rejected"] as const
+export const FIELD_EVENT_SOURCES = ["profile", "answer", "ai", "site"] as const
+export const FIELD_EVENT_OUTCOMES = ["accepted", "corrected", "cleared"] as const
+export const LEARNING_FIELDS_MAX = 60
+export const LEARNING_REQUEST_CHARS_MAX = 100_000
+export const LEARNING_VALUE_MAX = 2_000
+export const SITE_KEY_MAX = 200
+/** Cosine similarity a question must reach to be suggested another question's answer. A floor until real numbers are measured (issue #41). */
+export const SIMILARITY_MIN = 0.92
+/** How far the best match must lead the runner-up, or the lookup stays silent. */
+export const SIMILARITY_MARGIN = 0.05
+export const SUGGEST_KEEP_MIN = 2
+export const SUGGEST_FLIP_FLOP_MIN = 3
+export const SUGGEST_STABLE_RUN = 3
+export const SUGGEST_WINDOW_DAYS = 90
+export const SUGGEST_STALE_DAYS = 180
+export const STATS_APPLICATIONS_MAX = 200
+export const LEARNING_AUTOFILL_VALUE_MAX = 300
+export const CLEARED_STOP_MIN = 3
+export const FIELD_EVENT_RETENTION_DAYS = 90
+export const FIELD_EVENT_PURGE_BATCH = 500
+export const ANSWERS_PER_USER_MAX = 2_000

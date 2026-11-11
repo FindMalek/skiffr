@@ -32,5 +32,7 @@ export function resolveModel(id: string, keys: AiKeys): LanguageModel | null {
 
 export { type AiProfile, flattenProfile } from "./data"
 export { draftAnswer } from "./draft-answer"
+export { EMBEDDING_MODEL_ID, embedTexts, resolveEmbeddingModel } from "./embeddings"
 export { AiInputError, AiModelError } from "./errors"
+export { type ControlKind, controlKind, isLearnableField, isSensitiveValue } from "./learnable"
 export { mapFields } from "./map-fields"

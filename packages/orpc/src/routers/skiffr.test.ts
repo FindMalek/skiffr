@@ -447,6 +447,20 @@ test("a token reaches exactly the allowlisted procedures", async () => {
   }
 })
 
+test("a token can record and look up corrections but not read the learning dashboard", async () => {
+  const { secret } = await mint(ana)
+  const client = await asToken(secret)
+  const siteKey = "jobs.acme.dev"
+  await client.learning.record({
+    siteKey,
+    events: [{ label: "Pronouns", type: "text", filledValue: "", finalValue: "she/her", source: "site" }],
+  })
+  const { matches } = await client.learning.lookup({ siteKey, fields: [{ id: "f", label: "Pronouns", type: "text" }] })
+  expect(matches[0]).toMatchObject({ source: "exact", value: "she/her" })
+  await expect(client.learning.stats({})).rejects.toMatchObject({ code: "FORBIDDEN" })
+  await expect(client.learning.suggestions()).rejects.toMatchObject({ code: "FORBIDDEN" })
+})
+
 test("lastUsedAt is written at most once a minute", async () => {
   const { id, secret } = await mint(ana)
   const lastUsed = async () => (await db.select().from(apiToken).where(eq(apiToken.id, id)))[0]?.lastUsedAt
