@@ -453,9 +453,9 @@ test("a token can record and look up corrections but not read the learning dashb
   const siteKey = "jobs.acme.dev"
   await client.learning.record({
     siteKey,
-    events: [{ label: "Pronouns", filledValue: "", finalValue: "she/her", source: "site" }],
+    events: [{ label: "Pronouns", type: "text", filledValue: "", finalValue: "she/her", source: "site" }],
   })
-  const { matches } = await client.learning.lookup({ siteKey, fields: [{ id: "f", label: "Pronouns" }] })
+  const { matches } = await client.learning.lookup({ siteKey, fields: [{ id: "f", label: "Pronouns", type: "text" }] })
   expect(matches[0]).toMatchObject({ source: "exact", value: "she/her" })
   await expect(client.learning.stats({})).rejects.toMatchObject({ code: "FORBIDDEN" })
   await expect(client.learning.suggestions()).rejects.toMatchObject({ code: "FORBIDDEN" })

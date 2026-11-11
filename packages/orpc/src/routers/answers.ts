@@ -11,6 +11,7 @@ import { normalizeLabel } from "@skiffr/common/utils"
 import { answer, answerColumns } from "@skiffr/db"
 import { asc, eq, sql } from "drizzle-orm"
 import { z } from "zod"
+import { assertAnswerRoom, embedMissing } from "../lib/learning"
 import { mine, orNotFound } from "../lib/owned"
 import { protectedProcedure } from "../procedures"
 
@@ -41,6 +42,7 @@ export const answersRouter = {
     .handler(async ({ context, input }) => {
       const normalizedLabel = normalizeLabel(input.rawLabel)
       if (!normalizedLabel) throw new ORPCError("BAD_REQUEST", { message: "The label has no letters or digits." })
+      await assertAnswerRoom(context.db, context.user.id, [normalizedLabel])
       const [row] = await context.db
         .insert(answer)
         .values({ ...input, normalizedLabel, userId: context.user.id })
@@ -49,6 +51,7 @@ export const answersRouter = {
           set: { rawLabel: input.rawLabel, value: input.value, source: input.source, updatedAt: context.now() },
         })
         .returning(answerColumns)
+      await embedMissing(context, "answers.create", context.user.id, [row!])
       return row!
     }),
 
@@ -62,7 +65,9 @@ export const answersRouter = {
         .set({ ...patch, updatedAt: context.now() })
         .where(mine(answer, context.user.id, id))
         .returning(answerColumns)
-      return orNotFound(row, "Answer")
+      const found = orNotFound(row, "Answer")
+      await embedMissing(context, "answers.update", context.user.id, [found])
+      return found
     }),
 
   recordUse: protectedProcedure

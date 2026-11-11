@@ -4,7 +4,7 @@ import { normalizeLabel } from "@skiffr/common/utils"
 import { draftAnswer, fitLength } from "./draft-answer"
 import { embedTexts } from "./embeddings"
 import { AiInputError, AiModelError } from "./errors"
-import { isLearnableField } from "./learnable"
+import { controlKind, isLearnableField } from "./learnable"
 import { mapFields } from "./map-fields"
 import { mockEmbeddingModel, mockModel } from "./testing"
 
@@ -301,23 +301,90 @@ test("a type spelled with spaces or zero-width characters is still never sent", 
   expect(model.doGenerateCalls.length).toBe(0)
 })
 
-test("only plain input kinds with harmless labels are learnable", () => {
-  const learnable = (label: string, type?: string) => isLearnableField({ label, type })
+test("only known input kinds with harmless labels are learnable", () => {
+  const learnable = (label: string, type: string | undefined = "text", autocomplete?: string) =>
+    isLearnableField({ label, type, autocomplete })
   expect(learnable("Notice period")).toBe(true)
   expect(learnable("Pronouns", "Select-One")).toBe(true)
-  for (const type of ["password", "hidden", "file", "submit", " pass\u200bword "])
-    expect(learnable("Name", type)).toBe(false)
-  for (const label of [
+  expect(learnable("PIN code")).toBe(true)
+  expect(learnable("Postal code", "text", "postal-code")).toBe(true)
+  for (const type of [undefined, "", "password", "hidden", "file", "submit", " pass\u200bword "]) {
+    expect(isLearnableField({ label: "Name", type }), String(type)).toBe(false)
+  }
+  expect(controlKind(" Select-One ")).toBe("select")
+  expect(controlKind("textarea")).toBe("text")
+})
+
+test("secrets, payment, ids, birth dates and equal-opportunity answers are never learnable, in any spelling or language", () => {
+  const labels = [
     "Credit card number",
     "CVV",
+    "CVC2",
     "IBAN",
+    "Sort code",
+    "Account no",
+    "Expiry date",
     "SSN",
+    "SIN",
+    "Social Insurance Number",
     "National ID",
     "Date of birth",
     "Account password",
+    "p4ssword",
+    "pass-word",
+    "Pass word",
+    "pwd",
+    "PIN",
+    "Enter your PIN",
+    "mot de passe",
+    "carte bancaire",
+    "numéro de carte",
+    "date de naissance",
+    "Geburtsdatum",
+    "fecha de nacimiento",
+    "رقم الهوية",
+    "كلمة المرور",
+    "mother's maiden name",
+    "security question",
+    "One-time code",
+    "DNI",
+    "NIF",
+    "CPF",
+    "Aadhaar",
+    "Tax number",
+    "Driving licence",
+    "Driver's license number",
+    "Gender",
+    "Ethnicity",
+    "Race",
+    "Disability status",
+    "Religion",
+    "Veteran status",
+    "Sexual orientation",
+    "Marital status",
     "!!!",
+  ]
+  for (const label of labels) expect(isLearnableField({ label, type: "text" }), label).toBe(false)
+  for (const label of ["Website", "Years of experience", "Preferred name", "Nationality", "Postal code", "Pronouns"]) {
+    expect(isLearnableField({ label, type: "text" }), label).toBe(true)
+  }
+})
+
+test("the browser's autocomplete hint keeps a field out whatever its label says", () => {
+  for (const autocomplete of [
+    "cc-number",
+    "cc-exp",
+    "one-time-code",
+    "new-password",
+    "current-password",
+    "bday",
+    "bday-year",
+    "section-a cc-csc",
   ]) {
-    expect(learnable(label)).toBe(false)
+    expect(isLearnableField({ label: "Something harmless", type: "text", autocomplete }), autocomplete).toBe(false)
+  }
+  for (const autocomplete of ["tel", "given-name", "organization"]) {
+    expect(isLearnableField({ label: "Something harmless", type: "tel", autocomplete }), autocomplete).toBe(true)
   }
 })
 

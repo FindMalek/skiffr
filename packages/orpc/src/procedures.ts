@@ -1,17 +1,18 @@
 import { ORPCError, os } from "@orpc/server"
 import type { Session } from "@skiffr/auth"
 import type { Context } from "./context"
+import { safeErrorFields } from "./lib/errors"
 import type { TokenAuth } from "./lib/tokens"
 
 export const o = os.$context<Context>()
 
-/** Unexpected errors are logged with the procedure path; ORPCErrors are answers, not failures. */
+/** Unexpected errors are logged with the procedure path and a few safe fields, never the error itself: driver errors carry the statement and its params, which hold the user's data. ORPCErrors are answers, not failures. */
 const logErrors = o.middleware(async (options) => {
   const route = options.path.join(".")
   try {
     return await options.next()
   } catch (error) {
-    if (!(error instanceof ORPCError)) console.error(`[${route}]`, error)
+    if (!(error instanceof ORPCError)) console.error(`[${route}]`, { route, ...safeErrorFields(error) })
     throw error
   }
 })

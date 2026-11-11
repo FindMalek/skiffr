@@ -1,9 +1,14 @@
 import { embedTexts, isLearnableField } from "@skiffr/ai"
 import {
+  CLEARED_STOP_MIN,
+  FIELD_EVENT_PURGE_BATCH,
+  FIELD_EVENT_RETENTION_DAYS,
+  LEARNING_AUTOFILL_VALUE_MAX,
   SIMILARITY_MARGIN,
   SIMILARITY_MIN,
   SUGGEST_FLIP_FLOP_MIN,
   SUGGEST_KEEP_MIN,
+  SUGGEST_STABLE_RUN,
   SUGGEST_STALE_DAYS,
   SUGGEST_WINDOW_DAYS,
 } from "@skiffr/common/constants"
@@ -18,14 +23,32 @@ import {
   statsOutputSchema,
   suggestionsOutputSchema,
 } from "@skiffr/common/schemas"
-import { answer, answerColumns, application, fieldEvent, findSimilarAnswers } from "@skiffr/db"
-import { and, desc, eq, gte, inArray, lt, ne, or, sql } from "drizzle-orm"
-import { embeddingText, fingerprintOf, logEmbeddingFailure } from "../lib/learning"
+import {
+  answer,
+  answerColumns,
+  application,
+  type Db,
+  fieldEvent,
+  findSimilarAnswersMany,
+  recordBatch,
+} from "@skiffr/db"
+import { and, desc, eq, gte, inArray, isNotNull, lt, ne, or, sql } from "drizzle-orm"
+import {
+  assertAnswerRoom,
+  embeddingText,
+  embedMissing,
+  fingerprintOf,
+  guardLearningDb,
+  logBestEffort,
+  usableValue,
+} from "../lib/learning"
 import { mine, orNotFound } from "../lib/owned"
 import { protectedProcedure } from "../procedures"
 
 const DAY_MS = 86_400_000
 const SUGGESTIONS_MAX = 100
+const SUGGESTION_EVENTS_MAX = 1_000
+const NEIGHBOURS = 3
 
 type Outcome = "accepted" | "corrected" | "cleared"
 
@@ -33,6 +56,38 @@ function outcomeOf(filled: string, final: string): Outcome | null {
   if (!filled && !final) return null
   if (!final) return "cleared"
   return final === filled ? "accepted" : "corrected"
+}
+
+/** Old events and spent batch ids go, a bounded slice per call. Best effort: the write that triggered it already succeeded. */
+async function purgeOld(db: Db, userId: string, now: Date): Promise<void> {
+  const cutoff = new Date(now.getTime() - FIELD_EVENT_RETENTION_DAYS * DAY_MS)
+  try {
+    await db.delete(fieldEvent).where(
+      inArray(
+        fieldEvent.id,
+        db
+          .select({ id: fieldEvent.id })
+          .from(fieldEvent)
+          .where(and(eq(fieldEvent.userId, userId), lt(fieldEvent.createdAt, cutoff)))
+          .limit(FIELD_EVENT_PURGE_BATCH),
+      ),
+    )
+    await db.delete(recordBatch).where(
+      and(
+        eq(recordBatch.userId, userId),
+        inArray(
+          recordBatch.batchId,
+          db
+            .select({ id: recordBatch.batchId })
+            .from(recordBatch)
+            .where(and(eq(recordBatch.userId, userId), lt(recordBatch.createdAt, cutoff)))
+            .limit(FIELD_EVENT_PURGE_BATCH),
+        ),
+      ),
+    )
+  } catch (error) {
+    logBestEffort("learning.record", "purge failed", error)
+  }
 }
 
 export const learningRouter = {
@@ -50,7 +105,7 @@ export const learningRouter = {
       const fields = input.fields.map((field) => ({
         field,
         ...fingerprintOf(field),
-        learnable: isLearnableField({ label: field.label, type: field.type }),
+        learnable: isLearnableField(field),
       }))
       const usable = fields.filter((f) => f.learnable)
       const rows =
@@ -75,26 +130,29 @@ export const learningRouter = {
                 ),
               )
       const byLabel = new Map(rows.map((row) => [row.normalizedLabel, row]))
+      type Row = (typeof rows)[number]
+
+      const toMatch = (fieldId: string, row: Row, source: "exact" | "label" | "similar", score: number) => {
+        const f = fields.find((candidate) => candidate.field.id === fieldId)!
+        const value = row.status === "rejected" ? null : usableValue(row, f.field)
+        if (value === null) return null
+        const autofill =
+          source !== "similar" &&
+          value.length <= LEARNING_AUTOFILL_VALUE_MAX &&
+          (row.status === "confirmed" || row.timesCleared < CLEARED_STOP_MIN)
+        return {
+          fieldId,
+          answerId: row.id,
+          value,
+          source,
+          autofill,
+          score,
+          timesUsed: row.timesUsed,
+          timesCorrected: row.timesCorrected,
+        }
+      }
 
       const matches = new Map<string, NonNullable<ReturnType<typeof toMatch>>>()
-      const toMatch = (
-        fieldId: string,
-        row: (typeof rows)[number],
-        source: "exact" | "label" | "similar",
-        score: number,
-      ) =>
-        row.status === "rejected"
-          ? null
-          : {
-              fieldId,
-              answerId: row.id,
-              value: row.value,
-              source,
-              score,
-              timesUsed: row.timesUsed,
-              timesCorrected: row.timesCorrected,
-            }
-
       const unmatched = []
       for (const f of usable) {
         const row = byLabel.get(f.normalizedLabel)
@@ -107,29 +165,46 @@ export const learningRouter = {
       }
 
       if (unmatched.length > 0 && context.embeddingModel) {
-        const texts = [...new Set(unmatched.map((f) => embeddingText(f.normalizedLabel)))]
-        const vectors = await embedTexts({ model: context.embeddingModel, texts }).catch((error) => {
-          logEmbeddingFailure("learning.lookup", error)
-          return null
-        })
+        const [embedded] = await context.db
+          .select({ id: answer.id })
+          .from(answer)
+          .where(and(eq(answer.userId, userId), isNotNull(answer.embedding), ne(answer.status, "rejected")))
+          .limit(1)
+        const texts = embedded ? [...new Set(unmatched.map((f) => embeddingText(f.normalizedLabel)))] : []
+        const vectors =
+          texts.length === 0
+            ? null
+            : await embedTexts({ model: context.embeddingModel, texts }).catch((error) => {
+                logBestEffort("learning.lookup", "embeddings failed", error)
+                return null
+              })
         if (vectors) {
-          const vectorOf = new Map(texts.map((text, i) => [text, vectors[i]!]))
-          await Promise.all(
-            unmatched.map(async (f) => {
-              const [best, runnerUp] = await findSimilarAnswers(
-                context.db,
-                userId,
-                vectorOf.get(embeddingText(f.normalizedLabel))!,
-                2,
+          const hits = await findSimilarAnswersMany(context.db, userId, vectors, NEIGHBOURS)
+          const neighbours = hits.length
+            ? new Map(
+                (
+                  await context.db
+                    .select(answerColumns)
+                    .from(answer)
+                    .where(and(eq(answer.userId, userId), inArray(answer.id, [...new Set(hits.map((hit) => hit.id))])))
+                ).map((row) => [row.id, row]),
               )
-              if (!best) return
-              const score = 1 - best.distance
-              if (score < SIMILARITY_MIN) return
-              if (runnerUp && score - (1 - runnerUp.distance) < SIMILARITY_MARGIN) return
-              const match = toMatch(f.field.id, best, "similar", score)
-              if (match) matches.set(f.field.id, match)
-            }),
-          )
+            : new Map<string, Row>()
+          for (const f of unmatched) {
+            const query = texts.indexOf(embeddingText(f.normalizedLabel))
+            const ranked = hits
+              .filter((hit) => hit.query === query)
+              .flatMap((hit) => {
+                const row = neighbours.get(hit.id)
+                const match = row && toMatch(f.field.id, row, "similar", hit.score)
+                return match ? [match] : []
+              })
+              .sort((a, b) => b.score - a.score)
+            const [best, runnerUp] = ranked
+            if (!best || best.score < SIMILARITY_MIN) continue
+            if (runnerUp && best.score - runnerUp.score < SIMILARITY_MARGIN) continue
+            matches.set(f.field.id, best)
+          }
         }
       }
 
@@ -156,7 +231,7 @@ export const learningRouter = {
       }
 
       const events = input.events
-        .filter((event) => isLearnableField({ label: event.label, type: event.type }))
+        .filter((event) => isLearnableField(event))
         .flatMap((event) => {
           const filled = event.filledValue.trim()
           const final = event.finalValue.trim()
@@ -165,110 +240,114 @@ export const learningRouter = {
           return outcome && normalizedLabel ? [{ event, filled, final, outcome, normalizedLabel, fingerprint }] : []
         })
         .sort((a, b) => (a.normalizedLabel < b.normalizedLabel ? -1 : a.normalizedLabel > b.normalizedLabel ? 1 : 0))
-      if (events.length === 0) return { recorded: 0, skipped: input.events.length }
+      const result = { recorded: events.length, skipped: input.events.length - events.length }
+      if (events.length === 0) return result
 
       const now = context.now()
-      const toEmbed = await context.db.transaction(async (tx) => {
-        await tx.insert(fieldEvent).values(
-          events.map((e) => ({
-            userId,
-            applicationId: input.applicationId ?? null,
-            siteKey: input.siteKey,
-            fingerprint: e.fingerprint,
-            normalizedLabel: e.normalizedLabel,
-            rawLabel: e.event.label,
-            fieldType: (e.event.type ?? "").toLowerCase(),
-            filledValue: e.filled,
-            finalValue: e.final,
-            source: e.event.source,
-            outcome: e.outcome,
-          })),
-        )
+      const learned = await guardLearningDb("record", () =>
+        context.db.transaction(async (tx) => {
+          if (input.batchId) {
+            const [fresh] = await tx
+              .insert(recordBatch)
+              .values({ userId, batchId: input.batchId })
+              .onConflictDoNothing()
+              .returning({ batchId: recordBatch.batchId })
+            if (!fresh) return null
+          }
 
-        const pending = new Map<string, string>()
-        for (const e of events) {
-          const sameValue = and(
-            eq(answer.userId, userId),
-            eq(answer.normalizedLabel, e.normalizedLabel),
-            eq(answer.value, e.filled),
+          const learnable = (e: (typeof events)[number]) =>
+            e.outcome === "corrected" && e.final.length <= LEARNING_AUTOFILL_VALUE_MAX
+          await assertAnswerRoom(
+            tx,
+            userId,
+            events.filter(learnable).map((e) => e.normalizedLabel),
           )
-          if (e.outcome === "accepted") {
-            await tx
-              .update(answer)
-              .set({ timesUsed: sql`${answer.timesUsed} + 1`, updatedAt: now })
-              .where(sameValue)
-          } else if (e.outcome === "cleared") {
-            await tx
-              .update(answer)
-              .set({
-                timesUsed: sql`${answer.timesUsed} + 1`,
-                timesCorrected: sql`${answer.timesCorrected} + 1`,
-                lastCorrectedAt: now,
-                updatedAt: now,
-              })
-              .where(sameValue)
-          } else {
-            const [row] = await tx
-              .insert(answer)
-              .values({
-                userId,
-                normalizedLabel: e.normalizedLabel,
-                rawLabel: e.event.label,
-                value: e.final,
-                source: "autofill",
-                timesCorrected: 1,
-                lastCorrectedAt: now,
-                fingerprint: e.fingerprint,
-              })
-              .onConflictDoUpdate({
-                target: [answer.userId, answer.normalizedLabel],
-                set: {
+          await tx.insert(fieldEvent).values(
+            events.map((e) => ({
+              userId,
+              applicationId: input.applicationId ?? null,
+              siteKey: input.siteKey,
+              fingerprint: e.fingerprint,
+              normalizedLabel: e.normalizedLabel,
+              rawLabel: e.event.label,
+              fieldType: (e.event.type ?? "").toLowerCase(),
+              filledValue: e.filled,
+              finalValue: e.final,
+              source: e.event.source,
+              outcome: e.outcome,
+            })),
+          )
+
+          const touched: { id: string; normalizedLabel: string }[] = []
+          for (const e of events) {
+            const sameValue = and(
+              eq(answer.userId, userId),
+              eq(answer.normalizedLabel, e.normalizedLabel),
+              eq(answer.value, e.filled),
+            )
+            if (e.outcome === "accepted") {
+              await tx
+                .update(answer)
+                .set({ timesUsed: sql`${answer.timesUsed} + 1`, timesCleared: 0, updatedAt: now })
+                .where(sameValue)
+            } else if (e.outcome === "cleared") {
+              await tx
+                .update(answer)
+                .set({
+                  timesUsed: sql`${answer.timesUsed} + 1`,
+                  timesCorrected: sql`${answer.timesCorrected} + 1`,
+                  timesCleared: sql`${answer.timesCleared} + 1`,
+                  lastCorrectedAt: now,
+                  updatedAt: now,
+                })
+                .where(sameValue)
+            } else if (learnable(e)) {
+              const [row] = await tx
+                .insert(answer)
+                .values({
+                  userId,
+                  normalizedLabel: e.normalizedLabel,
                   rawLabel: e.event.label,
                   value: e.final,
                   source: "autofill",
-                  fingerprint: e.fingerprint,
-                  timesUsed: sql`${answer.timesUsed} + case when ${answer.value} = ${e.filled} then 1 else 0 end`,
-                  timesCorrected: sql`${answer.timesCorrected} + 1`,
-                  status: sql`case when ${answer.value} = ${e.final} then ${answer.status} when ${answer.status} = 'confirmed' then 'learned' else ${answer.status} end`,
+                  timesCorrected: 1,
                   lastCorrectedAt: now,
-                  updatedAt: now,
-                },
-              })
-              .returning({ id: answer.id, embedded: sql<boolean>`${answer.embedding} is not null` })
-            if (row && !row.embedded) pending.set(row.id, e.normalizedLabel)
+                  fingerprint: e.fingerprint,
+                })
+                .onConflictDoUpdate({
+                  target: [answer.userId, answer.normalizedLabel],
+                  set: {
+                    rawLabel: e.event.label,
+                    value: e.final,
+                    source: "autofill",
+                    fingerprint: e.fingerprint,
+                    timesUsed: sql`${answer.timesUsed} + case when ${answer.value} = ${e.filled} then 1 else 0 end`,
+                    timesCorrected: sql`${answer.timesCorrected} + 1`,
+                    timesCleared: 0,
+                    status: sql`case when ${answer.value} = ${e.final} then ${answer.status} when ${answer.status} = 'confirmed' then 'learned' else ${answer.status} end`,
+                    lastCorrectedAt: now,
+                    updatedAt: now,
+                  },
+                })
+                .returning({ id: answer.id })
+              if (row) touched.push({ id: row.id, normalizedLabel: e.normalizedLabel })
+            }
           }
-        }
-        return pending
-      })
+          return touched
+        }),
+      )
+      if (learned === null) return result
 
-      if (toEmbed.size > 0 && context.embeddingModel) {
-        const ids = [...toEmbed.keys()]
-        try {
-          const vectors = await embedTexts({
-            model: context.embeddingModel,
-            texts: ids.map((id) => embeddingText(toEmbed.get(id)!)),
-          })
-          await Promise.all(
-            ids.map((id, i) =>
-              context.db
-                .update(answer)
-                .set({ embedding: vectors[i]! })
-                .where(mine(answer, userId, id)),
-            ),
-          )
-        } catch (error) {
-          logEmbeddingFailure("learning.record", error)
-        }
-      }
-
-      return { recorded: events.length, skipped: input.events.length - events.length }
+      await embedMissing(context, "learning.record", userId, learned)
+      await purgeOld(context.db, userId, now)
+      return result
     }),
 
   suggestions: protectedProcedure
     .route({
       method: "GET",
       path: "/learning/suggestions",
-      summary: "Answers worth keeping, answers that keep changing, and stale ones",
+      summary: "Answers worth keeping, ones that keep changing or being cleared, and stale ones",
       tags: ["learning"],
     })
     .output(suggestionsOutputSchema)
@@ -278,6 +357,8 @@ export const learningRouter = {
       const staleBefore = new Date(now - SUGGEST_STALE_DAYS * DAY_MS)
       const since = new Date(now - SUGGEST_WINDOW_DAYS * DAY_MS)
 
+      const corrected = and(eq(answer.status, "learned"), sql`${answer.timesCorrected} >= ${SUGGEST_KEEP_MIN}`)
+      const cleared = sql`${answer.timesCleared} >= ${CLEARED_STOP_MIN}`
       const candidates = await context.db
         .select(answerColumns)
         .from(answer)
@@ -285,22 +366,15 @@ export const learningRouter = {
           and(
             eq(answer.userId, userId),
             ne(answer.status, "rejected"),
-            or(
-              and(eq(answer.status, "learned"), gte(answer.timesCorrected, SUGGEST_KEEP_MIN)),
-              lt(answer.updatedAt, staleBefore),
-            ),
+            or(corrected, cleared, lt(answer.updatedAt, staleBefore)),
           ),
         )
-        .orderBy(answer.normalizedLabel)
+        .orderBy(sql`case when ${corrected} then 0 when ${cleared} then 1 else 2 end`, answer.normalizedLabel)
         .limit(SUGGESTIONS_MAX)
       if (candidates.length === 0) return []
 
-      const corrections = await context.db
-        .select({
-          normalizedLabel: fieldEvent.normalizedLabel,
-          finalValue: fieldEvent.finalValue,
-          count: sql<number>`count(*)::int`,
-        })
+      const events = await context.db
+        .select({ normalizedLabel: fieldEvent.normalizedLabel, finalValue: fieldEvent.finalValue })
         .from(fieldEvent)
         .where(
           and(
@@ -313,17 +387,26 @@ export const learningRouter = {
             ),
           ),
         )
-        .groupBy(fieldEvent.normalizedLabel, fieldEvent.finalValue)
+        .orderBy(desc(fieldEvent.createdAt), desc(fieldEvent.id))
+        .limit(SUGGESTION_EVENTS_MAX)
 
-      const order = { flip_flop: 0, keep: 1, stale: 2 }
+      const order = { flip_flop: 0, keep: 1, cleared: 2, stale: 3 }
       const suggestions: { kind: keyof typeof order; answer: (typeof candidates)[number]; count: number }[] = []
       for (const row of candidates) {
-        const own = corrections.filter((c) => c.normalizedLabel === row.normalizedLabel)
-        const identical = own.find((c) => c.finalValue === row.value)?.count ?? 0
-        if (row.status === "learned" && own.length >= SUGGEST_FLIP_FLOP_MIN) {
-          suggestions.push({ kind: "flip_flop", answer: row, count: own.length })
-        } else if (row.status === "learned" && identical >= SUGGEST_KEEP_MIN) {
-          suggestions.push({ kind: "keep", answer: row, count: identical })
+        const finals = events.filter((e) => e.normalizedLabel === row.normalizedLabel).map((e) => e.finalValue)
+        const distinct = new Set(finals).size
+        const lastRun = finals.slice(0, SUGGEST_STABLE_RUN)
+        const settled = lastRun.length === SUGGEST_STABLE_RUN && new Set(lastRun).size === 1
+        if (row.status === "learned" && finals.length >= SUGGEST_FLIP_FLOP_MIN && distinct > 1 && !settled) {
+          suggestions.push({ kind: "flip_flop", answer: row, count: finals.length })
+        } else if (
+          row.status === "learned" &&
+          finals.length >= SUGGEST_KEEP_MIN &&
+          finals.every((v) => v === row.value)
+        ) {
+          suggestions.push({ kind: "keep", answer: row, count: finals.length })
+        } else if (row.timesCleared >= CLEARED_STOP_MIN) {
+          suggestions.push({ kind: "cleared", answer: row, count: row.timesCleared })
         } else if (row.updatedAt < staleBefore) {
           suggestions.push({ kind: "stale", answer: row, count: 0 })
         }
@@ -343,7 +426,11 @@ export const learningRouter = {
     .handler(async ({ context, input }) => {
       const [row] = await context.db
         .update(answer)
-        .set({ status: input.decision === "keep" ? "confirmed" : "rejected", updatedAt: context.now() })
+        .set(
+          input.decision === "keep"
+            ? { status: "confirmed", timesCleared: 0, updatedAt: context.now() }
+            : { status: "rejected", updatedAt: context.now() },
+        )
         .where(mine(answer, context.user.id, input.answerId))
         .returning(answerColumns)
       return orNotFound(row, "Answer")
@@ -372,6 +459,8 @@ export const learningRouter = {
         .groupBy(application.id, application.appliedAt)
         .orderBy(desc(application.appliedAt), desc(application.id))
         .limit(input.limit)
-      return { applications: rows.reverse() }
+      return {
+        applications: rows.reverse().map((row) => ({ ...row, correctionsPerField: row.corrections / row.fields })),
+      }
     }),
 }

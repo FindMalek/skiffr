@@ -1,7 +1,12 @@
 import { createHash } from "node:crypto"
-import { AiInputError, AiModelError } from "@skiffr/ai"
-import { EMBEDDING_TEXT_MAX } from "@skiffr/common/constants"
+import { ORPCError } from "@orpc/server"
+import { AiModelError, controlKind, embedTexts } from "@skiffr/ai"
+import { ANSWERS_PER_USER_MAX, EMBEDDING_TEXT_MAX } from "@skiffr/common/constants"
 import { normalizeLabel } from "@skiffr/common/utils"
+import { answer, type Db } from "@skiffr/db"
+import type { EmbeddingModel } from "ai"
+import { and, eq, inArray, isNull, sql } from "drizzle-orm"
+import { describeError, safeErrorFields } from "./errors"
 
 /** What identifies a field across forms: its normalized label, its control kind and the set of options it offers. */
 export function fingerprintOf(field: { label: string; type?: string; options?: string[] }): {
@@ -19,14 +24,117 @@ export function fingerprintOf(field: { label: string; type?: string; options?: s
 /** The question text that gets embedded and matched. */
 export const embeddingText = (normalizedLabel: string) => normalizedLabel.slice(0, EMBEDDING_TEXT_MAX)
 
-/** Model failures are logged as name, kind, status, model id and request id only: nothing from the request, which holds the user's labels. */
-export function logEmbeddingFailure(route: string, error: unknown): void {
+/**
+ * The value to offer for this field, or `null` when it doesn't fit: the learned control must be the same broad kind
+ * (a manual answer has none and fits anything but a checkbox), and when the field lists options the value must be one
+ * of them. It comes back as the option's own text, which is what the page can select.
+ */
+export function usableValue(
+  learned: { value: string; fingerprint: string | null },
+  field: { type?: string; options: string[] },
+): string | null {
+  const fieldKind = controlKind(field.type)
+  if (!fieldKind) return null
+  const learnedKind = learned.fingerprint ? controlKind(learned.fingerprint.split("|")[1]) : null
+  if (learnedKind ? learnedKind !== fieldKind : fieldKind === "checkbox") return null
+  if (field.options.length === 0) return learned.value
+  const wanted = normalizeLabel(learned.value)
+  return wanted ? (field.options.find((option) => normalizeLabel(option) === wanted) ?? null) : null
+}
+
+/**
+ * The only error that leaves a learning write. Drizzle's own errors carry the whole statement with its params (the
+ * user's labels and values), so nothing from them is kept except the operation, the postgres code and the class.
+ */
+export class LearningStoreError extends Error {
+  override name = "LearningStoreError"
+  constructor(
+    readonly operation: string,
+    readonly code?: string,
+    readonly causeName?: string,
+  ) {
+    super("The learning store failed.")
+  }
+}
+
+export async function guardLearningDb<T>(operation: string, run: () => Promise<T>): Promise<T> {
+  try {
+    return await run()
+  } catch (error) {
+    if (error instanceof ORPCError) throw error
+    const { code, causeName } = describeError(error)
+    throw new LearningStoreError(operation, code, causeName)
+  }
+}
+
+/** Failures of work that is allowed to fail are logged as a class, never with the request: model errors add kind, status and request id. */
+export function logBestEffort(route: string, what: string, error: unknown): void {
+  const fields: Record<string, unknown> = safeErrorFields(error)
   if (error instanceof AiModelError) {
-    const { name, kind, status, modelId, requestId } = error
-    console.error(`[${route}] embeddings failed`, { name, kind, status, modelId, requestId })
-  } else if (error instanceof AiInputError) {
-    console.error(`[${route}] embeddings skipped`, { name: error.name })
-  } else {
-    throw error
+    Object.assign(fields, {
+      kind: error.kind,
+      status: error.status,
+      modelId: error.modelId,
+      requestId: error.requestId,
+    })
+  }
+  console.error(`[${route}] ${what}`, fields)
+}
+
+/** Stores the question embedding of answers that have none. Best effort: nothing in here may fail the request that already succeeded. */
+export async function embedMissing(
+  context: { db: Db; embeddingModel?: EmbeddingModel | null },
+  route: string,
+  userId: string,
+  items: { id: string; normalizedLabel: string }[],
+): Promise<void> {
+  const model = context.embeddingModel
+  if (!model || items.length === 0) return
+  try {
+    const missing = new Set(
+      (
+        await context.db
+          .select({ id: answer.id })
+          .from(answer)
+          .where(
+            and(
+              eq(answer.userId, userId),
+              isNull(answer.embedding),
+              inArray(
+                answer.id,
+                items.map((item) => item.id),
+              ),
+            ),
+          )
+      ).map((row) => row.id),
+    )
+    const todo = items.filter((item) => missing.has(item.id))
+    if (todo.length === 0) return
+    const vectors = await embedTexts({ model, texts: todo.map((item) => embeddingText(item.normalizedLabel)) })
+    await Promise.all(
+      todo.map((item, i) =>
+        context.db
+          .update(answer)
+          .set({ embedding: vectors[i]! })
+          .where(and(eq(answer.userId, userId), eq(answer.id, item.id))),
+      ),
+    )
+  } catch (error) {
+    logBestEffort(route, "embedding failed", error)
+  }
+}
+
+/** A user's answer bank is capped. Updating a label that already exists is always fine. */
+export async function assertAnswerRoom(db: Pick<Db, "select">, userId: string, labels: string[]): Promise<void> {
+  const unique = [...new Set(labels)]
+  if (unique.length === 0) return
+  const [row] = await db.select({ count: sql<number>`count(*)::int` }).from(answer).where(eq(answer.userId, userId))
+  if ((row?.count ?? 0) + unique.length <= ANSWERS_PER_USER_MAX) return
+  const existing = await db
+    .select({ label: answer.normalizedLabel })
+    .from(answer)
+    .where(and(eq(answer.userId, userId), inArray(answer.normalizedLabel, unique)))
+  if ((row?.count ?? 0) + unique.length - existing.length > ANSWERS_PER_USER_MAX) {
+    throw new ORPCError("BAD_REQUEST", { message: `You can save up to ${ANSWERS_PER_USER_MAX} answers.` })
   }
 }

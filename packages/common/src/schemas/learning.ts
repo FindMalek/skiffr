@@ -20,14 +20,29 @@ export const siteKeySchema = z
   .max(SITE_KEY_MAX)
   .regex(/^[a-z0-9.:-]+(\/[a-z0-9._~%-]+)?$/, "Use the host, optionally with the first path segment.")
 
-const label = z.string().trim().min(1).max(LABEL_MAX)
-const fieldType = z.string().trim().max(40).optional()
-const options = z.array(z.string().trim().max(AI_OPTION_TEXT_MAX)).max(AI_OPTIONS_MAX).default([])
+/** Page-controlled text: no NUL or other control characters (tab, newline and return are fine) and no lone surrogates, which postgres would reject. */
+const hasControl = (text: string) =>
+  [...text].some((char) => {
+    const code = char.codePointAt(0) ?? 0
+    return (code < 32 && code !== 9 && code !== 10 && code !== 13) || code === 127
+  })
+const LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/
+const clean = (text: string) => !hasControl(text) && !LONE_SURROGATE.test(text)
+const CLEAN_MESSAGE = "Control characters are not allowed."
+const text = (max: number) => z.string().max(max).refine(clean, CLEAN_MESSAGE)
+const trimmed = (max: number) => z.string().trim().max(max).refine(clean, CLEAN_MESSAGE)
+
+const label = z.string().trim().min(1).max(LABEL_MAX).refine(clean, CLEAN_MESSAGE)
+const fieldType = trimmed(40).optional()
+/** The control's `autocomplete` token(s): browsers say what a field holds, in any language. */
+const autocomplete = trimmed(100).optional()
+const options = z.array(trimmed(AI_OPTION_TEXT_MAX)).max(AI_OPTIONS_MAX).default([])
 
 export const learningFieldSchema = z.object({
-  id: z.string().trim().min(1).max(100),
+  id: z.string().trim().min(1).max(100).refine(clean, CLEAN_MESSAGE),
   label,
   type: fieldType,
+  autocomplete,
   options,
 })
 
@@ -41,7 +56,8 @@ export const lookupInputSchema = z
   })
   .refine(
     ({ fields }) =>
-      fields.reduce((sum, f) => sum + chars([f.id, f.label, f.type, ...f.options]), 0) <= LEARNING_REQUEST_CHARS_MAX,
+      fields.reduce((sum, f) => sum + chars([f.id, f.label, f.type, f.autocomplete, ...f.options]), 0) <=
+      LEARNING_REQUEST_CHARS_MAX,
     { message: `The fields add up to more than ${LEARNING_REQUEST_CHARS_MAX} characters.`, path: ["fields"] },
   )
 
@@ -50,6 +66,8 @@ const lookupMatchSchema = z.object({
   answerId: z.string(),
   value: z.string(),
   source: z.enum(["exact", "label", "similar"]),
+  /** False for a suggestion the extension must not fill by itself. */
+  autofill: z.boolean(),
   score: z.number(),
   timesUsed: z.number(),
   timesCorrected: z.number(),
@@ -62,9 +80,10 @@ export const lookupOutputSchema = z.object({
 export const fieldEventInputSchema = z.object({
   label,
   type: fieldType,
+  autocomplete,
   options,
-  filledValue: z.string().max(LEARNING_VALUE_MAX),
-  finalValue: z.string().max(LEARNING_VALUE_MAX),
+  filledValue: text(LEARNING_VALUE_MAX),
+  finalValue: text(LEARNING_VALUE_MAX),
   source: z.enum(FIELD_EVENT_SOURCES),
 })
 
@@ -72,21 +91,25 @@ export const recordInputSchema = z
   .object({
     siteKey: siteKeySchema,
     applicationId: z.uuid().optional(),
+    /** Sent once per batch and reused on a retry, so a retry changes nothing. */
+    batchId: z.uuid().optional(),
     events: z.array(fieldEventInputSchema).min(1).max(LEARNING_FIELDS_MAX),
   })
   .refine(
     ({ events }) =>
-      events.reduce((sum, e) => sum + chars([e.label, e.type, e.filledValue, e.finalValue, ...e.options]), 0) <=
-      LEARNING_REQUEST_CHARS_MAX,
+      events.reduce(
+        (sum, e) => sum + chars([e.label, e.type, e.autocomplete, e.filledValue, e.finalValue, ...e.options]),
+        0,
+      ) <= LEARNING_REQUEST_CHARS_MAX,
     { message: `The events add up to more than ${LEARNING_REQUEST_CHARS_MAX} characters.`, path: ["events"] },
   )
 
 export const recordOutputSchema = z.object({ recorded: z.number(), skipped: z.number() })
 
 export const suggestionSchema = z.object({
-  kind: z.enum(["keep", "flip_flop", "stale"]),
+  kind: z.enum(["keep", "flip_flop", "cleared", "stale"]),
   answer: answerSchema,
-  /** Corrections that led to this suggestion: identical ones for keep, distinct final values for flip_flop. */
+  /** Corrections behind keep and flip_flop, clears in a row behind cleared, 0 for stale. */
   count: z.number(),
 })
 
@@ -108,6 +131,7 @@ export const statsOutputSchema = z.object({
       appliedAt: z.date(),
       fields: z.number(),
       corrections: z.number(),
+      correctionsPerField: z.number(),
     }),
   ),
 })

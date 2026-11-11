@@ -6,7 +6,19 @@ import {
 } from "@skiffr/common/constants"
 import type { ProfileData, ProfileFields } from "@skiffr/common/schemas"
 import { getTableColumns } from "drizzle-orm"
-import { index, integer, jsonb, pgEnum, pgTable, text, timestamp, unique, uuid, vector } from "drizzle-orm/pg-core"
+import {
+  index,
+  integer,
+  jsonb,
+  pgEnum,
+  pgTable,
+  primaryKey,
+  text,
+  timestamp,
+  unique,
+  uuid,
+  vector,
+} from "drizzle-orm/pg-core"
 import { user } from "./auth"
 
 const userId = () =>
@@ -52,6 +64,8 @@ export const answer = pgTable(
     source: answerSource("source").notNull().default("manual"),
     timesUsed: integer("times_used").notNull().default(0),
     timesCorrected: integer("times_corrected").notNull().default(0),
+    /** Clears of this value in a row: any accept or correction resets it. */
+    timesCleared: integer("times_cleared").notNull().default(0),
     status: answerStatus("status").notNull().default("learned"),
     lastCorrectedAt: timestamp("last_corrected_at", { withTimezone: true }),
     /** Fingerprint of the field this value was last learned on: label, type and options. */
@@ -135,11 +149,21 @@ export const fieldEvent = pgTable(
     createdAt: createdAt(),
   },
   (t) => [
-    index("field_event_user_fingerprint_idx").on(t.userId, t.fingerprint, t.createdAt.desc()),
     index("field_event_user_label_idx").on(t.userId, t.normalizedLabel, t.createdAt.desc()),
+    index("field_event_user_created_idx").on(t.userId, t.createdAt),
     index("field_event_application_idx").on(t.applicationId),
-    index("field_event_user_site_idx").on(t.userId, t.siteKey),
   ],
+)
+
+/** Batches of events already applied, so a retried `learning.record` changes nothing the second time. */
+export const recordBatch = pgTable(
+  "record_batch",
+  {
+    userId: userId(),
+    batchId: uuid("batch_id").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.batchId] })],
 )
 
 /** A careers page the user watches for new postings. */
