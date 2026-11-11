@@ -3,9 +3,18 @@
 import type { Answer } from "@skiffr/common/schemas"
 import { errorMessage } from "@skiffr/orpc/errors"
 import { browserClient, orpc } from "@skiffr/orpc/react"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useMutationState, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useMemo } from "react"
 import { toast } from "sonner"
-import { bankKey, fetchAllAnswers, statusAfter } from "@/lib/answers"
+import {
+  applyDecision,
+  applyRemoval,
+  bankKey,
+  createInflight,
+  fetchAllAnswers,
+  restoreRow,
+  snapshotRow,
+} from "@/lib/answers"
 import { STATS_LIMIT } from "./stats-limit"
 
 export type Suggestion = Awaited<ReturnType<typeof browserClient.learning.suggestions>>[number]
@@ -26,78 +35,105 @@ export function useStats() {
   return useQuery({ ...orpc.learning.stats.queryOptions({ input: { limit: STATS_LIMIT } }), retry: 1 })
 }
 
-interface Optimistic<V> {
-  run: (variables: V) => Promise<unknown>
-  /** The cache as the user expects it right after the click. */
-  apply: (
-    variables: V,
-    cache: { bank: Answer[]; suggestions: Suggestion[] },
-  ) => { bank: Answer[]; suggestions: Suggestion[] }
-  done: string
-  failed: string
-  onDone?: () => void
-}
+type RowVars = { id: string; done: string }
+type DecisionVars = RowVars & { decision: "keep" | "reject" }
 
-/** Updates the screen first, puts the old data back and says so when the request fails, then refetches to match the server. */
-function useOptimistic<V>({ run, apply, done, failed, onDone }: Optimistic<V>) {
+const ROW_KEY = ["answers", "row"] as const
+/** One per page, so a card and a table row for the same answer cannot send two requests at once either. */
+const inflight = createInflight()
+
+/**
+ * A request about one answer. The screen follows first, a failure puts back only that answer, and the lists are refetched
+ * at the end to match the server.
+ */
+function useRowMutation<V extends RowVars>(opts: {
+  run: (variables: V) => Promise<unknown>
+  apply: (
+    cache: { bank: Answer[]; suggestions: Suggestion[] },
+    variables: V,
+  ) => { bank: Answer[]; suggestions: Suggestion[] }
+  failed: string
+}) {
   const client = useQueryClient()
   const bank = bankKey(orpc.answers.key())
   const suggestions = orpc.learning.suggestions.queryKey()
   return useMutation({
-    mutationFn: run,
+    mutationKey: ROW_KEY,
+    mutationFn: opts.run,
     onMutate: async (variables: V) => {
       await Promise.all([client.cancelQueries({ queryKey: bank }), client.cancelQueries({ queryKey: suggestions })])
-      const before = {
-        bank: client.getQueryData<Answer[]>(bank),
-        suggestions: client.getQueryData<Suggestion[]>(suggestions),
+      const cache = {
+        bank: client.getQueryData<Answer[]>(bank) ?? [],
+        suggestions: client.getQueryData<Suggestion[]>(suggestions) ?? [],
       }
-      const next = apply(variables, { bank: before.bank ?? [], suggestions: before.suggestions ?? [] })
-      if (before.bank) client.setQueryData(bank, next.bank)
-      if (before.suggestions) client.setQueryData(suggestions, next.suggestions)
+      const before = snapshotRow(cache, variables.id)
+      const next = opts.apply(cache, variables)
+      client.setQueryData(bank, next.bank)
+      client.setQueryData(suggestions, next.suggestions)
       return before
     },
-    onError: (error, _variables, before) => {
-      if (before?.bank) client.setQueryData(bank, before.bank)
-      if (before?.suggestions) client.setQueryData(suggestions, before.suggestions)
-      toast.error(`${failed}. ${errorMessage(error)}`)
+    onError: (error, variables, before) => {
+      if (before) {
+        const cache = {
+          bank: client.getQueryData<Answer[]>(bank) ?? [],
+          suggestions: client.getQueryData<Suggestion[]>(suggestions) ?? [],
+        }
+        const back = restoreRow(cache, before, variables.id)
+        client.setQueryData(bank, back.bank)
+        client.setQueryData(suggestions, back.suggestions)
+      }
+      toast.error(`${opts.failed}. ${errorMessage(error)}`)
     },
-    onSuccess: () => {
-      toast.success(done)
-      onDone?.()
-    },
-    onSettled: () =>
-      Promise.all([
+    onSuccess: (_data, variables) => void toast.success(variables.done),
+    onSettled: (_data, _error, variables) => {
+      inflight.end(variables.id)
+      return Promise.all([
         client.invalidateQueries({ queryKey: orpc.answers.key() }),
         client.invalidateQueries({ queryKey: orpc.learning.key() }),
-      ]),
+      ])
+    },
   })
 }
 
-/** Keep, restore and reject all go through the same route, which also clears the suggestion. */
-export function useDecision(onDone?: () => void) {
-  return useOptimistic<{ answerId: string; decision: "keep" | "reject"; done?: string }>({
-    run: ({ answerId, decision }) => browserClient.learning.resolveSuggestion({ answerId, decision }),
-    apply: ({ answerId, decision }, { bank, suggestions }) => ({
-      bank: bank.map((row) => (row.id === answerId ? { ...row, status: statusAfter(decision) } : row)),
-      suggestions: suggestions.filter((s) => s.answer.id !== answerId),
-    }),
-    done: "Saved",
-    failed: "Could not save that",
-    onDone,
+/** Ids of the answers with a request in flight: their buttons stay disabled until it ends. */
+export function usePendingRows(): ReadonlySet<string> {
+  const ids = useMutationState({
+    filters: { mutationKey: ROW_KEY, status: "pending" },
+    select: (mutation) => (mutation.state.variables as RowVars).id,
   })
+  return useMemo(() => new Set(ids), [ids])
 }
 
-export function useRemove(onDone?: () => void) {
-  return useOptimistic<{ id: string }>({
+/**
+ * Every button names what it wants (`stop`, `restore`, `keep`, `remove`): none is worked out from the status in the cache,
+ * which a click before has already changed. A second click on a row that is still waiting is dropped.
+ */
+export function useRowActions() {
+  const decide = useRowMutation<DecisionVars>({
+    run: ({ id, decision }) => browserClient.learning.resolveSuggestion({ answerId: id, decision }),
+    apply: (cache, { id, decision }) => applyDecision(cache, id, decision),
+    failed: "Could not update that",
+  })
+  const drop = useRowMutation<RowVars>({
     run: ({ id }) => browserClient.answers.remove({ id }),
-    apply: ({ id }, { bank, suggestions }) => ({
-      bank: bank.filter((row) => row.id !== id),
-      suggestions: suggestions.filter((s) => s.answer.id !== id),
-    }),
-    done: "Answer deleted",
+    apply: (cache, { id }) => applyRemoval(cache, id),
     failed: "Could not delete it",
-    onDone,
   })
+  const pending = usePendingRows()
+  const once = (id: string, send: () => void) => {
+    if (inflight.start(id)) send()
+  }
+  return {
+    pending,
+    stop: (id: string) =>
+      once(id, () =>
+        decide.mutate({ id, decision: "reject", done: "Stopped filling this. skiffr will not offer it." }),
+      ),
+    restore: (id: string) =>
+      once(id, () => decide.mutate({ id, decision: "keep", done: "Restored and marked confirmed" })),
+    keep: (id: string) => once(id, () => decide.mutate({ id, decision: "keep", done: "Kept and marked confirmed" })),
+    remove: (id: string) => once(id, () => drop.mutate({ id, done: "Answer deleted" })),
+  }
 }
 
 /** Dialog saves wait for the server so a rejected value can be fixed in place. */

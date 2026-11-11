@@ -6,14 +6,15 @@ import { Button } from "@skiffr/ui/components/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@skiffr/ui/components/card"
 import { Skeleton } from "@skiffr/ui/components/skeleton"
 import type { CSSProperties } from "react"
-import { countByStatus, formatDay, STATUS_TEXT, trendSentence } from "@/lib/answers"
+import { countByStatus, formatDay, percent, STATUS_TEXT, trendSentence } from "@/lib/answers"
 import { useBank, useStats } from "./use-answers"
 
-function Count({ label, value }: { label: string; value: number }) {
+function Count({ label, value, meaning }: { label: string; value: number; meaning: string }) {
   return (
     <div className="flex flex-col">
       <dt className="text-muted-foreground">{label}</dt>
       <dd className="font-heading font-semibold text-2xl tabular-nums">{value}</dd>
+      <dd className="max-w-48 text-muted-foreground">{meaning}</dd>
     </div>
   )
 }
@@ -31,23 +32,33 @@ export function StatsStrip() {
         <CardTitle>
           <h2>How well it knows you</h2>
         </CardTitle>
-        <CardDescription>Fewer corrections per field on each new application means it is learning.</CardDescription>
+        <CardDescription>Edits you made per form. The fewer, the better skiffr knows you.</CardDescription>
       </CardHeader>
-      <CardContent className="grid gap-6 md:grid-cols-[auto_1fr]">
-        {bank.isPending ? (
-          <Skeleton className="h-16 w-56" />
-        ) : bank.error ? (
-          <p className="text-muted-foreground">Answer counts are unavailable.</p>
-        ) : (
-          <dl className="grid grid-cols-4 content-start gap-6 md:grid-cols-2 md:gap-x-8">
-            <Count label="Answers" value={bank.data.length} />
-            <Count label={STATUS_TEXT.confirmed} value={counts.confirmed} />
-            <Count label={STATUS_TEXT.learned} value={counts.learned} />
-            <Count label={STATUS_TEXT.rejected} value={counts.rejected} />
-          </dl>
-        )}
+      <CardContent className="flex flex-col gap-6 md:flex-row">
+        <div className="shrink-0">
+          {bank.isPending ? (
+            <Skeleton className="h-16 w-56" />
+          ) : bank.error ? (
+            <p className="text-muted-foreground">Answer counts are unavailable.</p>
+          ) : (
+            <dl className="grid grid-cols-2 gap-x-8 gap-y-4">
+              <Count label="Answers" value={bank.data.length} meaning="All you have saved." />
+              <Count
+                label={STATUS_TEXT.confirmed}
+                value={counts.confirmed}
+                meaning="You checked it. skiffr keeps using it."
+              />
+              <Count
+                label={STATUS_TEXT.learned}
+                value={counts.learned}
+                meaning="Picked up from your edits. Not checked yet."
+              />
+              <Count label={STATUS_TEXT.rejected} value={counts.rejected} meaning="skiffr never fills it." />
+            </dl>
+          )}
+        </div>
 
-        <div className="flex min-w-0 flex-col gap-2">
+        <div className="flex min-w-0 flex-1 flex-col gap-2">
           {stats.isPending ? (
             <Skeleton className="h-16 w-full" />
           ) : stats.error ? (
@@ -65,19 +76,24 @@ export function StatsStrip() {
           ) : (
             <>
               <p className="font-medium text-sm">{trendSentence(points)}</p>
-              <ol className="flex flex-col gap-1" aria-label="Corrections per field, oldest application first">
+              <ol className="flex flex-col gap-1" aria-label="Share of filled fields you edited, oldest form first">
                 {points.map((point) => (
-                  <li key={point.applicationId} className="grid grid-cols-[5.5rem_1fr_3rem] items-center gap-2">
-                    <time dateTime={point.appliedAt.toISOString()} className="text-muted-foreground">
+                  <li key={point.applicationId} className="grid grid-cols-12 items-center gap-2">
+                    <time
+                      dateTime={point.appliedAt.toISOString()}
+                      className="col-span-4 text-muted-foreground sm:col-span-3"
+                    >
                       {formatDay(point.appliedAt)}
                     </time>
-                    <span className="h-2 bg-muted" aria-hidden="true">
+                    <span className="col-span-6 h-2 bg-muted sm:col-span-8" aria-hidden="true">
                       <span
                         className="block h-full w-(--bar) bg-foreground"
                         style={{ "--bar": `${(point.correctionsPerField / max) * 100}%` } as CSSProperties}
                       />
                     </span>
-                    <span className="text-right tabular-nums">{point.correctionsPerField.toFixed(2)}</span>
+                    <span className="col-span-2 text-right tabular-nums sm:col-span-1">
+                      {percent(point.correctionsPerField)}
+                    </span>
                   </li>
                 ))}
               </ol>

@@ -1,1 +1,1 @@
-export const STATS_LIMIT = 12
+export const STATS_LIMIT = 8

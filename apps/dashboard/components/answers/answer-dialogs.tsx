@@ -30,8 +30,9 @@ import { Input } from "@skiffr/ui/components/input"
 import { Textarea } from "@skiffr/ui/components/textarea"
 import { PlusIcon } from "lucide-react"
 import { type FormEvent, useState } from "react"
+import { editNotice } from "@/lib/answers"
 import { plainLabel, SafeText } from "./safe-text"
-import { useBank, useRemove, useSave } from "./use-answers"
+import { useBank, useSave } from "./use-answers"
 
 function FormError({ message }: { message: string | null }) {
   return (
@@ -157,7 +158,7 @@ function EditForm({ answer, onClose }: { answer: Answer; onClose: () => void }) 
       <form onSubmit={submit} className="grid gap-4">
         <DialogHeader>
           <DialogTitle>Edit answer</DialogTitle>
-          <DialogDescription>Saving by hand marks it confirmed, so skiffr keeps using it.</DialogDescription>
+          <DialogDescription>{editNotice(answer.status)}</DialogDescription>
         </DialogHeader>
         <FieldGroup>
           <Field>
@@ -182,7 +183,7 @@ function EditForm({ answer, onClose }: { answer: Answer; onClose: () => void }) 
             Cancel
           </Button>
           <Button type="submit" disabled={update.isPending || value === answer.value}>
-            {update.isPending ? "Saving…" : "Save"}
+            {update.isPending ? "Saving…" : answer.status === "rejected" ? "Save and restore" : "Save"}
           </Button>
         </DialogFooter>
       </form>
@@ -192,18 +193,19 @@ function EditForm({ answer, onClose }: { answer: Answer; onClose: () => void }) 
 
 export function DeleteAnswerDialog({
   answer,
+  onConfirm,
   onClose,
 }: {
   answer: Answer | null
-  onClose: (deleted: boolean) => void
+  onConfirm: (answer: Answer) => void
+  onClose: () => void
 }) {
-  const remove = useRemove()
   // The last answer shown is kept while the dialog animates out.
   const [last, setLast] = useState(answer)
   if (answer && answer !== last) setLast(answer)
   const target = answer ?? last
   return (
-    <AlertDialog open={answer !== null} onOpenChange={(next) => !next && onClose(false)}>
+    <AlertDialog open={answer !== null} onOpenChange={(next) => !next && onClose()}>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>Delete this answer?</AlertDialogTitle>
@@ -215,14 +217,7 @@ export function DeleteAnswerDialog({
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction
-            variant="destructive"
-            onClick={() => {
-              if (!answer) return
-              remove.mutate({ id: answer.id })
-              onClose(true)
-            }}
-          >
+          <AlertDialogAction variant="destructive" onClick={() => answer && onConfirm(answer)}>
             Delete
           </AlertDialogAction>
         </AlertDialogFooter>

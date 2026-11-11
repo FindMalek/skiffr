@@ -26,7 +26,7 @@ export function SafeText({
       dir="auto"
       title={changed || text.length > 30 ? clip(revealInvisible(text), TITLE_MAX).text : undefined}
       className={cn(
-        "block min-w-0 overflow-hidden whitespace-pre-line [overflow-wrap:anywhere]",
+        "block min-w-0 overflow-hidden whitespace-pre-line wrap-anywhere",
         lines === 1 ? "line-clamp-1" : lines === 2 ? "line-clamp-2" : "line-clamp-3",
         className,
       )}

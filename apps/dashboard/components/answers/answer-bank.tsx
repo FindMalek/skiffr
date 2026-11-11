@@ -10,6 +10,7 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@skiffr/ui/com
 import { Input } from "@skiffr/ui/components/input"
 import { Skeleton } from "@skiffr/ui/components/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@skiffr/ui/components/table"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@skiffr/ui/components/tooltip"
 import { cn } from "@skiffr/ui/lib/utils"
 import {
   BanIcon,
@@ -24,6 +25,7 @@ import { type ComponentProps, useRef, useState } from "react"
 import {
   filterAnswers,
   formatDay,
+  PAGE_SIZE,
   paginate,
   resultsSentence,
   SORTS,
@@ -36,10 +38,10 @@ import {
 } from "@/lib/answers"
 import { DeleteAnswerDialog, EditAnswerDialog } from "./answer-dialogs"
 import { plainLabel, SafeText } from "./safe-text"
-import { useBank, useDecision } from "./use-answers"
+import { useBank, useRowActions } from "./use-answers"
 
 const SELECT =
-  "h-8 w-full border border-input bg-background px-2 text-xs outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50 dark:bg-input/30 [&>option]:bg-popover [&>option]:text-popover-foreground"
+  "h-8 w-full border border-input bg-background px-2 text-xs outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50 disabled:opacity-50 dark:bg-input/30 [&>option]:bg-popover [&>option]:text-popover-foreground"
 
 function StatusBadge({ status }: { status: Answer["status"] }) {
   return (
@@ -60,44 +62,62 @@ function Day({ value }: { value: Date | null }) {
 interface Actions {
   onEdit: (answer: Answer) => void
   onDelete: (answer: Answer) => void
-  onToggle: (answer: Answer) => void
+  onStop: (answer: Answer) => void
+  onRestore: (answer: Answer) => void
 }
 
-function RowActions({ answer, actions, compact }: { answer: Answer; actions: Actions; compact: boolean }) {
+/** Each button asks for one thing: Stop filling and Restore are separate intents, never one toggle that reads the cached status. */
+function RowActions({
+  answer,
+  actions,
+  busy,
+  compact,
+}: {
+  answer: Answer
+  actions: Actions
+  busy: boolean
+  compact: boolean
+}) {
   const name = plainLabel(answer.rawLabel)
   const rejected = answer.status === "rejected"
-  const size = compact ? "icon-sm" : "sm"
-  const show = (icon: React.ReactNode, text: string) =>
-    compact ? (
-      <>
-        {icon}
-        <span className="sr-only">{text}</span>
-      </>
-    ) : (
-      <>
-        {icon}
-        {text}
-      </>
-    )
-  const props = (text: string): ComponentProps<typeof Button> => ({
-    variant: "outline",
-    size,
-    "aria-label": `${text}: ${name}`,
-    title: compact ? text : undefined,
-  })
+  const buttons: { text: string; icon: React.ReactNode; className?: string; run: () => void }[] = [
+    { text: "Edit", icon: <PencilIcon />, run: () => actions.onEdit(answer) },
+    rejected
+      ? { text: "Restore", icon: <RotateCcwIcon />, run: () => actions.onRestore(answer) }
+      : { text: "Stop filling", icon: <BanIcon />, run: () => actions.onStop(answer) },
+    {
+      text: "Delete",
+      icon: <Trash2Icon />,
+      className: "border-destructive/40 text-destructive hover:text-destructive",
+      run: () => actions.onDelete(answer),
+    },
+  ]
   return (
     <div className="flex flex-wrap gap-2">
-      <Button {...props("Edit")} onClick={() => actions.onEdit(answer)}>
-        {show(<PencilIcon data-icon={compact ? undefined : "inline-start"} />, "Edit")}
-      </Button>
-      <Button {...props(rejected ? "Restore" : "Reject")} onClick={() => actions.onToggle(answer)}>
-        {rejected
-          ? show(<RotateCcwIcon data-icon={compact ? undefined : "inline-start"} />, "Restore")
-          : show(<BanIcon data-icon={compact ? undefined : "inline-start"} />, "Reject")}
-      </Button>
-      <Button {...props("Delete")} onClick={() => actions.onDelete(answer)}>
-        {show(<Trash2Icon data-icon={compact ? undefined : "inline-start"} />, "Delete")}
-      </Button>
+      {buttons.map((button) => {
+        const props: ComponentProps<typeof Button> = {
+          variant: "outline",
+          size: compact ? "icon-sm" : "sm",
+          "aria-label": `${button.text}: ${name}`,
+          "aria-disabled": busy || undefined,
+          className: cn(button.className, "aria-disabled:pointer-events-none aria-disabled:opacity-50"),
+          onClick: button.run,
+        }
+        if (!compact) {
+          return (
+            <Button key={button.text} {...props}>
+              {button.icon}
+              {button.text}
+            </Button>
+          )
+        }
+        return (
+          <Tooltip key={button.text}>
+            <TooltipTrigger render={<Button {...props} />}>{button.icon}</TooltipTrigger>
+            <TooltipContent>{button.text}</TooltipContent>
+          </Tooltip>
+        )
+      })}
     </div>
   )
 }
@@ -111,17 +131,28 @@ function QuestionCell({ answer }: { answer: Answer }) {
   )
 }
 
-function AnswersTable({ rows, actions }: { rows: Answer[]; actions: Actions }) {
+function ValueCell({ answer }: { answer: Answer }) {
   return (
-    <div className="hidden lg:block">
+    <SafeText
+      text={answer.value}
+      lines={3}
+      max={300}
+      className={cn(answer.status === "rejected" && "line-through decoration-muted-foreground")}
+    />
+  )
+}
+
+function AnswersTable({ rows, actions, pending }: { rows: Answer[]; actions: Actions; pending: ReadonlySet<string> }) {
+  return (
+    <div className="hidden xl:block">
       <Table className="table-fixed">
         <caption className="sr-only">Saved answers</caption>
         <TableHeader>
           <TableRow>
-            <TableHead scope="col" className="w-[24%]">
+            <TableHead scope="col" className="w-1/4">
               Question
             </TableHead>
-            <TableHead scope="col" className="w-[26%]">
+            <TableHead scope="col" className="w-1/4">
               Answer
             </TableHead>
             <TableHead scope="col" className="w-24">
@@ -143,12 +174,12 @@ function AnswersTable({ rows, actions }: { rows: Answer[]; actions: Actions }) {
         </TableHeader>
         <TableBody>
           {rows.map((answer) => (
-            <TableRow key={answer.id} className={cn(answer.status === "rejected" && "opacity-80")}>
+            <TableRow key={answer.id}>
               <TableCell className="align-top whitespace-normal">
                 <QuestionCell answer={answer} />
               </TableCell>
               <TableCell className="align-top whitespace-normal">
-                <SafeText text={answer.value} lines={3} max={300} />
+                <ValueCell answer={answer} />
               </TableCell>
               <TableCell className="align-top">
                 <StatusBadge status={answer.status} />
@@ -159,7 +190,7 @@ function AnswersTable({ rows, actions }: { rows: Answer[]; actions: Actions }) {
                 <Day value={answer.lastCorrectedAt} />
               </TableCell>
               <TableCell className="align-top">
-                <RowActions answer={answer} actions={actions} compact />
+                <RowActions answer={answer} actions={actions} busy={pending.has(answer.id)} compact />
               </TableCell>
             </TableRow>
           ))}
@@ -169,21 +200,21 @@ function AnswersTable({ rows, actions }: { rows: Answer[]; actions: Actions }) {
   )
 }
 
-function AnswerCards({ rows, actions }: { rows: Answer[]; actions: Actions }) {
+function AnswerCards({ rows, actions, pending }: { rows: Answer[]; actions: Actions; pending: ReadonlySet<string> }) {
   return (
-    <ul className="flex flex-col gap-3 lg:hidden" aria-label="Saved answers">
+    <ul className="flex flex-col gap-3 xl:hidden" aria-label="Saved answers">
       {rows.map((answer) => (
         <li key={answer.id} className="flex flex-col gap-3 border p-3">
           <div className="flex items-start justify-between gap-3">
             <QuestionCell answer={answer} />
             <StatusBadge status={answer.status} />
           </div>
-          <SafeText text={answer.value} lines={3} max={300} />
+          <ValueCell answer={answer} />
           <p className="text-muted-foreground tabular-nums">
             Used {answer.timesUsed} · Corrected {answer.timesCorrected} · Last corrected{" "}
             <Day value={answer.lastCorrectedAt} />
           </p>
-          <RowActions answer={answer} actions={actions} compact={false} />
+          <RowActions answer={answer} actions={actions} busy={pending.has(answer.id)} compact={false} />
         </li>
       ))}
     </ul>
@@ -192,7 +223,7 @@ function AnswerCards({ rows, actions }: { rows: Answer[]; actions: Actions }) {
 
 export function AnswerBank() {
   const bank = useBank()
-  const decide = useDecision()
+  const rows = useRowActions()
   const [query, setQuery] = useState("")
   const [status, setStatus] = useState<StatusFilter>("all")
   const [sort, setSort] = useState<SortKey>("recent")
@@ -204,14 +235,15 @@ export function AnswerBank() {
   const all = bank.data ?? []
   const filtered = sortAnswers(filterAnswers(all, query, status), sort)
   const view = paginate(filtered, page)
-  const first = (view.page - 1) * 20 + 1
+  const first = (view.page - 1) * PAGE_SIZE + 1
   const filtering = query.trim() !== "" || status !== "all"
+  const controls = !bank.isSuccess
 
   const actions: Actions = {
     onEdit: setEditing,
     onDelete: setDeleting,
-    onToggle: (answer) =>
-      decide.mutate({ answerId: answer.id, decision: answer.status === "rejected" ? "keep" : "reject" }),
+    onStop: (answer) => rows.stop(answer.id),
+    onRestore: (answer) => rows.restore(answer.id),
   }
   const reset = () => {
     setQuery("")
@@ -228,12 +260,12 @@ export function AnswerBank() {
           </h2>
         </CardTitle>
         <CardDescription>
-          Edit what skiffr fills, reject what it should leave empty, delete what it should forget.
+          Edit what skiffr fills, stop it filling an answer, or delete what it should forget.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        <search className="grid gap-2 sm:grid-cols-[1fr_auto_auto]">
-          <div className="relative block">
+        <search className="flex flex-col gap-2 sm:flex-row">
+          <div className="relative sm:flex-1">
             <SearchIcon
               className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground"
               aria-hidden="true"
@@ -243,6 +275,7 @@ export function AnswerBank() {
               aria-label="Search questions"
               className="pl-7"
               placeholder="Search questions"
+              disabled={controls}
               value={query}
               onChange={(event) => {
                 setQuery(event.target.value)
@@ -250,10 +283,11 @@ export function AnswerBank() {
               }}
             />
           </div>
-          <div className="block sm:w-40">
+          <div className="sm:w-40">
             <select
               aria-label="Filter by status"
               className={SELECT}
+              disabled={controls}
               value={status}
               onChange={(event) => {
                 setStatus(event.target.value as StatusFilter)
@@ -267,10 +301,11 @@ export function AnswerBank() {
               ))}
             </select>
           </div>
-          <div className="block sm:w-44">
+          <div className="sm:w-44">
             <select
               aria-label="Sort by"
               className={SELECT}
+              disabled={controls}
               value={sort}
               onChange={(event) => {
                 setSort(event.target.value as SortKey)
@@ -291,7 +326,7 @@ export function AnswerBank() {
         </p>
 
         {bank.isPending ? (
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-2" aria-busy="true">
             <Skeleton className="h-12 w-full" />
             <Skeleton className="h-12 w-full" />
             <Skeleton className="h-12 w-full" />
@@ -329,8 +364,8 @@ export function AnswerBank() {
           </Empty>
         ) : (
           <>
-            <AnswersTable rows={view.rows} actions={actions} />
-            <AnswerCards rows={view.rows} actions={actions} />
+            <AnswersTable rows={view.rows} actions={actions} pending={rows.pending} />
+            <AnswerCards rows={view.rows} actions={actions} pending={rows.pending} />
             <nav aria-label="Answer pages" className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-muted-foreground tabular-nums">
                 {first}-{first + view.rows.length - 1} of {filtered.length}
@@ -360,9 +395,11 @@ export function AnswerBank() {
       <EditAnswerDialog answer={editing} onClose={() => setEditing(null)} />
       <DeleteAnswerDialog
         answer={deleting}
-        onClose={(deleted) => {
+        onClose={() => setDeleting(null)}
+        onConfirm={(answer) => {
+          rows.remove(answer.id)
           setDeleting(null)
-          if (deleted) requestAnimationFrame(() => heading.current?.focus())
+          requestAnimationFrame(() => heading.current?.focus())
         }}
       />
     </Card>

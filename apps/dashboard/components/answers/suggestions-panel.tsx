@@ -6,13 +6,12 @@ import { Button } from "@skiffr/ui/components/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@skiffr/ui/components/card"
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@skiffr/ui/components/empty"
 import { Skeleton } from "@skiffr/ui/components/skeleton"
-import { useCallback, useState, useSyncExternalStore } from "react"
-import { dismissalKey, suggestionCopy } from "@/lib/answers"
+import { useCallback, useMemo, useState, useSyncExternalStore } from "react"
+import { DISMISSED_MAX, dismissalKey, parseDismissed, suggestionCopy } from "@/lib/answers"
 import { SafeText } from "./safe-text"
-import { type Suggestion, useDecision, useSuggestions } from "./use-answers"
+import { type Suggestion, useRowActions, useSuggestions } from "./use-answers"
 
 const STORAGE_KEY = "skiffr:answers:dismissed"
-const DISMISSED_MAX = 200
 const VISIBLE = 4
 const listeners = new Set<() => void>()
 
@@ -24,7 +23,7 @@ function readDismissed(): string {
   }
 }
 
-/** Dismissing a "keep this?" card has no server side: it only hides the card in this browser until the answer changes. */
+/** Dismissing a "make this your default?" card has no server side: it hides the card in this browser while the answer keeps its value. */
 function useDismissed() {
   const raw = useSyncExternalStore(
     (listener) => {
@@ -36,29 +35,32 @@ function useDismissed() {
   )
   const dismiss = useCallback((key: string) => {
     try {
-      const next = [...(JSON.parse(readDismissed()) as string[]), key].slice(-DISMISSED_MAX)
+      const next = [...parseDismissed(readDismissed()), key].slice(-DISMISSED_MAX)
       localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
     } catch {
       // storage blocked: the card comes back on the next visit
     }
     for (const listener of listeners) listener()
   }, [])
-  let keys: string[] = []
-  try {
-    keys = JSON.parse(raw) as string[]
-  } catch {
-    keys = []
-  }
-  return { dismissed: new Set(keys), dismiss }
+  const dismissed = useMemo(() => new Set(parseDismissed(raw)), [raw])
+  return { dismissed, dismiss }
 }
 
-function SuggestionCard({ suggestion, onDismiss }: { suggestion: Suggestion; onDismiss: (key: string) => void }) {
-  const decide = useDecision()
+function SuggestionCard({
+  suggestion,
+  busy,
+  onDecide,
+  onDismiss,
+}: {
+  suggestion: Suggestion
+  busy: boolean
+  onDecide: (id: string, decision: "keep" | "reject") => void
+  onDismiss: (key: string) => void
+}) {
   const copy = suggestionCopy(suggestion.kind, suggestion.count)
-  const busy = decide.isPending
   const choose = (decision: "keep" | "reject" | null) => {
-    if (decision === null) return onDismiss(dismissalKey(suggestion.answer))
-    decide.mutate({ answerId: suggestion.answer.id, decision })
+    if (decision === null) return onDismiss(dismissalKey(suggestion))
+    onDecide(suggestion.answer.id, decision)
   }
   return (
     <li className="flex flex-col gap-3 border p-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
@@ -86,9 +88,10 @@ function SuggestionCard({ suggestion, onDismiss }: { suggestion: Suggestion; onD
 export function SuggestionsPanel() {
   const { data, error, isPending, refetch, isFetching } = useSuggestions()
   const { dismissed, dismiss } = useDismissed()
+  const rows = useRowActions()
   const [all, setAll] = useState(false)
 
-  const open = (data ?? []).filter((s) => !(s.kind === "keep" && dismissed.has(dismissalKey(s.answer))))
+  const open = (data ?? []).filter((s) => !(s.kind === "keep" && dismissed.has(dismissalKey(s))))
   const shown = all ? open : open.slice(0, VISIBLE)
 
   return (
@@ -126,6 +129,8 @@ export function SuggestionsPanel() {
                 <SuggestionCard
                   key={`${suggestion.kind}:${suggestion.answer.id}`}
                   suggestion={suggestion}
+                  busy={rows.pending.has(suggestion.answer.id)}
+                  onDecide={(id, decision) => (decision === "keep" ? rows.keep(id) : rows.stop(id))}
                   onDismiss={dismiss}
                 />
               ))}
