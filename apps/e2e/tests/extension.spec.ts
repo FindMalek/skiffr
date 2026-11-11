@@ -1,7 +1,7 @@
 import { expect, test } from "../fixtures/extension.ts"
 import { ATS_PAGES } from "../fixtures/pages.ts"
 
-const SETTINGS = { apiUrl: "http://127.0.0.1:4010", token: "secret-token" }
+const SETTINGS = { apiUrl: "http://127.0.0.1:4010", token: "skp_e2e_fake_token_not_a_secret" }
 
 test("loads the built extension", async ({ serviceWorker, extensionId }) => {
   expect(extensionId).toMatch(/^[a-p]{32}$/)

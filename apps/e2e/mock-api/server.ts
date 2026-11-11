@@ -14,7 +14,7 @@ import {
 } from "@skiffr/common/schemas"
 import type { z } from "zod"
 
-export const MOCK_TOKEN = "e2e-token"
+export const MOCK_TOKEN = "skp_e2e_fake_token_not_a_secret"
 
 export type MapFieldsHandler = (fields: FieldDescriptor[]) => FieldMapping[]
 
