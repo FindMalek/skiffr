@@ -43,6 +43,13 @@
       "when": 1794394484507,
       "tag": "0005_cultured_marvel_boy",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1794415522038,
+      "tag": "0006_fast_strong_guy",
+      "breakpoints": true
     }
   ]
 }

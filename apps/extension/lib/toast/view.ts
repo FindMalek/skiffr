@@ -1,8 +1,22 @@
 import { TOAST_CSS } from "./styles"
 
-export type ToastView = { show: () => void; hide: () => void }
+export type ToastAction = "settings" | "retry"
+/** What the toast says after the person said yes: working on it, or how it went. */
+export type ToastMessage = { text: string; actions?: readonly ToastAction[]; busy?: boolean }
+export type ToastView = { show: () => void; showMessage: (message: ToastMessage) => void; hide: () => void }
 
-type ToastHandlers = { onYes: () => void; onNo: () => void; onNever: () => void; onTimeout: () => void }
+type ToastHandlers = {
+  onYes: () => void
+  onNo: () => void
+  onNever: () => void
+  onTimeout: () => void
+  onSettings?: () => void
+  onRetry?: () => void
+}
+
+const ASK_TITLE = "Autofill this application?"
+const MESSAGE_DISMISS_MS = 12_000
+const ACTION_LABEL: Record<ToastAction, string> = { settings: "Open settings", retry: "Retry" }
 
 const AUTO_DISMISS_MS = 20_000
 const MAX_REMOUNTS = 20
@@ -35,9 +49,17 @@ export function createToastView(doc: Document, handlers: ToastHandlers): ToastVi
   let observer: MutationObserver | null = null
   let watchedRoot: Element | null = null
 
+  let currentTitle = ASK_TITLE
+  let dismissMs = AUTO_DISMISS_MS
+  let onDismiss: () => void = handlers.onTimeout
+  let titleEl: HTMLElement | null = null
+  let rowEl: HTMLElement | null = null
+  let primary: (() => void) | null = handlers.onYes
+  let onEscape: () => void = handlers.onNo
+
   function arm(): void {
     clearTimeout(timer)
-    timer = setTimeout(handlers.onTimeout, AUTO_DISMISS_MS)
+    if (dismissMs > 0) timer = setTimeout(onDismiss, dismissMs)
   }
 
   function build(): HTMLElement {
@@ -60,13 +82,22 @@ export function createToastView(doc: Document, handlers: ToastHandlers): ToastVi
 
     const row = doc.createElement("div")
     row.className = "row"
+    titleEl = title
+    rowEl = row
     row.append(
       button(doc, "Yes", "yes", "primary"),
       button(doc, "No", "no"),
       button(doc, "Don't ask on this site", "never", "link"),
     )
 
-    const actions: Record<string, () => void> = { yes: handlers.onYes, no: handlers.onNo, never: handlers.onNever }
+    const actions: Record<string, () => void> = {
+      yes: handlers.onYes,
+      no: handlers.onNo,
+      never: handlers.onNever,
+      close: () => view.hide(),
+      settings: () => handlers.onSettings?.(),
+      retry: () => handlers.onRetry?.(),
+    }
     toast.addEventListener("click", (event) => {
       if (!event.isTrusted) return
       const action = (event.target as HTMLElement).closest<HTMLElement>("[data-action]")?.dataset.action
@@ -74,8 +105,8 @@ export function createToastView(doc: Document, handlers: ToastHandlers): ToastVi
     })
     toast.addEventListener("keydown", (event) => {
       if (!event.isTrusted) return
-      if (event.key === "Escape") handlers.onNo()
-      else if (event.key === "Enter" && event.target === toast) handlers.onYes()
+      if (event.key === "Escape") onEscape()
+      else if (event.key === "Enter" && event.target === toast && primary) primary()
       else return
       event.preventDefault()
       event.stopPropagation()
@@ -93,7 +124,7 @@ export function createToastView(doc: Document, handlers: ToastHandlers): ToastVi
     const frame =
       doc.defaultView?.requestAnimationFrame.bind(doc.defaultView) ?? ((fn: () => void) => setTimeout(fn, 0))
     frame(() => {
-      title.textContent = "Autofill this application?"
+      title.textContent = currentTitle
       toast.classList.add("in")
     })
     return el
@@ -130,22 +161,49 @@ export function createToastView(doc: Document, handlers: ToastHandlers): ToastVi
     watchedRoot = null
   }
 
-  return {
+  function mount(): void {
+    const root = doc.documentElement
+    if (!root) return
+    host = build()
+    remounts = 0
+    root.append(host)
+    watch(root)
+  }
+
+  const view: ToastView = {
     show() {
       if (host) {
         ensureMounted()
         return
       }
-      const root = doc.documentElement
-      if (!root) return
-      host = build()
-      remounts = 0
-      root.append(host)
-      watch(root)
+      mount()
+      arm()
+    },
+    showMessage({ text, actions = [], busy = false }) {
+      dismissMs = busy ? 0 : MESSAGE_DISMISS_MS
+      onDismiss = () => view.hide()
+      primary = null
+      onEscape = () => view.hide()
+      currentTitle = text
+      const fresh = !host
+      if (fresh) mount()
+      else ensureMounted()
+      if (!titleEl || !rowEl) return
+      // a new toast fills its title on the next frame, so the live region announces it; an open one changes in place
+      if (!fresh) titleEl.textContent = text
+      titleEl.style.marginBottom = busy || actions.length === 0 ? "0" : ""
+      const buttons = actions.map((action, i) => button(doc, ACTION_LABEL[action], action, i === 0 ? "primary" : ""))
+      if (!busy) buttons.push(button(doc, "Close", "close", "link"))
+      rowEl.replaceChildren(...buttons)
       arm()
     },
     hide() {
       clearTimeout(timer)
+      currentTitle = ASK_TITLE
+      dismissMs = AUTO_DISMISS_MS
+      onDismiss = handlers.onTimeout
+      primary = handlers.onYes
+      onEscape = handlers.onNo
       unwatch()
       const hadFocus = host !== null && doc.activeElement === host
       host?.remove()
@@ -156,4 +214,5 @@ export function createToastView(doc: Document, handlers: ToastHandlers): ToastVi
       previousFocus = null
     },
   }
+  return view
 }

@@ -1,6 +1,8 @@
 import type { ProfileData, ProfileFields } from "@skiffr/common/schemas"
 import { AiInputError } from "./errors"
 
+export { flattenProfile } from "@skiffr/common/utils"
+
 export interface AiProfile {
   data: ProfileData
   fields: ProfileFields
@@ -35,26 +37,4 @@ export const PROMPT_CHARS_MAX = 80_000
 /** Counts the request as it goes out: system plus prompt as JSON, after escaping, so no input shape can make it larger than this. */
 export function assertPromptSize(system: string, prompt: string): void {
   if (JSON.stringify([system, prompt]).length > PROMPT_CHARS_MAX) throw new AiInputError()
-}
-
-/** Profile as flat `section.key` entries. Extra fields live under `fields.<normalized label>`. */
-export function flattenProfile(
-  profile: AiProfile,
-  allow: (key: string) => boolean = () => true,
-): Record<string, string> {
-  const flat: Record<string, string> = {}
-  const walk = (prefix: string, value: unknown) => {
-    if (value === undefined || value === null || value === "") return
-    if (Array.isArray(value)) {
-      if (value.length > 0 && allow(prefix)) flat[prefix] = value.join(", ")
-    } else if (typeof value === "object") {
-      for (const [key, child] of Object.entries(value)) walk(`${prefix}.${key}`, child)
-    } else if (allow(prefix)) {
-      flat[prefix] = String(value)
-    }
-  }
-  for (const [section, value] of Object.entries(profile.data)) walk(section, value)
-  for (const [label, value] of Object.entries(profile.fields).sort(([a], [b]) => (a < b ? -1 : 1)))
-    walk(`fields.${label}`, value)
-  return flat
 }

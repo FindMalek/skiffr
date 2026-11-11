@@ -1,4 +1,12 @@
+import {
+  AI_FIELD_TEXT_MAX,
+  AI_OPTION_TEXT_MAX,
+  AI_OPTIONS_MAX,
+  fieldMappingSchema,
+  siteKeySchema,
+} from "@skiffr/common"
 import { z } from "zod"
+import { FILL_ERROR_CODES, FILL_FIELDS_MAX } from "./fill-config"
 
 export const fillMessageSchema = z.strictObject({ type: z.literal("fill"), skipTop: z.boolean().optional() })
 export const formDetectedMessageSchema = z.strictObject({ type: z.literal("form-detected") })
@@ -10,8 +18,80 @@ export const fillFramesMessageSchema = z.strictObject({ type: z.literal("fill-fr
 export const siteDisabledMessageSchema = z.strictObject({ type: z.literal("site-disabled") })
 export const disableSiteMessageSchema = z.strictObject({ type: z.literal("disable-site") })
 export const testConnectionMessageSchema = z.strictObject({ type: z.literal("test-connection") })
+export const openOptionsMessageSchema = z.strictObject({ type: z.literal("open-options") })
+
+const fieldText = z.string().max(AI_FIELD_TEXT_MAX).optional()
+
+/** What a content script reads off one form control. Page text, so every length is capped. */
+export const fillFieldSchema = z.strictObject({
+  id: z.string().min(1).max(100),
+  label: fieldText,
+  name: fieldText,
+  ariaLabel: fieldText,
+  placeholder: fieldText,
+  type: z.string().max(40).optional(),
+  autocomplete: z.string().max(100).optional(),
+  options: z.array(z.string().max(AI_OPTION_TEXT_MAX)).max(AI_OPTIONS_MAX),
+})
+
+export const fillRequestMessageSchema = z.strictObject({
+  type: z.literal("fill-request"),
+  siteKey: siteKeySchema,
+  fields: z
+    .array(fillFieldSchema)
+    .min(1)
+    .max(FILL_FIELDS_MAX)
+    .refine((fields) => new Set(fields.map((field) => field.id)).size === fields.length, "Field ids must be unique."),
+})
+
+const errorCode = z.enum(FILL_ERROR_CODES)
+const count = z.number().int().min(0)
+
+export const fillSummarySchema = z.strictObject({
+  /** Fields filled from an answer the person gave before, by how it matched. `site` is what happened last time on this form. */
+  site: count,
+  exact: count,
+  label: count,
+  /** Fields copied from the profile and fields given a short generated value. */
+  profile: count,
+  generated: count,
+  /** Filled but below the review confidence: the page outlines them. */
+  review: count,
+  /** Similar-question answers: shown, never applied. */
+  suggested: count,
+  skipped: count,
+  /** Part of the work failed (set to the first problem) but what is here is still good. */
+  problem: errorCode.optional(),
+})
+
+export const fillResponseSchema = z.discriminatedUnion("ok", [
+  z.strictObject({
+    ok: z.literal(true),
+    mapping: z.array(fieldMappingSchema),
+    values: z.record(z.string(), z.string()),
+    /** Field ids that have a saved answer from a similar question. The page may label them, never fill them. */
+    suggestions: z.array(z.string()),
+    summary: fillSummarySchema,
+  }),
+  z.strictObject({ ok: z.literal(false), code: errorCode }),
+])
+
+/** A child frame tells the top frame how its fill went, through the worker, so one toast can say it. */
+export const fillReportMessageSchema = z.strictObject({
+  type: z.literal("fill-report"),
+  filled: count,
+  review: count,
+  problem: errorCode.optional(),
+})
+
 export const siteDisabledResponseSchema = z.strictObject({ disabled: z.boolean() })
 
+export type OpenOptionsMessage = z.infer<typeof openOptionsMessageSchema>
+export type FillField = z.infer<typeof fillFieldSchema>
+export type FillRequestMessage = z.infer<typeof fillRequestMessageSchema>
+export type FillSummaryData = z.infer<typeof fillSummarySchema>
+export type FillResponse = z.infer<typeof fillResponseSchema>
+export type FillReportMessage = z.infer<typeof fillReportMessageSchema>
 export type FillMessage = z.infer<typeof fillMessageSchema>
 export type FormDetectedMessage = z.infer<typeof formDetectedMessageSchema>
 export type FrameNavigatedMessage = z.infer<typeof frameNavigatedMessageSchema>
@@ -38,3 +118,5 @@ export const isFillFramesMessage = guard(fillFramesMessageSchema)
 export const isSiteDisabledMessage = guard(siteDisabledMessageSchema)
 export const isDisableSiteMessage = guard(disableSiteMessageSchema)
 export const isTestConnectionMessage = guard(testConnectionMessageSchema)
+export const isOpenOptionsMessage = guard(openOptionsMessageSchema)
+export const isFillReportMessage = guard(fillReportMessageSchema)

@@ -3,16 +3,21 @@ import { defineContentScript } from "wxt/utils/define-content-script"
 import { createRateLimiter } from "@/lib/detect/rate-limit"
 import { createFormWatcher } from "@/lib/detect/watch"
 import { noteFill } from "@/lib/dev-hook"
-import { handleFill } from "@/lib/fill-handler"
+import { createWorkerProvider } from "@/lib/fill-client"
+import { FILL_ERROR_ACTIONS, FILL_ERROR_TEXT, type FillErrorCode } from "@/lib/fill-config"
+import { type FillOutcome, handleFill, setMappingProvider } from "@/lib/fill-handler"
 import {
   type DisableSiteMessage,
   type FillFramesMessage,
+  type FillReportMessage,
   type FormDetectedMessage,
   type FrameNavigatedMessage,
   isChildFormsGoneMessage,
   isFillMessage,
+  isFillReportMessage,
   isFormDetectedMessage,
   isReportAgainMessage,
+  type OpenOptionsMessage,
   type ProbeFramesMessage,
   type SiteDisabledMessage,
   type SiteDisabledResponse,
@@ -25,10 +30,17 @@ type NavigationTarget = { addEventListener: (type: "navigatesuccess", listener: 
 const allowFormDetected = createRateLimiter(3, 5_000)
 const allowFrameNavigated = createRateLimiter(10, 5_000)
 
-function fillHere(): void {
-  void handleFill()
-  noteFill(document)
+const CHILD_WAIT_MS = 10_000
+
+type Report = Omit<FillReportMessage, "type">
+
+function toReport(outcome: FillOutcome): Report {
+  return outcome.ok
+    ? { filled: outcome.filled, review: outcome.review, ...(outcome.problem ? { problem: outcome.problem } : {}) }
+    : { filled: 0, review: 0, problem: outcome.code }
 }
+
+const fields = (n: number) => `${n} ${n === 1 ? "field" : "fields"}`
 
 type Outgoing =
   | FormDetectedMessage
@@ -36,6 +48,8 @@ type Outgoing =
   | ProbeFramesMessage
   | FillFramesMessage
   | DisableSiteMessage
+  | FillReportMessage
+  | OpenOptionsMessage
 
 function send(message: Outgoing): void {
   if (message.type === "form-detected" && !allowFormDetected()) return
@@ -51,13 +65,67 @@ export default defineContentScript({
     let formInChildFrame = false
     let formHere = false
 
+    setMappingProvider(createWorkerProvider((message) => browser.runtime.sendMessage(message)))
+
     let toastState = INITIAL_TOAST_STATE
     const view = createToastView(document, {
       onYes: () => dispatch("yes"),
       onNo: () => dispatch("no"),
       onNever: () => dispatch("never"),
       onTimeout: () => dispatch("timeout"),
+      onSettings: () => send({ type: "open-options" }),
+      onRetry: () => fillFromTop(),
     })
+
+    // one toast tells how the whole page went: this frame's fill and what trusted child frames report
+    let tally: { filled: number; review: number; problem?: FillErrorCode; children: number } = {
+      filled: 0,
+      review: 0,
+      children: 0,
+    }
+    let childWait: ReturnType<typeof setTimeout> | undefined
+
+    function showResult(final = false): void {
+      const { filled, review, problem } = tally
+      if (filled + review === 0 && problem) {
+        view.showMessage({ text: FILL_ERROR_TEXT[problem], actions: FILL_ERROR_ACTIONS[problem] })
+      } else if (filled + review === 0) {
+        if (formInChildFrame && tally.children === 0 && !final) {
+          clearTimeout(childWait)
+          childWait = setTimeout(() => showResult(true), CHILD_WAIT_MS)
+          return
+        }
+        view.showMessage({ text: "Nothing to fill" })
+      } else {
+        const need = review === 0 ? "" : review === 1 ? ", 1 needs review" : `, ${review} need review`
+        view.showMessage({
+          text: `Filled ${fields(filled)}${need}${problem ? ". Some answers could not be loaded." : ""}`,
+          actions: problem ? ["retry"] : [],
+        })
+      }
+    }
+
+    function addReport(report: Report): void {
+      tally.filled += report.filled
+      tally.review += report.review
+      tally.problem ??= report.problem
+      showResult()
+    }
+
+    async function fillHere(): Promise<void> {
+      noteFill(document)
+      const report = toReport(await handleFill())
+      if (isTop) addReport(report)
+      else send({ type: "fill-report", ...report })
+    }
+
+    function fillFromTop(withFrames = true): void {
+      clearTimeout(childWait)
+      tally = { filled: 0, review: 0, children: 0 }
+      view.showMessage({ text: "Filling your application…", busy: true })
+      void fillHere()
+      if (withFrames && formInChildFrame) send({ type: "fill-frames" })
+    }
 
     function dispatch(event: ToastEvent): void {
       const step = reduceToast(toastState, event)
@@ -66,10 +134,7 @@ export default defineContentScript({
         if (effect === "show") view.show()
         else if (effect === "hide") view.hide()
         else if (effect === "neverAsk") send({ type: "disable-site" })
-        else {
-          fillHere()
-          if (formInChildFrame) send({ type: "fill-frames" })
-        }
+        else fillFromTop()
       }
     }
 
@@ -139,8 +204,14 @@ export default defineContentScript({
     browser.runtime.onMessage.addListener((message: unknown) => {
       if (isFillMessage(message)) {
         if (message.skipTop && isTop) return
-        fillHere()
-        if (isTop) dispatch("filled")
+        if (isTop) {
+          dispatch("filled")
+          // the worker fills the child frames itself on this path
+          fillFromTop(false)
+        } else void fillHere()
+      } else if (isTop && isFillReportMessage(message)) {
+        tally.children++
+        addReport(message)
       } else if (isTop && isFormDetectedMessage(message)) {
         formInChildFrame = true
         void siteChecked.then(() => dispatch("detected"))
