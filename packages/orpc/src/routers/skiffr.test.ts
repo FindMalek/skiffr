@@ -73,7 +73,6 @@ const ben = () => ({ context: as("ben") })
 
 const POSTING = {
   url: "https://jobs.acme.dev/1",
-  canonicalId: "acme:1",
   title: "Engineer",
   company: "Acme",
   source: "greenhouse",
@@ -141,19 +140,15 @@ test("queueing the same posting twice returns the saved job", async () => {
 })
 
 test("lists are paged and capped", async () => {
-  await call(appRouter.jobs.create, { ...POSTING, canonicalId: "acme:page-1", url: "https://jobs.acme.dev/p1" }, ben())
-  await call(appRouter.jobs.create, { ...POSTING, canonicalId: "acme:page-2", url: "https://jobs.acme.dev/p2" }, ben())
+  await call(appRouter.jobs.create, { ...POSTING, url: "https://jobs.acme.dev/p1" }, ben())
+  await call(appRouter.jobs.create, { ...POSTING, url: "https://jobs.acme.dev/p2" }, ben())
   expect(await call(appRouter.jobs.list, { limit: 1 }, ben())).toHaveLength(1)
   expect(await call(appRouter.jobs.list, { limit: 1, offset: 1 }, ben())).toHaveLength(1)
   await expect(call(appRouter.jobs.list, { limit: 501 }, ben())).rejects.toMatchObject({ code: "BAD_REQUEST" })
 })
 
 test("jobs can be queued or skipped by hand but never set to applied", async () => {
-  const job = await call(
-    appRouter.jobs.create,
-    { ...POSTING, canonicalId: "acme:status", url: "https://jobs.acme.dev/s" },
-    ana(),
-  )
+  const job = await call(appRouter.jobs.create, { ...POSTING, url: "https://jobs.acme.dev/s" }, ana())
   expect((await call(appRouter.jobs.update, { id: job.id, status: "skipped" }, ana())).status).toBe("skipped")
   await expect(call(appRouter.jobs.update, { id: job.id, status: "applied" as "queued" }, ana())).rejects.toMatchObject(
     {
@@ -165,7 +160,7 @@ test("jobs can be queued or skipped by hand but never set to applied", async () 
 test("applying marks the job applied, and each funnel stage is stamped once", async () => {
   const job = await call(
     appRouter.jobs.create,
-    { ...POSTING, canonicalId: "acme:2", url: "https://jobs.acme.dev/2", title: "Designer" },
+    { ...POSTING, url: "https://jobs.acme.dev/2", title: "Designer" },
     ana(),
   )
   const app = await call(appRouter.applications.create, { jobId: job.id, ats: "lever", matchScore: 82 }, ana())
@@ -194,11 +189,7 @@ test("applying marks the job applied, and each funnel stage is stamped once", as
 })
 
 test("removing an application puts its job back in the queue", async () => {
-  const job = await call(
-    appRouter.jobs.create,
-    { ...POSTING, canonicalId: "acme:3", url: "https://jobs.acme.dev/3" },
-    ana(),
-  )
+  const job = await call(appRouter.jobs.create, { ...POSTING, url: "https://jobs.acme.dev/3" }, ana())
   const app = await call(appRouter.applications.create, { jobId: job.id, ats: "lever" }, ana())
   await call(appRouter.applications.remove, { id: app.id }, ana())
   const [back] = (await call(appRouter.jobs.list, {}, ana())).filter((j) => j.id === job.id)
@@ -215,11 +206,7 @@ test("a watched careers page is saved once however the url is written, and stamp
 
 test("another user's rows are not found by any update or remove", async () => {
   const answer = await call(appRouter.answers.create, { rawLabel: "Own answer", value: "x" }, ana())
-  const job = await call(
-    appRouter.jobs.create,
-    { ...POSTING, canonicalId: "acme:own", url: "https://jobs.acme.dev/own" },
-    ana(),
-  )
+  const job = await call(appRouter.jobs.create, { ...POSTING, url: "https://jobs.acme.dev/own" }, ana())
   const application = await call(appRouter.applications.create, { jobId: job.id, ats: "lever" }, ana())
   const source = await call(appRouter.jobSources.create, { url: "https://own.dev/careers" }, ana())
   const asBen = ben()

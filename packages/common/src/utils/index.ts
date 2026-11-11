@@ -20,6 +20,9 @@ export function normalizeUrl(url: string): string {
   return `${parsed.origin}${parsed.pathname.replace(/\/+$/, "")}${parsed.search}`
 }
 
+export * from "./canonical-job"
+export * from "./safe-text"
+
 /** Profile as flat `section.key` entries. Extra fields live under `fields.<normalized label>`. */
 export function flattenProfile(
   profile: { data: ProfileData; fields: ProfileFields },
