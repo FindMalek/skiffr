@@ -8,17 +8,26 @@ import type { EmbeddingModel } from "ai"
 import { and, eq, inArray, isNull, sql } from "drizzle-orm"
 import { describeError, safeErrorFields } from "./errors"
 
-/** What identifies a field across forms: its normalized label, its control kind and the set of options it offers. */
+/**
+ * What identifies a field across forms: its normalized label, its control kind and the set of options it offers.
+ * `fieldKey` is the same without the options: what identifies the field inside a site's saved form, so a select whose
+ * options change between visits is still the same field.
+ */
 export function fingerprintOf(field: { label: string; type?: string; options?: string[] }): {
   normalizedLabel: string
   fingerprint: string
+  fieldKey: string
 } {
   const normalizedLabel = normalizeLabel(field.label)
   const options = [...new Set((field.options ?? []).map(normalizeLabel))].sort()
   const optionsHash =
     options.length > 0 ? createHash("sha256").update(options.join("\n")).digest("hex").slice(0, 16) : ""
   const type = (field.type ?? "").trim().toLowerCase()
-  return { normalizedLabel, fingerprint: `${normalizedLabel}|${type}|${optionsHash}` }
+  return {
+    normalizedLabel,
+    fingerprint: `${normalizedLabel}|${type}|${optionsHash}`,
+    fieldKey: `${normalizedLabel}|${type}`,
+  }
 }
 
 /** The question text that gets embedded and matched. */
@@ -153,22 +162,39 @@ export async function embedMissing(
   }
 }
 
-/** A user's answer bank is capped. Updating a label that already exists is always fine. Call it inside the transaction that writes: it takes a per-user lock so parallel writes can't all squeeze under the cap. */
+/**
+ * The labels that don't fit in a user's answer bank: new ones beyond the cap (updating a label that exists is always
+ * fine). Call it inside the transaction that writes: it takes a per-user lock so parallel writes can't all squeeze under the cap.
+ */
+export async function labelsWithoutRoom(
+  db: Pick<Db, "select" | "execute">,
+  userId: string,
+  labels: string[],
+): Promise<Set<string>> {
+  const unique = [...new Set(labels)]
+  if (unique.length === 0) return new Set()
+  await db.execute(sql`select pg_advisory_xact_lock(hashtext(${`answers:${userId}`}))`)
+  const [row] = await db.select({ count: sql<number>`count(*)::int` }).from(answer).where(eq(answer.userId, userId))
+  const room = ANSWERS_PER_USER_MAX - (row?.count ?? 0)
+  if (room >= unique.length) return new Set()
+  const existing = new Set(
+    (
+      await db
+        .select({ label: answer.normalizedLabel })
+        .from(answer)
+        .where(and(eq(answer.userId, userId), inArray(answer.normalizedLabel, unique)))
+    ).map((r) => r.label),
+  )
+  return new Set(unique.filter((label) => !existing.has(label)).slice(Math.max(room, 0)))
+}
+
+/** Saving one answer by hand fails at the cap. */
 export async function assertAnswerRoom(
   db: Pick<Db, "select" | "execute">,
   userId: string,
   labels: string[],
 ): Promise<void> {
-  const unique = [...new Set(labels)]
-  if (unique.length === 0) return
-  await db.execute(sql`select pg_advisory_xact_lock(hashtext(${`answers:${userId}`}))`)
-  const [row] = await db.select({ count: sql<number>`count(*)::int` }).from(answer).where(eq(answer.userId, userId))
-  if ((row?.count ?? 0) + unique.length <= ANSWERS_PER_USER_MAX) return
-  const existing = await db
-    .select({ label: answer.normalizedLabel })
-    .from(answer)
-    .where(and(eq(answer.userId, userId), inArray(answer.normalizedLabel, unique)))
-  if ((row?.count ?? 0) + unique.length - existing.length > ANSWERS_PER_USER_MAX) {
+  if ((await labelsWithoutRoom(db, userId, labels)).size > 0) {
     throw new ORPCError("BAD_REQUEST", { message: `You can save up to ${ANSWERS_PER_USER_MAX} answers.` })
   }
 }

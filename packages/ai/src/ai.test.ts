@@ -356,6 +356,11 @@ test("secrets, payment, ids, birth dates and equal-opportunity answers are never
     "Tax number",
     "Driving licence",
     "Driver's license number",
+    "D.O.B",
+    "D.O.B.",
+    "Driver license",
+    "Driver licence number",
+    "Visa number",
     "Gender",
     "Ethnicity",
     "Race",
@@ -367,7 +372,15 @@ test("secrets, payment, ids, birth dates and equal-opportunity answers are never
     "!!!",
   ]
   for (const label of labels) expect(isLearnableField({ label, type: "text" }), label).toBe(false)
-  for (const label of ["Website", "Years of experience", "Preferred name", "Nationality", "Postal code", "Pronouns"]) {
+  for (const label of [
+    "Website",
+    "Years of experience",
+    "Preferred name",
+    "Nationality",
+    "Postal code",
+    "Pronouns",
+    "Visa sponsorship required",
+  ]) {
     expect(isLearnableField({ label, type: "text" }), label).toBe(true)
   }
 })

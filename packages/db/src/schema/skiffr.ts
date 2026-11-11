@@ -4,7 +4,7 @@ import {
   FIELD_EVENT_OUTCOMES,
   FIELD_EVENT_SOURCES,
 } from "@skiffr/common/constants"
-import type { ProfileData, ProfileFields } from "@skiffr/common/schemas"
+import type { ProfileData, ProfileFields, RecordOutput, SiteFieldMap } from "@skiffr/common/schemas"
 import { getTableColumns } from "drizzle-orm"
 import {
   index,
@@ -155,6 +155,33 @@ export const fieldEvent = pgTable(
   ],
 )
 
+/**
+ * What the user left in each field the last time they filled one form of a site, so the next visit fills the same without
+ * asking a model. A field is identified by its label and control type (not its options). `form_signature` is the hash of
+ * the form's sorted field keys, `field_keys` those keys (a changed form is matched by their overlap) and `field_map` the
+ * learned value per key. The values are the
+ * user's own data: never log them.
+ */
+export const siteProfile = pgTable(
+  "site_profile",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: userId(),
+    siteKey: text("site_key").notNull(),
+    formSignature: text("form_signature").notNull(),
+    fieldKeys: jsonb("field_keys").$type<string[]>().notNull(),
+    fieldMap: jsonb("field_map").$type<SiteFieldMap>().notNull().default({}),
+    timesUsed: integer("times_used").notNull().default(0),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    unique("site_profile_user_site_form_unique").on(t.userId, t.siteKey, t.formSignature),
+    index("site_profile_user_last_used_idx").on(t.userId, t.lastUsedAt),
+  ],
+)
+
 /** Batches of events already applied, so a retried `learning.record` changes nothing the second time. */
 export const recordBatch = pgTable(
   "record_batch",
@@ -163,6 +190,8 @@ export const recordBatch = pgTable(
     batchId: uuid("batch_id").notNull(),
     /** Hash of the batch's content, so the same id with different events is refused instead of silently ignored. */
     payloadHash: text("payload_hash").notNull(),
+    /** What the first attempt answered (counts and statuses only), so a replay answers the same. Null for a batch still running. */
+    response: jsonb("response").$type<RecordOutput>(),
     createdAt: createdAt(),
   },
   (t) => [primaryKey({ columns: [t.userId, t.batchId] })],

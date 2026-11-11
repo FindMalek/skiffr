@@ -126,3 +126,12 @@ test("every /rpc and /v1 answer varies on Origin, other routes don't", async () 
   expect((await get("/v1/extension/whoami", { origin: EXTENSION })).headers.get("vary")).toContain("Origin")
   expect((await get("/health")).headers.get("vary")).toBeNull()
 })
+
+test("numeric query parameters of GET routes arrive as strings and are still numbers", async () => {
+  const get = (path: string) => server(new Request(`http://api.test${path}`, { headers: session }))
+  for (const path of ["/v1/learning/sites?limit=5", "/v1/learning/stats?limit=5", "/v1/answers?limit=5&offset=0"]) {
+    const res = await get(path)
+    expect(res.status, path).toBe(200)
+  }
+  expect((await get("/v1/learning/sites?limit=0")).status).toBe(400)
+})

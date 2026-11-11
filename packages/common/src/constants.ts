@@ -60,3 +60,12 @@ export const CLEARED_STOP_MIN = 3
 export const FIELD_EVENT_RETENTION_DAYS = 90
 export const FIELD_EVENT_PURGE_BATCH = 500
 export const ANSWERS_PER_USER_MAX = 2_000
+export const SITE_PROFILES_PER_USER_MAX = 500
+/** Saved forms of one site: a busy site can't push the others out, the oldest of its own go first. */
+export const SITE_PROFILES_PER_SITE_MAX = 20
+export const SITE_PROFILE_RETENTION_DAYS = 180
+/** A changed form still uses a site's saved profile when this share of its fields is unchanged (see `lib/site-profile.ts`). */
+export const SITE_PROFILE_OVERLAP_MIN = 0.8
+/** A record covering less than this share of a known form it is a strict subset of is not saved as a form of its own. */
+export const SITE_PROFILE_PARTIAL_MAX = 0.5
+export const SITE_FIELD_SOURCES = ["answer", "profile", "literal"] as const

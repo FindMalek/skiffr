@@ -7,10 +7,12 @@ import {
   LEARNING_FIELDS_MAX,
   LEARNING_REQUEST_CHARS_MAX,
   LEARNING_VALUE_MAX,
+  SITE_FIELD_SOURCES,
   SITE_KEY_MAX,
   STATS_APPLICATIONS_MAX,
 } from "../constants"
 import { answerSchema } from "./answers"
+import { queryInt } from "./query"
 import { CLEAN_MESSAGE, clean } from "./text"
 
 /** The host the form lives on, plus the first path segment on multi-tenant ATS hosts (`boards.greenhouse.io/acme`). */
@@ -55,9 +57,11 @@ export const lookupInputSchema = z
 
 const lookupMatchSchema = z.object({
   fieldId: z.string(),
-  answerId: z.string(),
+  /** The saved answer behind the match: absent for a site entry the user typed on that site. */
+  answerId: z.string().optional(),
   value: z.string(),
-  source: z.enum(["exact", "label", "similar"]),
+  /** `site` is what happened last time on this very form: it beats the answer bank for the field. */
+  source: z.enum(["site", "exact", "label", "similar"]),
   /** False for a suggestion the extension must not fill by itself. */
   autofill: z.boolean(),
   score: z.number(),
@@ -96,7 +100,32 @@ export const recordInputSchema = z
     { message: `The events add up to more than ${LEARNING_REQUEST_CHARS_MAX} characters.`, path: ["events"] },
   )
 
-export const recordOutputSchema = z.object({ recorded: z.number(), skipped: z.number() })
+/**
+ * What happened to the batch's site profile. The extension must send an event for every learnable field of the form,
+ * the empty ones too (`filledValue` and `finalValue` both empty). A batch that is only a small part of the site's latest
+ * form is still saved as a form of its own but comes back with the `partial_form` warning; one with nothing learnable is
+ * skipped.
+ */
+export const siteProfileStatusSchema = z.object({
+  status: z.enum(["saved", "skipped"]),
+  reason: z.enum(["no_learnable_fields"]).optional(),
+  warning: z.enum(["partial_form"]).optional(),
+})
+
+/** `bank_full`: the answer bank is at its cap, so `skipped` corrected answers with a new question were not saved. Everything else of the batch was. */
+export const recordAnswersStatusSchema = z.object({
+  status: z.enum(["saved", "bank_full"]),
+  skipped: z.number(),
+})
+
+export const recordOutputSchema = z.object({
+  recorded: z.number(),
+  skipped: z.number(),
+  siteProfile: siteProfileStatusSchema,
+  answers: recordAnswersStatusSchema,
+})
+
+export type RecordOutput = z.infer<typeof recordOutputSchema>
 
 export const suggestionSchema = z.object({
   kind: z.enum(["keep", "flip_flop", "cleared", "stale"]),
@@ -113,7 +142,7 @@ export const resolveSuggestionInputSchema = z.object({
 })
 
 export const statsInputSchema = z.object({
-  limit: z.number().int().min(1).max(STATS_APPLICATIONS_MAX).default(50),
+  limit: queryInt(z.number().int().min(1).max(STATS_APPLICATIONS_MAX)).default(50),
 })
 
 export const statsOutputSchema = z.object({
@@ -130,3 +159,37 @@ export const statsOutputSchema = z.object({
 
 export type LearningField = z.infer<typeof learningFieldSchema>
 export type FieldEventInput = z.infer<typeof fieldEventInputSchema>
+
+export const siteFieldSourceSchema = z.enum(SITE_FIELD_SOURCES)
+
+/** What one field of a saved form was last time, keyed by the field's key (normalized label and control type) in `site_profile.field_map`. */
+export const siteFieldEntrySchema = z.object({
+  label: z.string(),
+  value: z.string(),
+  kind: z.string(),
+  source: siteFieldSourceSchema,
+  answerId: z.string().optional(),
+  /** When the value was last taken from its source (ISO): a profile edited after that makes the entry stale. */
+  savedAt: z.string(),
+  timesUsed: z.number(),
+  timesCorrected: z.number(),
+  /** Clears in a row: any accept or correction resets it, three stop the autofill. */
+  timesCleared: z.number(),
+})
+
+export const siteProfileSchema = z.object({
+  id: z.string(),
+  siteKey: z.string(),
+  timesUsed: z.number(),
+  lastUsedAt: z.date(),
+  fields: z.array(siteFieldEntrySchema.extend({ fieldKey: z.string() })),
+})
+
+export const siteProfilesInputSchema = z.object({ limit: queryInt(z.number().int().min(1).max(200)).default(50) })
+export const siteProfilesOutputSchema = z.array(siteProfileSchema)
+/** Forgets the learned form maps of one site and nothing else: saved answers, the profile and logged corrections stay. */
+export const forgetSiteInputSchema = z.object({ siteKey: siteKeySchema })
+export const forgetSiteOutputSchema = z.object({ removedForms: z.number() })
+
+export type SiteFieldEntry = z.infer<typeof siteFieldEntrySchema>
+export type SiteFieldMap = Record<string, SiteFieldEntry>
