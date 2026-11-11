@@ -141,6 +141,7 @@ jobs:
           retention-days: 14
           if-no-files-found: error
           overwrite: true
+          include-hidden-files: true
       - uses: actions/upload-artifact@v7
         if: github.ref == 'refs/heads/main'
         with:
@@ -149,6 +150,7 @@ jobs:
           retention-days: 90
           if-no-files-found: error
           overwrite: true
+          include-hidden-files: true
 
   db-postgres:
     runs-on: ubuntu-latest
