@@ -1,8 +1,22 @@
 import { TOAST_CSS } from "./styles"
 
-export type ToastView = { show: () => void; hide: () => void }
+export type ToastAction = "settings" | "retry"
+/** What the toast says after the person said yes: working on it, or how it went. */
+export type ToastMessage = { text: string; actions?: readonly ToastAction[]; busy?: boolean }
+export type ToastView = { show: () => void; showMessage: (message: ToastMessage) => void; hide: () => void }
 
-type ToastHandlers = { onYes: () => void; onNo: () => void; onNever: () => void; onTimeout: () => void }
+type ToastHandlers = {
+  onYes: () => void
+  onNo: () => void
+  onNever: () => void
+  onTimeout: () => void
+  onSettings?: () => void
+  onRetry?: () => void
+}
+
+const ASK_TITLE = "Autofill this application?"
+const MESSAGE_DISMISS_MS = 12_000
+const ACTION_LABEL: Record<ToastAction, string> = { settings: "Open settings", retry: "Retry" }
 
 const AUTO_DISMISS_MS = 20_000
 const MAX_REMOUNTS = 20
@@ -13,6 +27,8 @@ const HOST_STYLE: Record<string, string> = {
   bottom: "16px",
   "z-index": "2147483647",
   contain: "layout style",
+  // `all: initial` leaves direction alone, so a right to left page would mirror the toast
+  direction: "ltr",
 }
 
 function button(doc: Document, label: string, action: string, className = ""): HTMLButtonElement {
@@ -27,6 +43,11 @@ function button(doc: Document, label: string, action: string, className = ""): H
 // a fresh tag name per page load, so a page cannot select the toast by a fixed name
 const HOST_TAG = `x-${Math.random().toString(36).slice(2, 10).padEnd(8, "a")}`
 
+function afterFrameOf(doc: Document): (fn: () => void) => void {
+  return (fn) =>
+    doc.defaultView?.requestAnimationFrame ? doc.defaultView.requestAnimationFrame(fn) : setTimeout(fn, 0)
+}
+
 export function createToastView(doc: Document, handlers: ToastHandlers): ToastView {
   let host: HTMLElement | null = null
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -35,9 +56,22 @@ export function createToastView(doc: Document, handlers: ToastHandlers): ToastVi
   let observer: MutationObserver | null = null
   let watchedRoot: Element | null = null
 
+  const afterFrame = afterFrameOf(doc)
+  let currentTitle = ASK_TITLE
+  let dismissMs = AUTO_DISMISS_MS
+  let onDismiss: () => void = handlers.onTimeout
+  let titleEl: HTMLElement | null = null
+  let toastEl: HTMLElement | null = null
+  // set when the answer to the question came from the keyboard: the focus it had is gone with the question, so the
+  // messages that follow take it, and take it back when filling the page moved it into a field
+  let fromKeyboard = false
+  let rowEl: HTMLElement | null = null
+  let primary: (() => void) | null = handlers.onYes
+  let onEscape: () => void = handlers.onNo
+
   function arm(): void {
     clearTimeout(timer)
-    timer = setTimeout(handlers.onTimeout, AUTO_DISMISS_MS)
+    if (dismissMs > 0) timer = setTimeout(onDismiss, dismissMs)
   }
 
   function build(): HTMLElement {
@@ -50,7 +84,7 @@ export function createToastView(doc: Document, handlers: ToastHandlers): ToastVi
     const toast = doc.createElement("div")
     toast.className = "toast"
     toast.setAttribute("role", "dialog")
-    toast.setAttribute("aria-label", "Skiffr autofill")
+    toast.setAttribute("aria-label", "skiffr autofill")
     toast.tabIndex = -1
 
     const title = doc.createElement("p")
@@ -60,23 +94,37 @@ export function createToastView(doc: Document, handlers: ToastHandlers): ToastVi
 
     const row = doc.createElement("div")
     row.className = "row"
+    titleEl = title
+    toastEl = toast
+    rowEl = row
     row.append(
       button(doc, "Yes", "yes", "primary"),
       button(doc, "No", "no"),
       button(doc, "Don't ask on this site", "never", "link"),
     )
 
-    const actions: Record<string, () => void> = { yes: handlers.onYes, no: handlers.onNo, never: handlers.onNever }
+    const actions: Record<string, () => void> = {
+      yes: handlers.onYes,
+      no: handlers.onNo,
+      never: handlers.onNever,
+      close: () => dismiss(),
+      settings: () => handlers.onSettings?.(),
+      retry: () => handlers.onRetry?.(),
+    }
     toast.addEventListener("click", (event) => {
       if (!event.isTrusted) return
       const action = (event.target as HTMLElement).closest<HTMLElement>("[data-action]")?.dataset.action
+      // a click with no pointer (detail 0) is Enter or Space on a focused button
+      if (action) fromKeyboard = event.detail === 0
       if (action) actions[action]?.()
     })
     toast.addEventListener("keydown", (event) => {
       if (!event.isTrusted) return
-      if (event.key === "Escape") handlers.onNo()
-      else if (event.key === "Enter" && event.target === toast) handlers.onYes()
-      else return
+      if (event.key === "Escape") onEscape()
+      else if (event.key === "Enter" && event.target === toast && primary) {
+        fromKeyboard = true
+        primary()
+      } else return
       event.preventDefault()
       event.stopPropagation()
     })
@@ -90,10 +138,8 @@ export function createToastView(doc: Document, handlers: ToastHandlers): ToastVi
 
     toast.append(title, row)
     root.append(style, toast)
-    const frame =
-      doc.defaultView?.requestAnimationFrame.bind(doc.defaultView) ?? ((fn: () => void) => setTimeout(fn, 0))
-    frame(() => {
-      title.textContent = "Autofill this application?"
+    afterFrame(() => {
+      title.textContent = currentTitle
       toast.classList.add("in")
     })
     return el
@@ -130,30 +176,73 @@ export function createToastView(doc: Document, handlers: ToastHandlers): ToastVi
     watchedRoot = null
   }
 
-  return {
+  function mount(): void {
+    const root = doc.documentElement
+    if (!root) return
+    host = build()
+    remounts = 0
+    root.append(host)
+    watch(root)
+  }
+
+  function dismiss(): void {
+    fromKeyboard = false
+    view.hide()
+  }
+
+  const view: ToastView = {
     show() {
+      fromKeyboard = false
       if (host) {
         ensureMounted()
         return
       }
-      const root = doc.documentElement
-      if (!root) return
-      host = build()
-      remounts = 0
-      root.append(host)
-      watch(root)
+      mount()
+      arm()
+    },
+    showMessage({ text, actions = [], busy = false }) {
+      dismissMs = busy ? 0 : MESSAGE_DISMISS_MS
+      onDismiss = () => dismiss()
+      primary = null
+      onEscape = () => dismiss()
+      currentTitle = text
+      const fresh = !host
+      if (fresh) mount()
+      else ensureMounted()
+      if (!titleEl || !rowEl) return
+      // a new toast fills its title on the next frame, so the live region announces it; an open one changes in place
+      if (!fresh) titleEl.textContent = text
+      titleEl.style.marginBottom = busy || actions.length === 0 ? "0" : ""
+      const buttons = actions.map((action, i) => button(doc, ACTION_LABEL[action], action, i === 0 ? "primary" : ""))
+      if (!busy) buttons.push(button(doc, "Close", "close", "link"))
+      rowEl.replaceChildren(...buttons)
+      if (fromKeyboard) {
+        // a node that was only just attached cannot always take focus before its first frame, so try again then
+        toastEl?.focus({ preventScroll: true })
+        if (fresh) afterFrame(() => host && doc.activeElement !== host && toastEl?.focus({ preventScroll: true }))
+      }
       arm()
     },
     hide() {
       clearTimeout(timer)
+      currentTitle = ASK_TITLE
+      dismissMs = AUTO_DISMISS_MS
+      onDismiss = handlers.onTimeout
+      primary = handlers.onYes
+      onEscape = handlers.onNo
       unwatch()
       const hadFocus = host !== null && doc.activeElement === host
       host?.remove()
       host = null
-      if (hadFocus && previousFocus instanceof HTMLElement && previousFocus.isConnected) {
+      if (
+        hadFocus &&
+        previousFocus instanceof (doc.defaultView?.HTMLElement ?? HTMLElement) &&
+        previousFocus.isConnected
+      ) {
         previousFocus.focus({ preventScroll: true })
       }
       previousFocus = null
     },
   }
+  return view
 }
