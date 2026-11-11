@@ -11,6 +11,12 @@ import { withSecurityHeaders } from "./headers"
 
 export type { Handler } from "./cors"
 
+function withRequestId(response: Response, requestId: string): Response {
+  const headers = new Headers(response.headers)
+  headers.set("x-request-id", requestId)
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
+}
+
 type Interceptors = NonNullable<NonNullable<ConstructorParameters<typeof RPCHandler>[1]>["interceptors"]>
 
 /**
@@ -68,14 +74,15 @@ export function createServer(
       return new Response(null, { status: 302, headers: { location, "cache-control": "public, max-age=3000" } })
     }
 
-    const context = await createContext(services, request.headers)
+    const requestId = crypto.randomUUID()
+    const context = await createContext(services, request.headers, requestId)
     const viaRpc = await (bearerSecret(request.headers) === null ? rpc : rpcBearer).handle(request, {
       prefix: "/rpc",
       context,
     })
-    if (viaRpc.matched) return viaRpc.response
+    if (viaRpc.matched) return withRequestId(viaRpc.response, requestId)
     const viaRest = await rest.handle(request, { prefix: "/v1", context })
-    if (viaRest.matched) return viaRest.response
+    if (viaRest.matched) return withRequestId(viaRest.response, requestId)
     return Response.json({ message: "Not found." }, { status: 404 })
   }
 

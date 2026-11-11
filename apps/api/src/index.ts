@@ -1,4 +1,4 @@
-import { resolveModel } from "@skiffr/ai"
+import { resolveEmbeddingModel, resolveModel } from "@skiffr/ai"
 import { createAuth } from "@skiffr/auth"
 import { createDb } from "@skiffr/db"
 import { runMigrations } from "@skiffr/db/migrate"
@@ -54,6 +54,7 @@ const fetch = createServer(
       prefix: env.DEPLOY_ENV.startsWith("pr-") ? `${env.DEPLOY_ENV}/` : "",
     }),
     model: resolveModel(env.AI_MODEL, env),
+    embeddingModel: resolveEmbeddingModel(env),
   },
   {
     publicUrl: env.API_PUBLIC_URL,
