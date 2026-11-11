@@ -5,8 +5,7 @@
   "type": "module",
   "scripts": {
     "e2e": "playwright test",
-    "check-types": "tsc --noEmit",
-    "snapshot": "node tools/snapshot-form.ts"
+    "check-types": "tsc --noEmit"
   },
   "dependencies": {
     "@skiffr/common": "workspace:*",

@@ -27,8 +27,16 @@ interface State {
   submissions: Submission[]
 }
 
-function resolvePage(urlPath: string): string | null {
-  const relative = normalize(decodeURIComponent(urlPath)).replace(/^[/\\]+/, "")
+function decodePath(urlPath: string): string | null {
+  try {
+    return decodeURIComponent(urlPath)
+  } catch {
+    return null
+  }
+}
+
+function resolvePage(decodedPath: string): string | null {
+  const relative = normalize(decodedPath).replace(/^[/\\]+/, "")
   if (relative.startsWith("..")) return null
   return join(PAGES_DIR, relative)
 }
@@ -40,7 +48,12 @@ async function handle(req: IncomingMessage, res: ServerResponse, state: State): 
     res.writeHead(200, { "content-type": "text/html" }).end("<!doctype html><title>Submitted</title><p>Submitted</p>")
     return
   }
-  const file = resolvePage(url.pathname)
+  const decoded = decodePath(url.pathname)
+  if (decoded === null) {
+    res.writeHead(400).end("bad request")
+    return
+  }
+  const file = resolvePage(decoded)
   if (!file || extname(file) !== ".html") {
     res.writeHead(404).end("not found")
     return
@@ -55,7 +68,12 @@ async function handle(req: IncomingMessage, res: ServerResponse, state: State): 
 
 export async function startFixtureServer(): Promise<FixtureServer> {
   const state: State = { altOrigin: "", submissions: [] }
-  const server: Server = createServer((req, res) => void handle(req, res, state))
+  const server: Server = createServer((req, res) => {
+    handle(req, res, state).catch(() => {
+      if (!res.headersSent) res.writeHead(500)
+      res.end("server error")
+    })
+  })
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
   const { port } = server.address() as AddressInfo
   state.altOrigin = `http://localhost:${port}`
