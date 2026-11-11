@@ -28,7 +28,7 @@ What is on `main` today, and what is not.
 | Fill engine | merged, not wired | React and Vue controlled inputs, selects, comboboxes, shadow DOM, same-origin iframes, honeypots. Never submits a form. Tested on fixture pages, not yet called from the extension |
 | Form detection and the "autofill this application?" toast | in review | [#45](https://github.com/FindMalek/skiffr/pull/45) |
 | Learning: correction log, answer lookup, suggestions | merged, api only, the extension does not send corrections yet | [#49](https://github.com/FindMalek/skiffr/pull/49) |
-| Playwright harness for the extension | in review | [#51](https://github.com/FindMalek/skiffr/pull/51) |
+| Playwright harness for the extension (runs in CI) | merged | [#51](https://github.com/FindMalek/skiffr/pull/51) |
 | CI with real Postgres and an extension zip | works | required `ci` check |
 | Detect, fill and learn running together in the browser | planned | |
 | Job queue with a next-job flow | planned | |
