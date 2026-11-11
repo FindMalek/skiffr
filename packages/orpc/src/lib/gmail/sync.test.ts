@@ -3,6 +3,7 @@ import { type Db, gmailAccount, gmailMessage, job } from "@skiffr/db"
 import { eq } from "drizzle-orm"
 import { syncNow } from "./accounts"
 import { INDEED_ALERT, LINKEDIN_ALERT, NEWSLETTER } from "./fixtures"
+import type { GmailRuntime } from "./google"
 import { type MockGoogle, startMockGoogle } from "./mock-google"
 import { DEFAULT_SENDERS } from "./senders"
 import { dueAccountIds, LIST_MAX, PROCESS_MAX, syncAccount } from "./sync"
@@ -316,8 +317,27 @@ test("a run is bounded: listing and processing have caps, the rest waits for the
 test("two syncs of one mailbox at once have one effect", async () => {
   const { id } = await connectAccount(db, mock, "max")
   mock.add({ id: "x1", from: LINKEDIN_FROM, html: LINKEDIN_ALERT })
-  const results = await Promise.all([syncAccount(deps(), id), syncAccount(deps(), id)])
-  expect(results.map((r) => r.state).sort()).toEqual(["busy", "done"])
+  let release: () => void = () => {}
+  const held = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  let entered: () => void = () => {}
+  const inside = new Promise<void>((resolve) => {
+    entered = resolve
+  })
+  const slow = {
+    ...h.runtime,
+    fetch: async (...args: Parameters<typeof fetch>) => {
+      entered()
+      await held
+      return h.runtime.fetch(...args)
+    },
+  } as GmailRuntime
+  const first = syncAccount({ ...deps(), runtime: slow }, id)
+  await inside
+  const second = await syncAccount(deps(), id)
+  release()
+  expect([second.state, (await first).state]).toEqual(["busy", "done"])
   expect(await jobsOf("max")).toHaveLength(2)
   expect(await messagesOf("max")).toHaveLength(1)
 })
