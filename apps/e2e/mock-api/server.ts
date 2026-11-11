@@ -9,6 +9,7 @@ import {
   type FieldDescriptor,
   type FieldMapping,
   lookupInputSchema,
+  lookupOutputSchema,
   mapFieldsInputSchema,
   mapFieldsOutputSchema,
   profileDataSchema,
@@ -140,7 +141,10 @@ export async function startMockApi(): Promise<MockApi> {
     }
     if (method === "POST" && path === "/rpc/learning/lookup") {
       const input = parseInput(lookupInputSchema, body)
-      return { matches: lookup(input) }
+      const matches = lookup(input).map((match) =>
+        match.source === "none" ? match : { score: 1, timesUsed: 0, timesCorrected: 0, ...match },
+      )
+      return lookupOutputSchema.parse({ matches })
     }
     throw new HttpError(404, "NOT_FOUND", `The mock api has no ${method} ${path}`)
   }

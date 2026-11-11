@@ -28,11 +28,15 @@ test("messages with unknown shapes are rejected", () => {
 })
 
 test("fill report and open-options messages are strict", () => {
-  expect(isFillReportMessage({ type: "fill-report", filled: 2, review: 1 })).toBe(true)
-  expect(isFillReportMessage({ type: "fill-report", filled: 2, review: 1, problem: "rejected" })).toBe(true)
-  expect(isFillReportMessage({ type: "fill-report", filled: -1, review: 0 })).toBe(false)
-  expect(isFillReportMessage({ type: "fill-report", filled: 1, review: 0, problem: "<script>" })).toBe(false)
-  expect(isFillReportMessage({ type: "fill-report", filled: 1, review: 0, label: "Salary" })).toBe(false)
+  expect(isFillReportMessage({ type: "fill-report", filled: 2, review: 1, suggested: 0 })).toBe(true)
+  expect(isFillReportMessage({ type: "fill-report", filled: 2, review: 1, suggested: 0, problem: "rejected" })).toBe(
+    true,
+  )
+  expect(isFillReportMessage({ type: "fill-report", filled: -1, review: 0, suggested: 0 })).toBe(false)
+  expect(isFillReportMessage({ type: "fill-report", filled: 1, review: 0, suggested: 0, problem: "<script>" })).toBe(
+    false,
+  )
+  expect(isFillReportMessage({ type: "fill-report", filled: 1, review: 0, suggested: 0, label: "Salary" })).toBe(false)
   expect(isOpenOptionsMessage({ type: "open-options" })).toBe(true)
   expect(isOpenOptionsMessage({ type: "open-options", url: "https://evil.example" })).toBe(false)
 })

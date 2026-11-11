@@ -4,7 +4,6 @@ import { createRateLimiter } from "@/lib/detect/rate-limit"
 import { createFormWatcher } from "@/lib/detect/watch"
 import { noteFill } from "@/lib/dev-hook"
 import { createWorkerProvider } from "@/lib/fill-client"
-import { FILL_ERROR_ACTIONS, FILL_ERROR_TEXT, type FillErrorCode } from "@/lib/fill-config"
 import { type FillOutcome, handleFill, setMappingProvider } from "@/lib/fill-handler"
 import {
   type DisableSiteMessage,
@@ -22,6 +21,7 @@ import {
   type SiteDisabledMessage,
   type SiteDisabledResponse,
 } from "@/lib/messages"
+import { type FillTally, resultMessage } from "@/lib/toast/result"
 import { INITIAL_TOAST_STATE, reduceToast, type ToastEvent } from "@/lib/toast/state"
 import { createToastView } from "@/lib/toast/view"
 
@@ -36,11 +36,14 @@ type Report = Omit<FillReportMessage, "type">
 
 function toReport(outcome: FillOutcome): Report {
   return outcome.ok
-    ? { filled: outcome.filled, review: outcome.review, ...(outcome.problem ? { problem: outcome.problem } : {}) }
-    : { filled: 0, review: 0, problem: outcome.code }
+    ? {
+        filled: outcome.filled,
+        review: outcome.review,
+        suggested: outcome.suggested,
+        ...(outcome.problem ? { problem: outcome.problem } : {}),
+      }
+    : { filled: 0, review: 0, suggested: 0, problem: outcome.code }
 }
-
-const fields = (n: number) => `${n} ${n === 1 ? "field" : "fields"}`
 
 type Outgoing =
   | FormDetectedMessage
@@ -78,50 +81,46 @@ export default defineContentScript({
     })
 
     // one toast tells how the whole page went: this frame's fill and what trusted child frames report
-    let tally: { filled: number; review: number; problem?: FillErrorCode; children: number } = {
-      filled: 0,
-      review: 0,
-      children: 0,
-    }
+    let tally: FillTally & { children: number } = { filled: 0, review: 0, suggested: 0, children: 0 }
     let childWait: ReturnType<typeof setTimeout> | undefined
+    // a start while a fill is running is ignored: two shortcuts, or one during a fill, would double the api calls and the toast
+    let filling = false
 
     function showResult(final = false): void {
-      const { filled, review, problem } = tally
-      if (filled + review === 0 && problem) {
-        view.showMessage({ text: FILL_ERROR_TEXT[problem], actions: FILL_ERROR_ACTIONS[problem] })
-      } else if (filled + review === 0) {
-        if (formInChildFrame && tally.children === 0 && !final) {
-          clearTimeout(childWait)
-          childWait = setTimeout(() => showResult(true), CHILD_WAIT_MS)
-          return
-        }
-        view.showMessage({ text: "Nothing to fill" })
-      } else {
-        const need = review === 0 ? "" : review === 1 ? ", 1 needs review" : `, ${review} need review`
-        view.showMessage({
-          text: `Filled ${fields(filled)}${need}${problem ? ". Some answers could not be loaded." : ""}`,
-          actions: problem ? ["retry"] : [],
-        })
+      const waiting = formInChildFrame && tally.children === 0 && !final
+      const message = resultMessage(tally, waiting)
+      if (message) view.showMessage(message)
+      else {
+        clearTimeout(childWait)
+        childWait = setTimeout(() => showResult(true), CHILD_WAIT_MS)
       }
     }
 
     function addReport(report: Report): void {
       tally.filled += report.filled
       tally.review += report.review
+      tally.suggested += report.suggested
       tally.problem ??= report.problem
       showResult()
     }
 
     async function fillHere(): Promise<void> {
+      if (filling) return
+      filling = true
       noteFill(document)
-      const report = toReport(await handleFill())
-      if (isTop) addReport(report)
-      else send({ type: "fill-report", ...report })
+      try {
+        const report = toReport(await handleFill())
+        if (isTop) addReport(report)
+        else send({ type: "fill-report", ...report })
+      } finally {
+        filling = false
+      }
     }
 
     function fillFromTop(withFrames = true): void {
+      if (filling) return
       clearTimeout(childWait)
-      tally = { filled: 0, review: 0, children: 0 }
+      tally = { filled: 0, review: 0, suggested: 0, children: 0 }
       view.showMessage({ text: "Filling your application…", busy: true })
       void fillHere()
       if (withFrames && formInChildFrame) send({ type: "fill-frames" })

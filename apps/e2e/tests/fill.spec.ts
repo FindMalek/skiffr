@@ -98,7 +98,7 @@ test("a rejected token says to reconnect and offers the settings", async ({
   const { page, toast } = await openApplication(context, fixtureServer.origin)
 
   await toast.click("yes")
-  const result = await toast.waitFor((s) => s.title !== null && /rejected/i.test(s.title))
+  const result = await toast.waitFor((s) => s.title !== null && /no longer accepts/i.test(s.title))
 
   expect(result.buttons.map((button) => button.action)).toContain("settings")
   await expect(page.locator(FIELDS.first)).toHaveValue("")

@@ -39,6 +39,8 @@ export function isFillRequestMessage(message: unknown): boolean {
  */
 export function createFillRequestHandler(deps: FillRequestDeps): FillRequestHandler {
   const limits = new Map<number, () => boolean>()
+  /** One per tab: closing the tab stops the api work still running for it. */
+  const stops = new Map<number, AbortController>()
 
   async function respond(message: unknown, tabId: number, sender: FillSender): Promise<FillResponse> {
     const allow = limits.get(tabId) ?? createRateLimiter(REQUEST_LIMIT.max, REQUEST_LIMIT.windowMs, deps.now)
@@ -51,7 +53,9 @@ export function createFillRequestHandler(deps: FillRequestDeps): FillRequestHand
     if (sender.frameId !== 0 && !(await deps.isTrustedFrame(tabId, sender.frameId as number, sender.documentId))) {
       return { ok: false, code: "invalid" }
     }
-    return deps.service.run(parsed.data)
+    const stop = stops.get(tabId) ?? new AbortController()
+    stops.set(tabId, stop)
+    return deps.service.run(parsed.data, stop.signal)
   }
 
   return {
@@ -71,6 +75,10 @@ export function createFillRequestHandler(deps: FillRequestDeps): FillRequestHand
       }
       return respond(message, tabId, sender)
     },
-    forgetTab: (tabId) => void limits.delete(tabId),
+    forgetTab: (tabId) => {
+      limits.delete(tabId)
+      stops.get(tabId)?.abort()
+      stops.delete(tabId)
+    },
   }
 }

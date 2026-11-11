@@ -276,9 +276,6 @@ describe("profile cache", () => {
     service.clear()
     await service.run(request([field("a", "Name")]))
     expect(seen.profile).toBe(3)
-    const quiet = setup()
-    await quiet.service.run(request([field("a", "Name")]))
-    expect(quiet.seen.profile).toBe(0)
   })
 
   test("two requests at once share one profile read", async () => {
@@ -324,12 +321,55 @@ describe("failures", () => {
     expect(seen.map).toEqual([])
   })
 
-  test("a revoked token on the model call is not a partial success", async () => {
+  test("a token revoked after the lookup still fills the saved answer and points at the settings", async () => {
     const { service } = setup({
       matches: () => [{ fieldId: "a", source: "exact", value: "Ana", autofill: true }],
       mapFields: () => Promise.reject(new ORPCError("UNAUTHORIZED")),
     })
-    expect(await service.run(request([field("a", "x"), field("b", "y")]))).toEqual({ ok: false, code: "rejected" })
+    const out = await service.run(request([field("a", "x"), field("b", "y")]))
+    if (!out.ok) throw new Error("expected ok")
+    expect(out.mapping).toHaveLength(1)
+    expect(out.summary.problem).toBe("rejected")
+  })
+
+  test("a site answer and a failing model still fills the site answer (every tier counts)", async () => {
+    for (const source of ["site", "exact", "label"] as const) {
+      const { service } = setup({
+        matches: () => [{ fieldId: "a", source, value: "Ana", autofill: true }],
+        mapFields: unavailable,
+      })
+      const out = await service.run(request([field("a", "First name"), field("b", "Other")]))
+      if (!out.ok) throw new Error(`expected ok for ${source}`)
+      expect(out.mapping).toHaveLength(1)
+      expect(out.summary).toMatchObject({ [source]: 1, problem: "unavailable" })
+    }
+  })
+
+  test("the paid model call is never repeated after a timeout or a 5xx, only when it never reached the server", async () => {
+    const calls = { timeout: 0, http: 0, offline: 0 }
+    const run = async (kind: keyof typeof calls, error: unknown) => {
+      const { service } = setup({
+        matches: () => [{ fieldId: "a", source: "site", value: "Ana", autofill: true }],
+        mapFields: () => {
+          calls[kind]++
+          return Promise.reject(error)
+        },
+      })
+      await service.run(request([field("a", "x"), field("b", "y")]))
+    }
+    await run("timeout", new DOMException("t", "TimeoutError"))
+    await run("http", new ORPCError("SERVICE_UNAVAILABLE"))
+    await run("offline", new TypeError("Failed to fetch"))
+    expect(calls).toEqual({ timeout: 1, http: 1, offline: 2 })
+  })
+
+  test("a lookup that timed out or could not connect stops the fill: the model call would fail the same way", async () => {
+    for (const error of [new DOMException("t", "TimeoutError"), new TypeError("Failed to fetch")]) {
+      const { service, seen } = setup({ lookup: () => Promise.reject(error) })
+      const out = await service.run(request([field("a", "Name")]))
+      expect(out.ok).toBe(false)
+      expect(seen.map).toEqual([])
+    }
   })
 
   test("no token configured", async () => {
@@ -434,4 +474,69 @@ test("no field text, value or error text reaches the console", async () => {
   await service.run(request([field("a", "secret-label"), field("b", "secret-label-2")]))
   for (const spy of spies) expect(spy).not.toHaveBeenCalled()
   for (const spy of spies) spy.mockRestore()
+})
+
+describe("settings change, deadline and cancel", () => {
+  test("a profile read that was in flight when the settings changed is dropped, and the next fill reads the new one", async () => {
+    let release: (value: unknown) => void = () => {}
+    let reads = 0
+    const { service } = setup({
+      map: (ids) => ids.map((id) => profileMap(id, "identity.firstName")),
+      profile: () => {
+        reads++
+        if (reads === 1) return new Promise((resolve) => (release = resolve))
+        return Promise.resolve({ ...PROFILE, data: { ...PROFILE.data, identity: { firstName: "Bea" } } })
+      },
+    })
+    const first = service.run(request([field("a", "Name")]))
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    service.clear()
+    release(PROFILE)
+    expect(await first).toEqual({ ok: false, code: "changed" })
+    const second = await service.run(request([field("a", "Name")]))
+    if (!second.ok) throw new Error("expected ok")
+    expect(second.values).toEqual({ "identity.firstName": "Bea" })
+  })
+
+  test("a model value is always for review, whatever its confidence", async () => {
+    const { service } = setup({
+      map: () => [{ id: "a", action: "generate", value: "No", confidence: 0.99, reason: "" }],
+    })
+    const out = await service.run(request([field("a", "Do you need sponsorship?")]))
+    if (!out.ok) throw new Error("expected ok")
+    expect(out.mapping[0]?.confidence).toBeLessThan(FILL_CONFIDENCE_REVIEW)
+    expect(out.summary).toMatchObject({ generated: 1, review: 1 })
+  })
+
+  test("a profile key that is an object property name is not a profile key", async () => {
+    const { service } = setup({ map: () => [profileMap("a", "constructor"), profileMap("b", "toString")] })
+    const out = await service.run(request([field("a", "x"), field("b", "y")]))
+    if (!out.ok) throw new Error("expected ok")
+    expect(out.mapping).toEqual([])
+  })
+
+  test("one deadline covers every batch: what finished is kept, the rest is reported", async () => {
+    let time = 0
+    const { service, seen } = setup({
+      now: () => time,
+      map: (ids) => {
+        time += 30_000
+        return ids.map((id) => profileMap(id, "identity.firstName"))
+      },
+    })
+    const many = Array.from({ length: 130 }, (_, i) => field(`f${i}`, `Question ${i}`))
+    const out = await service.run(request(many))
+    if (!out.ok) throw new Error("expected ok")
+    expect(seen.map).toHaveLength(2)
+    expect(out.mapping).toHaveLength(120)
+    expect(out.summary.problem).toBe("timeout")
+  })
+
+  test("a request whose tab is gone stops before it calls the api", async () => {
+    const { service, seen } = setup()
+    const stop = new AbortController()
+    stop.abort()
+    expect((await service.run(request([field("a", "Name")]), stop.signal)).ok).toBe(false)
+    expect(seen.lookup).toEqual([])
+  })
 })

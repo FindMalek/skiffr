@@ -81,6 +81,7 @@ export const fillReportMessageSchema = z.strictObject({
   type: z.literal("fill-report"),
   filled: count,
   review: count,
+  suggested: count,
   problem: errorCode.optional(),
 })
 

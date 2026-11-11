@@ -1,7 +1,14 @@
 import { type AtsId, matchAts } from "./ats"
 import { type ControlInfo, collectControls, countControlCandidates, MAX_CONTROLS, type Signal } from "./controls"
 
-export type Detection = { isForm: boolean; ats: AtsId | null; confidence: number; reasons: string[] }
+export type Detection = {
+  isForm: boolean
+  ats: AtsId | null
+  confidence: number
+  reasons: string[]
+  /** The form or dialog that scored best: what a fill is scoped to. The body when the page has no form around its fields. */
+  container: Element | null
+}
 
 const MIN_CONTROLS = 3
 const MIN_SIGNALS = 2
@@ -72,18 +79,30 @@ export function detectApplicationForm(doc: Document, url: string = doc.location?
   let ats = matchAts(url)
   if (ats === "linkedin" && !doc.querySelector(LINKEDIN_APPLY_SELECTOR)) ats = null
   if (countControlCandidates(doc) < MIN_CONTROLS) {
-    return { isForm: false, ats, confidence: 0, reasons: ["too few inputs on the page"] }
+    return { isForm: false, ats, confidence: 0, reasons: ["too few inputs on the page"], container: null }
   }
 
   if (countControlCandidates(doc) > MAX_CONTROLS) {
-    return { isForm: false, ats, confidence: 0, reasons: [`too many controls to analyse (over ${MAX_CONTROLS})`] }
+    return {
+      isForm: false,
+      ats,
+      confidence: 0,
+      reasons: [`too many controls to analyse (over ${MAX_CONTROLS})`],
+      container: null,
+    }
   }
 
-  let best: Detection = { isForm: false, ats, confidence: 0, reasons: ["no form with enough fillable controls"] }
+  let best: Detection = {
+    isForm: false,
+    ats,
+    confidence: 0,
+    reasons: ["no form with enough fillable controls"],
+    container: null,
+  }
   for (const [group, controls] of groupControls(doc)) {
     const result = scoreGroup(doc, url, ats, group, controls)
     if ((result.isForm && !best.isForm) || (result.isForm === best.isForm && result.confidence > best.confidence)) {
-      best = { ...result, ats }
+      best = { ...result, ats, container: group }
     }
   }
   return best

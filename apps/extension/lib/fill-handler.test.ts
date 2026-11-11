@@ -124,15 +124,15 @@ test("round trip: the worker fills from a saved answer and the profile, outlines
 
   const outcome = await handleFill(doc)
 
-  expect(outcome.ok && [outcome.filled, outcome.review]).toEqual([3, 2])
+  expect(outcome.ok && [outcome.filled, outcome.review, outcome.suggested]).toEqual([3, 1, 1])
   expect(input(doc, "first_name").value).toBe("Ana")
   expect(input(doc, "last_name").value).toBe("Silva")
   expect(input(doc, "pronouns").value).toBe("she/her")
   expect(input(doc, "where").value).toBe("")
   expect(input(doc, "email").value).toBe("typed@by.me")
-  expect(input(doc, "last_name").style.getPropertyValue("outline")).toContain("dashed")
+  expect(input(doc, "last_name").style.getPropertyValue("outline")).toContain("solid")
   expect(input(doc, "first_name").style.getPropertyValue("outline")).toBe("")
-  expect(input(doc, "where").style.getPropertyValue("outline")).toContain("dashed")
+  expect(input(doc, "where").style.getPropertyValue("outline")).toContain("solid")
   expect(submitted()).toBe(false)
 
   const request = JSON.stringify(sent)
@@ -155,7 +155,7 @@ test("a second fill clears the outlines the first one left", async () => {
   })
   setMappingProvider(createWorkerProvider(send, () => "https://careers.example/apply"))
   await handleFill(doc)
-  expect(input(doc, "last_name").style.getPropertyValue("outline")).toContain("dashed")
+  expect(input(doc, "last_name").style.getPropertyValue("outline")).toContain("solid")
   input(doc, "last_name").value = ""
   setMappingProvider(async () => ({ mapping: [], values: {} }))
   await handleFill(doc)
@@ -222,4 +222,136 @@ test("labels and values stay out of the console", async () => {
     expect(spy).not.toHaveBeenCalled()
     spy.mockRestore()
   }
+})
+
+const SITE = () => "https://careers.example/apply"
+
+function sink() {
+  const sent: FillRequestMessage[] = []
+  const send = async (message: FillRequestMessage) => {
+    sent.push(structuredClone(message))
+    return {
+      ok: true,
+      mapping: message.fields.map((f) => ({
+        id: f.id,
+        action: "generate",
+        value: "x",
+        confidence: 0.9,
+        reason: "",
+      })),
+      values: {},
+      suggestions: [],
+      summary: { site: 0, exact: 0, label: 0, profile: 0, generated: 0, review: 0, suggested: 0, skipped: 0 },
+    }
+  }
+  return { sent, send }
+}
+
+test("only the detected application form is asked about: a search box and a newsletter box stay out", async () => {
+  const window = new Window({ url: "https://careers.example/apply" })
+  window.document.title = "Apply for Senior Engineer"
+  window.document.write(`
+    <form role="search" action="/s"><input type="search" name="q" aria-label="Search jobs"></form>
+    <form id="news" action="/newsletter"><label>Newsletter email <input type="email" name="nl"></label><button>Subscribe</button></form>
+    <form id="app">
+      <label>First name <input name="first_name"></label>
+      <label>Last name <input name="last_name"></label>
+      <label>Email <input type="email" name="email"></label>
+      <button type="submit">Submit application</button>
+    </form>`)
+  const doc = window.document as unknown as Document
+  const { sent, send } = sink()
+  setMappingProvider(createWorkerProvider(send, SITE))
+  const outcome = await handleFill(doc)
+  expect(sent[0]?.fields.map((f) => f.label)).toEqual(["First name", "Last name", "Email"])
+  expect(outcome.ok && outcome.filled).toBe(3)
+  expect(input(doc, "nl").value).toBe("")
+  expect(input(doc, "q").value).toBe("")
+})
+
+test("a page with no detectable form still never asks about search boxes or newsletter forms", async () => {
+  const { doc } = page(`
+    <input type="search" name="q" aria-label="Search">
+    <form id="news" action="/newsletter"><label>Email <input type="email" name="nl"></label></form>`)
+  const { sent, send } = sink()
+  setMappingProvider(createWorkerProvider(send, SITE))
+  await handleFill(doc)
+  expect(sent).toEqual([])
+})
+
+test("a form the page swapped out during the request counts as not filled", async () => {
+  const { doc } = page(
+    `<label>First name <input name="first_name"></label><label>Last name <input name="last_name"></label>`,
+  )
+  setMappingProvider(async (fields) => {
+    for (const field of fields) field.el.remove()
+    return {
+      mapping: fields.map((f) => ({
+        id: f.id,
+        action: "generate" as const,
+        value: "Ana",
+        confidence: 0.9,
+        reason: "",
+      })),
+      values: {},
+    }
+  })
+  expect(await handleFill(doc)).toMatchObject({ ok: false, code: "changed" })
+})
+
+test("an element that left the page while the others were filled is not counted", async () => {
+  const { doc } = page(
+    `<label>First name <input name="first_name"></label><label>Last name <input name="last_name"></label>`,
+  )
+  setMappingProvider(async (fields) => {
+    fields[1]?.el.remove()
+    return {
+      mapping: fields.map((f) => ({
+        id: f.id,
+        action: "generate" as const,
+        value: "Ana",
+        confidence: 0.9,
+        reason: "",
+      })),
+      values: {},
+    }
+  })
+  const outcome = await handleFill(doc)
+  expect(outcome.ok && outcome.filled).toBe(1)
+})
+
+test("the page navigating during the request makes the answer void", async () => {
+  const { doc } = page()
+  setMappingProvider(async (fields) => {
+    ;(doc.defaultView as unknown as { happyDOM: { setURL: (url: string) => void } }).happyDOM.setURL(
+      "https://careers.example/other",
+    )
+    return {
+      mapping: fields.map((f) => ({
+        id: f.id,
+        action: "generate" as const,
+        value: "Ana",
+        confidence: 0.9,
+        reason: "",
+      })),
+      values: {},
+    }
+  })
+  expect(await handleFill(doc)).toMatchObject({ ok: false, code: "changed" })
+  expect(input(doc, "first_name").value).toBe("")
+})
+
+test("outlined fields say why to assistive technology and lose it with the outline", async () => {
+  const { doc } = page(`<label>Last name <input name="last_name"></label><label>Where <input name="where"></label>`)
+  setMappingProvider(async (fields) => ({
+    mapping: [{ id: fields[0]?.id as string, action: "generate", value: "Silva", confidence: 0.5, reason: "" }],
+    values: {},
+    suggestions: [fields[1]?.id as string],
+  }))
+  const outcome = await handleFill(doc)
+  expect(input(doc, "last_name").getAttribute("aria-description")).toContain("check")
+  expect(input(doc, "where").getAttribute("aria-description")).toContain("suggestion")
+  expect(input(doc, "last_name").style.getPropertyValue("box-shadow")).toContain("#fbbf24")
+  if (outcome.ok) outcome.summary.clearHighlights()
+  expect(input(doc, "last_name").hasAttribute("aria-description")).toBe(false)
 })

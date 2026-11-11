@@ -117,3 +117,23 @@ test("a tab is limited, and the limit resets with time and per tab", async () =>
   expect(await handler.handle(message(), sender())).toEqual(OK)
   handler.forgetTab(1)
 })
+
+test("closing the tab stops the api work still running for it", async () => {
+  let seen: AbortSignal | undefined
+  const handler = createFillRequestHandler({
+    extensionId: "ext",
+    extensionUrl: "chrome-extension://ext/",
+    service: {
+      run: async (_request, signal) => {
+        seen = signal
+        return OK
+      },
+      clear: () => {},
+    },
+    isTrustedFrame: async () => true,
+  })
+  await handler.handle(message(), sender())
+  expect(seen?.aborted).toBe(false)
+  handler.forgetTab(1)
+  expect(seen?.aborted).toBe(true)
+})

@@ -108,3 +108,32 @@ test("the toast asks again after a result was closed", async () => {
   expect(hosts(doc)[0]?.shadowRoot?.querySelector(".title")?.textContent).toBe("Autofill this application?")
   view.hide()
 })
+
+test("after a keyboard answer the result takes the focus the question had, a mouse answer does not", async () => {
+  const { window, doc, view } = setup()
+  view.show()
+  await tick()
+  const root = hosts(doc)[0]?.shadowRoot
+  const click = (detail: number) => {
+    const event = new window.MouseEvent("click", { bubbles: true, detail })
+    Object.defineProperty(event, "isTrusted", { value: true })
+    root?.querySelector('[data-action="yes"]')?.dispatchEvent(event as unknown as Event)
+  }
+  click(0)
+  view.hide()
+  view.showMessage({ text: "Filling…", busy: true })
+  const toast = () => hosts(doc)[0]?.shadowRoot?.querySelector(".toast")
+  expect(hosts(doc)[0]?.shadowRoot?.activeElement).toBe(toast() ?? null)
+  view.hide()
+
+  view.show()
+  await tick()
+  const root2 = hosts(doc)[0]?.shadowRoot
+  const mouse = new window.MouseEvent("click", { bubbles: true, detail: 1 })
+  Object.defineProperty(mouse, "isTrusted", { value: true })
+  root2?.querySelector('[data-action="yes"]')?.dispatchEvent(mouse as unknown as Event)
+  view.hide()
+  view.showMessage({ text: "Filling…", busy: true })
+  expect(hosts(doc)[0]?.shadowRoot?.activeElement ?? null).toBeNull()
+  view.hide()
+})

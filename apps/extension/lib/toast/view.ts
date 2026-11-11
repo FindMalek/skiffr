@@ -53,6 +53,9 @@ export function createToastView(doc: Document, handlers: ToastHandlers): ToastVi
   let dismissMs = AUTO_DISMISS_MS
   let onDismiss: () => void = handlers.onTimeout
   let titleEl: HTMLElement | null = null
+  let toastEl: HTMLElement | null = null
+  // set when the last action came from the keyboard: the focus it had is gone with the question, so the answer takes it
+  let fromKeyboard = false
   let rowEl: HTMLElement | null = null
   let primary: (() => void) | null = handlers.onYes
   let onEscape: () => void = handlers.onNo
@@ -83,6 +86,7 @@ export function createToastView(doc: Document, handlers: ToastHandlers): ToastVi
     const row = doc.createElement("div")
     row.className = "row"
     titleEl = title
+    toastEl = toast
     rowEl = row
     row.append(
       button(doc, "Yes", "yes", "primary"),
@@ -101,13 +105,17 @@ export function createToastView(doc: Document, handlers: ToastHandlers): ToastVi
     toast.addEventListener("click", (event) => {
       if (!event.isTrusted) return
       const action = (event.target as HTMLElement).closest<HTMLElement>("[data-action]")?.dataset.action
+      // a click with no pointer (detail 0) is Enter or Space on a focused button
+      if (action) fromKeyboard = event.detail === 0
       if (action) actions[action]?.()
     })
     toast.addEventListener("keydown", (event) => {
       if (!event.isTrusted) return
       if (event.key === "Escape") onEscape()
-      else if (event.key === "Enter" && event.target === toast && primary) primary()
-      else return
+      else if (event.key === "Enter" && event.target === toast && primary) {
+        fromKeyboard = true
+        primary()
+      } else return
       event.preventDefault()
       event.stopPropagation()
     })
@@ -195,6 +203,8 @@ export function createToastView(doc: Document, handlers: ToastHandlers): ToastVi
       const buttons = actions.map((action, i) => button(doc, ACTION_LABEL[action], action, i === 0 ? "primary" : ""))
       if (!busy) buttons.push(button(doc, "Close", "close", "link"))
       rowEl.replaceChildren(...buttons)
+      if (fromKeyboard) toastEl?.focus({ preventScroll: true })
+      fromKeyboard = false
       arm()
     },
     hide() {
@@ -208,7 +218,11 @@ export function createToastView(doc: Document, handlers: ToastHandlers): ToastVi
       const hadFocus = host !== null && doc.activeElement === host
       host?.remove()
       host = null
-      if (hadFocus && previousFocus instanceof HTMLElement && previousFocus.isConnected) {
+      if (
+        hadFocus &&
+        previousFocus instanceof (doc.defaultView?.HTMLElement ?? HTMLElement) &&
+        previousFocus.isConnected
+      ) {
         previousFocus.focus({ preventScroll: true })
       }
       previousFocus = null
