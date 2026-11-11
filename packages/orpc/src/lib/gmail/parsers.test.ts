@@ -89,8 +89,8 @@ test("generic sender: links read from the url, tracker redirects kept as they ca
     title: "Platform Engineer",
     company: "StartupCo",
     location: "Lisbon",
-    canonicalId: "boards.greenhouse.io/startupco/jobs/4455667?gh_jid=4455667",
-    url: "https://boards.greenhouse.io/startupco/jobs/4455667?gh_jid=4455667",
+    canonicalId: "greenhouse:startupco:4455667",
+    url: "https://job-boards.greenhouse.io/startupco/jobs/4455667",
     unresolved: false,
   })
   expect(jobs[1]).toMatchObject({
@@ -130,10 +130,17 @@ test("canonical ids: tracking parameters and fragments are dropped, boards reduc
     "linkedin:3912345678",
   )
   expect(id("https://www.linkedin.com/comm/jobs/search?currentJobId=3912345678&trk=eml")).toBe("linkedin:3912345678")
-  expect(id("https://jobs.lever.co/acme/abc-123/?lever-source=email&utm_source=x")).toBe("jobs.lever.co/acme/abc-123")
-  expect(id("https://www.Acme.dev/careers/1?utm_medium=email&b=2&a=1")).toBe("acme.dev/careers/1?a=1&b=2")
+  expect(id("https://jobs.lever.co/acme/abc-123/?lever-source=email&utm_source=x")).toBe(
+    "url:jobs.lever.co/acme/abc-123",
+  )
+  expect(id("https://jobs.lever.co/acme/0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0?lever-source=email")).toBe(
+    "lever:acme:0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0",
+  )
+  expect(id("https://www.Acme.dev/careers/1?utm_medium=email&b=2&a=1")).toBe("url:acme.dev/careers/1?a=1&b=2")
   expect(id("https://email.mailer.example/ls/click?upn=1")).toBe("unresolved")
-  expect(id("https://tracker.example/r?url=https%3A%2F%2Fjobs.acme.dev%2F42%3Futm_source%3Dx")).toBe("jobs.acme.dev/42")
+  expect(id("https://tracker.example/r?url=https%3A%2F%2Fjobs.acme.dev%2F42%3Futm_source%3Dx")).toBe(
+    "url:jobs.acme.dev/42",
+  )
   expect(id("ftp://x.example/1")).toBeUndefined()
   expect(id("javascript:alert(1)")).toBeUndefined()
 })

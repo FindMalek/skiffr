@@ -1,5 +1,5 @@
 import { SHORT_TEXT_MAX, URL_MAX } from "@skiffr/common/constants"
-import { GLASSDOOR_HOST, INDEED_HOST, LINKEDIN_HOST, WELLFOUND_HOST } from "./boards"
+import { canonicalizeJob, isBoardHost } from "@skiffr/common/utils"
 import { sha256 } from "./crypto"
 
 export type CanonicalUrl =
@@ -23,8 +23,6 @@ const REDIRECT_PARAMS = [
 const TRACKER_HOST =
   /^(?:click|clicks|links?|track|tracking|trk|email|e|em\d*|mail|mailer|go|r|t|u|url|redirect|ct|cts|clk|lnk|mandrillapp|sendgrid|list-manage|hubspotlinks|customeriomail)\.|(?:^|\.)(?:sendgrid\.net|list-manage\.com|mandrillapp\.com|mailchimp\.com|bit\.ly|lnkd\.in|t\.co|ow\.ly|tinyurl\.com|rs6\.net|exct\.net|sparkpostmail\d*\.com|customeriomail\.com|hubspotlinks\.com)$/
 const TRACKER_PATH = /^\/(?:ls\/click|redirect|track|click|clk|e\/c\/|r\/|u\/|rc\/clk\/dl|pagead\/clk)/i
-const TRACKING_PARAM =
-  /^(?:utm_.*|mc_.*|trk.*|track.*|ref|refid|referrer|source|src|campaign|gclid|fbclid|msclkid|dclid|_hs.*|mkt_tok|midtoken|midsig|eid|lipi|lgtl|otptoken|gh_src|lever-.*|sid|cid|click_?id|trackingid|vjs|tk|from|fccid|sk|bb|xkcb|advn|adid)$/i
 
 function parse(raw: string): URL | null {
   if (raw.length > RAW_URL_MAX) return null
@@ -53,71 +51,29 @@ function job(url: string, canonicalId: string): CanonicalUrl | null {
   return url.length <= URL_MAX && canonicalId.length <= SHORT_TEXT_MAX ? { kind: "job", url, canonicalId } : null
 }
 
-function known(url: URL): CanonicalUrl | null | undefined {
-  const host = url.hostname.toLowerCase()
-  const param = (...names: string[]) => names.map((name) => url.searchParams.get(name)).find(Boolean) ?? null
-  if (LINKEDIN_HOST.test(host)) {
-    const id =
-      url.pathname.match(/\/jobs\/view\/(?:[^/?#]*-)?(\d{5,})/)?.[1] ??
-      (/\/jobs\//.test(url.pathname) ? param("currentJobId")?.match(/^\d{5,}$/)?.[0] : undefined)
-    return id ? job(`https://www.linkedin.com/jobs/view/${id}`, `linkedin:${id}`) : undefined
-  }
-  if (INDEED_HOST.test(host)) {
-    const jk = param("jk", "vjk")
-    if (!jk) return undefined
-    return /^[A-Za-z0-9]{8,40}$/.test(jk) ? job(`https://${host}/viewjob?jk=${jk}`, `indeed:${jk}`) : null
-  }
-  if (GLASSDOOR_HOST.test(host)) {
-    const id = param("jl", "jobListingId")
-    if (!id) return undefined
-    return /^\d{5,}$/.test(id) ? job(`https://${host}/job-listing/j?jl=${id}`, `glassdoor:${id}`) : null
-  }
-  if (WELLFOUND_HOST.test(host)) {
-    const id = url.pathname.match(/\/jobs\/(\d{4,})/)?.[1]
-    return id ? job(`https://wellfound.com/jobs/${id}`, `wellfound:${id}`) : undefined
-  }
-  return undefined
-}
-
-function generic(url: URL): CanonicalUrl | null {
-  const host = url.hostname.toLowerCase().replace(/^www\./, "")
-  const path = url.pathname.replace(/\/+$/, "") || ""
-  const kept = [...url.searchParams]
-    .filter(([key]) => !TRACKING_PARAM.test(key))
-    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-  const query = new URLSearchParams(kept).toString()
-  const id = `${host}${path}${query ? `?${query}` : ""}`
-  const clean = `${url.protocol}//${url.hostname}${url.port ? `:${url.port}` : ""}${path}${query ? `?${query}` : ""}`
-  if (clean.length > URL_MAX) return null
-  return { kind: "job", url: clean, canonicalId: id.length <= SHORT_TEXT_MAX ? id : `url:${sha256(id).slice(0, 32)}` }
-}
+const BOARDS = ["linkedin", "indeed", "glassdoor"] as const
 
 /**
- * A stable id for the posting a link points at, read from the url alone: nothing is fetched and no redirect is followed,
- * since an email's links are attacker-chosen and tracked. Tracking parameters are dropped, the known boards reduce to
- * `linkedin:<id>`, `indeed:<jk>`, `glassdoor:<id>`, `wellfound:<id>`, any other link to its host and path.
+ * The posting a link points at, read from the url alone: nothing is fetched and no redirect is followed, since an email's
+ * links are attacker-chosen and tracked. The id and the stored link come from the shared `canonicalizeJob` (vendor links
+ * reduce to the vendor's clean link). Here only the email's own click trackers are unwrapped, down to the link they carry.
  */
 export function canonicalizeJobUrl(raw: string, depth = 0): CanonicalUrl | null {
   const url = parse(raw)
   if (!url) return null
-  const fromBoard = known(url)
-  if (fromBoard !== undefined) return fromBoard
+  url.username = ""
+  url.password = ""
+  const shared = canonicalizeJob(url.href)
+  if (shared.vendor) return job(shared.url, shared.canonicalId)
   if (depth < 2) {
     const target = embeddedTarget(url)
     if (target) return canonicalizeJobUrl(target.href, depth + 1)
   }
-  if (
-    looksLikeTracker(url) ||
-    LINKEDIN_HOST.test(url.hostname) ||
-    INDEED_HOST.test(url.hostname) ||
-    GLASSDOOR_HOST.test(url.hostname)
-  ) {
+  if (looksLikeTracker(url) || BOARDS.some((board) => isBoardHost(board, url.hostname))) {
     url.hash = ""
-    url.username = ""
-    url.password = ""
     return url.href.length <= URL_MAX ? { kind: "unresolved", url: url.href } : null
   }
-  return generic(url)
+  return job(shared.url, shared.canonicalId)
 }
 
 /** The id for a posting that only has a click tracker, so a repeat of it (same title and company) still dedupes. */

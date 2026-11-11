@@ -1,5 +1,5 @@
 import { SHORT_TEXT_MAX } from "@skiffr/common/constants"
-import { GLASSDOOR_HOST, INDEED_HOST, LINKEDIN_HOST, WELLFOUND_HOST, ZIPRECRUITER_HOST } from "./boards"
+import { BOARD_HOST } from "./boards"
 import { canonicalizeJobUrl, unresolvedId } from "./canonical"
 import { type Token, tokenize, tokenizeText } from "./html"
 import type { Provider } from "./senders"
@@ -22,15 +22,6 @@ export interface EmailBody {
 
 export const CANDIDATES_MAX = 40
 const LINES_AFTER_TITLE = 4
-
-/** Link hosts a known board's own emails may point at: a "linkedin" email linking elsewhere is not trusted to be a LinkedIn job. */
-const BOARD_HOST: Record<Exclude<Provider, "other">, RegExp> = {
-  linkedin: LINKEDIN_HOST,
-  indeed: INDEED_HOST,
-  glassdoor: GLASSDOOR_HOST,
-  wellfound: WELLFOUND_HOST,
-  ziprecruiter: ZIPRECRUITER_HOST,
-}
 
 /** Buttons, footers and badges that sit next to a job in an alert. */
 const NOISE =
@@ -76,7 +67,7 @@ function readCards(tokens: Token[], provider: Provider): JobCandidate[] {
     } catch {
       return
     }
-    if (board && !board.test(host)) return
+    if (board && !board(host)) return
     if (
       canonical.kind === "job" &&
       board &&

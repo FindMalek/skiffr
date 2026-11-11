@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, spyOn, test } from "bun:test"
 import { type Db, gmailAccount, gmailMessage, job } from "@skiffr/db"
 import { eq } from "drizzle-orm"
+import { queueJob } from "../jobs"
 import { syncNow } from "./accounts"
 import { INDEED_ALERT, LINKEDIN_ALERT, NEWSLETTER } from "./fixtures"
 import type { GmailRuntime } from "./google"
@@ -36,6 +37,7 @@ const USERS = [
   "oli",
   "pat",
   "quinn",
+  "rae",
 ]
 let db: Db
 let drop: () => Promise<void>
@@ -189,6 +191,22 @@ test("the same posting is queued once: across runs and emails", async () => {
   expect(result).toMatchObject({ imported: 1, duplicates: 1 })
   // duplicates are tidied too: they are the same jobs, already queued
   expect(["e1", "e2"].every(tidied)).toBe(true)
+})
+
+test("a job from gmail and the same job added by hand are one row, whichever came first", async () => {
+  const { id } = await connectAccount(db, mock, "rae")
+  const add = (url: string) =>
+    queueJob(db, "rae", { url, title: "Added by hand", company: "Acme", source: "dashboard" }, NOW)
+  expect((await add("https://www.linkedin.com/jobs/view/senior-engineer-at-acme-3912345678?refId=x")).created).toBe(
+    true,
+  )
+  mock.add({ id: "r1", from: LINKEDIN_FROM, html: LINKEDIN_ALERT })
+
+  const result = await syncAccount(deps(), id)
+
+  expect(result).toMatchObject({ imported: 1, jobsAdded: 1 })
+  expect((await add("https://www.linkedin.com/jobs/view/3987654321/?trackingId=zz")).created).toBe(false)
+  expect((await jobsOf("rae")).map((j) => j.canonicalId).sort()).toEqual(["linkedin:3912345678", "linkedin:3987654321"])
 })
 
 test("an email from another sender with the same title and company never suppresses a board's jobs", async () => {

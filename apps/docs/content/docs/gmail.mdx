@@ -13,7 +13,7 @@ Every 15 minutes (and when you press **Sync now**) skiffr looks for unread inbox
 
 - An email with no jobs in it is left exactly where it is.
 - Emails are never deleted, trashed or sent.
-- The same posting is queued once: by its id (`linkedin:<id>`, `indeed:<jk>`, otherwise host and path with tracking parameters removed), and across boards by title and company.
+- The same posting is queued once: by the same id the dashboard and the extension use (`linkedin:<id>`, `indeed:<jk>`, `greenhouse:...`, otherwise the link without tracking parameters), so a job found in an email and the same job added by hand are one row. A link that is only a click tracker is matched by title and company.
 - Links in emails are never opened by the server. A click-tracking link whose posting can't be read from the link itself is stored as it came and shown with a "Tracking link" badge.
 - Default senders are LinkedIn, Indeed, Glassdoor, Wellfound and ZipRecruiter alert addresses. They are a best-effort starting point: edit them if your alerts come from another address.
 

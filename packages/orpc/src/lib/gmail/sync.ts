@@ -1,6 +1,7 @@
 import { GMAIL_LABEL } from "@skiffr/common/constants"
 import { type Db, gmailAccount, gmailMessage, gmailMessageJob, job } from "@skiffr/db"
 import { and, eq, inArray, isNull, lt, or, sql } from "drizzle-orm"
+import { queueJob } from "../jobs"
 import { CryptoError, open } from "./crypto"
 import { GoogleError, logSyncFailure, type SyncError, syncErrorOf } from "./errors"
 import { ensureLabel, type GmailApi, type GmailRuntime, gmail, refreshAccessToken } from "./google"
@@ -189,20 +190,31 @@ async function store(
     const source = `gmail:${provider}`
     const added: string[] = []
     for (const candidate of candidates) {
-      const [created] = await tx
-        .insert(job)
-        .values({
-          userId: account.userId,
-          url: candidate.url,
-          canonicalId: candidate.canonicalId,
-          title: candidate.title,
-          company: candidate.company,
-          source,
-          queuedAt: now,
-        })
-        .onConflictDoNothing()
-        .returning({ id: job.id })
-      if (created) added.push(created.id)
+      // A posting with only a click tracker has no vendor id: its id is made from title and company, kept here.
+      if (candidate.unresolved) {
+        const [created] = await tx
+          .insert(job)
+          .values({
+            userId: account.userId,
+            url: candidate.url,
+            canonicalId: candidate.canonicalId,
+            title: candidate.title,
+            company: candidate.company,
+            source,
+            queuedAt: now,
+          })
+          .onConflictDoNothing()
+          .returning({ id: job.id })
+        if (created) added.push(created.id)
+        continue
+      }
+      const queued = await queueJob(
+        tx,
+        account.userId,
+        { url: candidate.url, title: candidate.title, company: candidate.company, source },
+        now,
+      )
+      if (queued.created) added.push(queued.job.id)
     }
     if (added.length > 0) {
       await tx.insert(gmailMessageJob).values(added.map((jobId) => ({ messageId: message.id, jobId })))

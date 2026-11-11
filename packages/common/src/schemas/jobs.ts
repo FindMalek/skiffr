@@ -1,6 +1,16 @@
 import { z } from "zod"
-import { APPLICATION_STATUSES, JOB_SETTABLE_STATUSES, JOB_STATUSES, SHORT_TEXT_MAX } from "../constants"
+import {
+  APPLICATION_STATUSES,
+  JOB_BULK_MAX,
+  JOB_SEARCH_MAX,
+  JOB_SETTABLE_STATUSES,
+  JOB_SOURCES_MAX,
+  JOB_STATUSES,
+  SHORT_TEXT_MAX,
+  URL_MAX,
+} from "../constants"
 import { pageSchema } from "./page"
+import { CLEAN_MESSAGE, clean } from "./text"
 import { httpUrlSchema } from "./url"
 
 export const jobStatusSchema = z.enum(JOB_STATUSES)
@@ -19,18 +29,75 @@ export const jobSchema = z.object({
   updatedAt: z.date(),
 })
 
+export const NOT_PUBLIC_MESSAGE = "That address is not a public job link."
+export const CREDENTIALS_MESSAGE = "The link can't contain a username or password."
+
+const PRIVATE_HOST = /(?:^|\.)(?:localhost|local|internal|lan|home\.arpa)$/
+const NUMERIC_HOST = /^[\d.]+$|^0x[0-9a-f]+$/i
+
+/**
+ * A job link ends up as an `href` the user clicks. So no control characters (postgres rejects a NUL), no
+ * `user:password@` part that makes it look like another host, and nothing that points inside a network: `localhost`,
+ * `.local`, `.internal`, `.lan`, `.home.arpa`, ip addresses and IPv6 literals.
+ */
+export const jobUrlSchema = z
+  .string()
+  .trim()
+  .max(URL_MAX)
+  .superRefine((value, ctx) => {
+    if (!clean(value)) return void ctx.addIssue({ code: "custom", message: CLEAN_MESSAGE })
+    let parsed: URL
+    try {
+      parsed = new URL(value)
+    } catch {
+      return
+    }
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return
+    if (parsed.username || parsed.password) return void ctx.addIssue({ code: "custom", message: CREDENTIALS_MESSAGE })
+    const host = parsed.hostname.toLowerCase().replace(/\.$/, "")
+    if (host.startsWith("[") || NUMERIC_HOST.test(host) || PRIVATE_HOST.test(host)) {
+      ctx.addIssue({ code: "custom", message: NOT_PUBLIC_MESSAGE })
+    }
+  })
+  .pipe(httpUrlSchema)
+
+const jobText = z.string().trim().min(1).max(SHORT_TEXT_MAX).refine(clean, CLEAN_MESSAGE)
+
+/** The id is always derived from the url on the server (`canonicalizeJob`), so a client can't split one job into two rows by sending its own. */
 export const jobInputSchema = z.object({
-  url: httpUrlSchema,
-  canonicalId: z.string().trim().min(1).max(SHORT_TEXT_MAX),
-  title: z.string().trim().min(1).max(SHORT_TEXT_MAX),
-  company: z.string().trim().min(1).max(SHORT_TEXT_MAX),
-  source: z.string().trim().min(1).max(SHORT_TEXT_MAX),
+  url: jobUrlSchema,
+  title: jobText,
+  company: jobText,
+  source: jobText,
 })
 
 /** `applied` isn't settable here: only `applications.create` marks a job applied. */
 export const jobUpdateSchema = z.object({ id: z.uuid(), status: z.enum(JOB_SETTABLE_STATUSES) })
 
-export const jobListSchema = pageSchema.extend({ status: jobStatusSchema.optional() }).prefault({})
+/** `newest` is the default list; `oldest` is the order the queue is worked in. */
+export const JOB_ORDERS = ["newest", "oldest"] as const
+
+export const jobListSchema = pageSchema
+  .extend({
+    status: jobStatusSchema.optional(),
+    source: jobText.optional(),
+    /** Matches the company or title, case insensitive. */
+    q: z.string().trim().min(1).max(JOB_SEARCH_MAX).refine(clean, CLEAN_MESSAGE).optional(),
+    order: z.enum(JOB_ORDERS).default("newest"),
+  })
+  .prefault({})
+
+export const jobCreatedSchema = jobSchema.extend({ created: z.boolean() })
+
+export const jobCountsSchema = z.object({
+  status: z.object({ queued: z.number(), applied: z.number(), skipped: z.number() }),
+  sources: z.array(z.object({ source: z.string(), count: z.number() })).max(JOB_SOURCES_MAX),
+})
+
+const jobIds = z.array(z.uuid()).min(1).max(JOB_BULK_MAX)
+export const jobBulkUpdateSchema = z.object({ ids: jobIds, status: z.enum(JOB_SETTABLE_STATUSES) })
+export const jobBulkRemoveSchema = z.object({ ids: jobIds })
+export const jobBulkResultSchema = z.object({ count: z.number() })
 
 export const applicationSchema = z.object({
   id: z.string(),
@@ -74,5 +141,6 @@ export const jobSourceSchema = z.object({
 export const jobSourceInputSchema = z.object({ url: httpUrlSchema })
 
 export type Job = z.infer<typeof jobSchema>
+export type JobCounts = z.infer<typeof jobCountsSchema>
 export type Application = z.infer<typeof applicationSchema>
 export type JobSource = z.infer<typeof jobSourceSchema>
