@@ -60,3 +60,31 @@ test("content scripts cannot read the stored token", async ({ context, optionsPa
   expect(String(result.result.value)).toMatch(/^denied/)
   expect(String(result.result.value)).not.toContain(SETTINGS.token)
 })
+
+test("a slow storage read does not overwrite what was typed", async ({ context, extensionId }) => {
+  await context.addInitScript(() => {
+    const local = chrome.storage?.local as { get: (key: string) => Promise<unknown> } | undefined
+    if (!local) return
+    const read = local.get.bind(local)
+    const flag = window as unknown as { storageRead?: boolean }
+    local.get = async (key) => {
+      await new Promise((resolve) => setTimeout(resolve, 400))
+      const stored = await read(key)
+      setTimeout(() => {
+        flag.storageRead = true
+      }, 50)
+      return stored
+    }
+  })
+  const page = await context.newPage()
+  await page.goto(`chrome-extension://${extensionId}/options.html`)
+  await page.getByLabel("API url").fill(SETTINGS.apiUrl)
+  await page.getByLabel("Token").fill(SETTINGS.token)
+  await page.waitForFunction(() => (window as unknown as { storageRead?: boolean }).storageRead === true)
+  await page.getByRole("button", { name: "Save" }).click()
+  await expect(page.getByRole("status")).toHaveText("Saved")
+
+  await page.reload()
+  await expect(page.getByLabel("API url")).toHaveValue(SETTINGS.apiUrl)
+  await expect(page.getByLabel("Token")).toHaveValue(SETTINGS.token)
+})

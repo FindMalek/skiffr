@@ -2,20 +2,22 @@ import { type ExtensionSettings, extensionSettingsSchema } from "@skiffr/common"
 import { TOKEN_PREFIX } from "@skiffr/common/constants"
 import { type FormEvent, useEffect, useState } from "react"
 import { browser } from "wxt/browser"
-import { CONNECTION_TEXT, type ConnectionResult, type TestConnectionMessage } from "@/lib/connection"
-import { DEFAULT_SETTINGS, getSettings, setSettings } from "@/lib/storage"
+import { CONNECTION_TEXT, type ConnectionResult, type TestConnectionMessage } from "../../lib/connection"
+import { DEFAULT_SETTINGS, getSettings, setSettings } from "../../lib/storage"
 
 type Status = "idle" | "saved" | "invalid" | "bad-token" | "error"
 
 export function App() {
   const [form, setForm] = useState<ExtensionSettings>(DEFAULT_SETTINGS)
   const [status, setStatus] = useState<Status>("idle")
+  const [loaded, setLoaded] = useState(false)
   const [connection, setConnection] = useState<ConnectionResult | "testing" | null>(null)
 
   useEffect(() => {
     getSettings()
       .then(setForm)
       .catch(() => setStatus("error"))
+      .finally(() => setLoaded(true))
   }, [])
 
   function update(field: keyof ExtensionSettings, value: string) {
@@ -66,13 +68,20 @@ export function App() {
       <form onSubmit={save}>
         <label>
           API url
-          <input type="url" required value={form.apiUrl} onChange={(event) => update("apiUrl", event.target.value)} />
+          <input
+            type="url"
+            required
+            disabled={!loaded}
+            value={form.apiUrl}
+            onChange={(event) => update("apiUrl", event.target.value)}
+          />
         </label>
         <label>
           Token
           <input
             type="password"
             autoComplete="off"
+            disabled={!loaded}
             value={form.token}
             onChange={(event) => update("token", event.target.value)}
           />
@@ -81,8 +90,10 @@ export function App() {
           Create a token in the Skiffr dashboard under <strong>Extension</strong>, then paste it here.
         </p>
         <fieldset>
-          <button type="submit">Save</button>
-          <button type="button" disabled={connection === "testing"} onClick={test}>
+          <button type="submit" disabled={!loaded}>
+            Save
+          </button>
+          <button type="button" disabled={!loaded || connection === "testing"} onClick={test}>
             Test connection
           </button>
         </fieldset>
