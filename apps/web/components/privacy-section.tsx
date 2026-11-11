@@ -1,9 +1,9 @@
-import { docsUrl } from "@/lib/seo"
+import { docsHref } from "@/lib/seo"
 
 const POINTS = [
   {
     title: "Your data stays on your server",
-    text: "Profile, answers and tokens are in your own Postgres. The extension talks only to the api you point it at, and has no analytics.",
+    text: "Profile, answers and tokens are in your own Postgres. The extension is built to talk only to the api you point it at, and has no analytics.",
   },
   {
     title: "The model sees a small slice",
@@ -15,7 +15,15 @@ const POINTS = [
   },
   {
     title: "Nothing is submitted for you",
-    text: "The fill engine never clicks submit and never touches password, hidden or file inputs. You review, you press the button.",
+    text: "The fill engine never submits a form or clicks submit, next or apply buttons, and never touches password or hidden inputs. It sets a file only on a resume or CV slot, and only when handed one. You review, you press the button.",
+  },
+  {
+    title: "Sensitive fields are not learned",
+    text: "Labels for secrets, cards, bank and government ids, birth dates and equal opportunity data are skipped, and so are values that look like a card number, an IBAN or a US social security number.",
+  },
+  {
+    title: "The learning log is bounded",
+    text: "It keeps raw labels and the filled and final values per user. Events older than 90 days are deleted when learning is next used, and they go with your account.",
   },
 ]
 
@@ -26,6 +34,10 @@ export function PrivacySection() {
         <h2 id="privacy-title" className="font-heading font-semibold text-3xl tracking-tight">
           Privacy first
         </h2>
+        <p className="mt-3 max-w-2xl text-muted-foreground">
+          These are the rules the code follows. The extension does not fill pages yet, so none of this has reached a
+          real application.
+        </p>
         <dl className="mt-8 grid gap-x-10 gap-y-6 md:grid-cols-2">
           {POINTS.map(({ title, text }) => (
             <div key={title}>
@@ -36,7 +48,7 @@ export function PrivacySection() {
         </dl>
         <p className="mt-8 text-sm">
           <a
-            href={`${docsUrl()}/docs/privacy`}
+            href={docsHref("privacy")}
             className="underline underline-offset-4 outline-none hover:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
           >
             Read exactly what leaves your machine

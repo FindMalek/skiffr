@@ -13,7 +13,7 @@ skiffr fills a form, you fix what is wrong, and the fixes become answers. The ta
 
 For every field the api tries, in this order, and stops at the first hit:
 
-1. **Exact fingerprint.** The same field on the same kind of form you already answered.
+1. **Exact fingerprint.** The same normalized label, the same control type and the same set of options (a hash of the option texts) as an answer you already have.
 2. **Normalized label.** The same question with different wording around it: case, punctuation and spacing are ignored.
 3. **Embedding similarity.** Questions that mean the same thing. This needs `OPENAI_API_KEY`, and it only ever produces a suggestion.
 4. **None.** The extension falls back to the language model, which maps the field to a profile key.
@@ -42,7 +42,8 @@ Each event is stored with the application it belongs to, which gives corrections
 - password, one-time code and card fields, and anything the page marks with an autocomplete token such as `cc-*`, `one-time-code`, `new-password`, `current-password` or `bday*`
 - labels for secrets, card and bank data, government and tax ids, birth dates, and equal opportunity categories (gender, ethnicity, race, disability, religion, veteran status, orientation, marital status), in English, French, German, Spanish and Arabic
 - control kinds outside an allowlist, and fields with no declared type
-- values over 300 characters: they are logged but not learned
+- values over 300 characters: the correction is logged but not learned, and if you correct a field to a value over 300 characters, the old learned answer for that label is deleted
+- values that look like a card number (13 to 19 digits that pass the Luhn check), a valid IBAN or a US social security number (`123-45-6789`): never stored or filled, whatever the field is called. This is a backstop for labels the lists above do not think of
 - anything beyond 2000 answers per user
 
 Embeddings are computed from the normalized question, never from the answer.
@@ -60,4 +61,6 @@ skiffr tells you which learned answers to keep or drop:
 
 You resolve each one. Nothing is deleted or rewritten without that.
 
-Correction events older than 90 days are purged.
+## Retention
+
+Each filled field is logged as an event: raw label, the value that was filled and the value you left (up to 2000 characters each), per user. Events older than 90 days are deleted, but only when the extension records new events or asks for suggestions, and at most 500 per call. An account that goes quiet keeps its old events until the next call. Events are deleted with the user (cascade), see [privacy](/docs/privacy).

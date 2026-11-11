@@ -1,5 +1,6 @@
 import { StarIcon } from "lucide-react"
 import { getRepo } from "@/lib/api"
+import { repoUrl } from "@/lib/seo"
 import { SITE } from "@/lib/site"
 import { ThemeToggle } from "./theme-toggle"
 
@@ -14,26 +15,28 @@ function GithubMark({ className }: { className?: string }) {
 export async function SiteFooter() {
   const repo = await getRepo()
   return (
-    <footer className="w-full border-t px-4 py-3.5 sm:px-6">
-      <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 font-mono text-xs sm:flex-row">
+    <footer className="w-full border-t py-3.5">
+      <div className="mx-auto flex w-full max-w-6xl flex-col items-center justify-between gap-3 px-4 font-mono text-xs sm:flex-row sm:px-6">
         <span className="text-muted-foreground">
           <span className="font-medium text-foreground">{SITE.name}</span> · {SITE.license}
         </span>
         <span className="flex items-center gap-3">
-          {repo && (
-            <a
-              href={repo.url}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1.5 border bg-card px-2.5 py-1 outline-none transition-colors hover:border-foreground/30 focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <GithubMark className="size-3.5" />
-              <span className="hidden text-muted-foreground sm:inline">{repo.name}</span>
+          <a
+            href={repo?.url ?? repoUrl()}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1.5 border bg-card px-2.5 py-1 outline-none transition-colors hover:border-foreground/30 focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <GithubMark className="size-3.5" />
+            <span className="hidden text-muted-foreground sm:inline">
+              {repo?.name ?? new URL(repoUrl()).pathname.slice(1)}
+            </span>
+            {repo && (
               <span className="inline-flex items-center gap-0.5 text-primary">
                 <StarIcon className="size-3" /> {repo.stars}
               </span>
-            </a>
-          )}
+            )}
+          </a>
           <ThemeToggle />
         </span>
       </div>

@@ -13,7 +13,7 @@ There is one `.env` at the repo root. Every app loads it, and `packages/env` val
 | `API_PUBLIC_URL` | the api url the browser can reach |
 | `WEB_URL` | the landing page |
 | `DASHBOARD_URL` | the dashboard |
-| `DOCS_URL` | this site, read only by `apps/docs` and not part of the `packages/env` schema |
+| `DOCS_URL` | this site. Read by `apps/docs` and also by `apps/web`, which links to it. Not part of the `packages/env` schema. Set it in production: without it the landing page hides its docs links |
 
 ## Database and auth
 
@@ -22,7 +22,7 @@ There is one `.env` at the repo root. Every app loads it, and `packages/env` val
 | `DATABASE_URL` | postgres connection string |
 | `POSTGRES_PORT` | host port of the local docker postgres |
 | `SEED` | `demo` fills an empty database with sample data, `none` never seeds |
-| `BETTER_AUTH_SECRET` | `openssl rand -base64 32`, generated for you |
+| `BETTER_AUTH_SECRET` | at least 32 characters, no default: `openssl rand -base64 32`. The api does not start without it |
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | the first admin, created or reset on every api start |
 | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | optional github sign-in |
 

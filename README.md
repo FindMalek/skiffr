@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/header/grid.svg?title=skiffr&subtitle=Job+application+autofill+that+learns+from+every+form+you+fix&align=left&mode=dark" />
-    <img alt="skiffr" src="https://shieldcn.dev/header/grid.svg?title=skiffr&subtitle=Job+application+autofill+that+learns+from+every+form+you+fix&align=left&mode=light" />
+    <source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/header/grid.svg?title=skiffr&subtitle=Job+application+autofill+that+learns.+Early+development.&align=left&mode=dark" />
+    <img alt="skiffr" src="https://shieldcn.dev/header/grid.svg?title=skiffr&subtitle=Job+application+autofill+that+learns.+Early+development.&align=left&mode=light" />
   </picture>
 </p>
 
@@ -11,9 +11,9 @@
   <a href="https://github.com/FindMalek/skiffr/stargazers"><img alt="GitHub stars" src="https://shieldcn.dev/github/stars/FindMalek/skiffr.svg?variant=secondary" /></a>
 </p>
 
-skiffr is an open-source Chrome extension that fills job applications from your own profile, and gets better each time you correct it. You host the api and the database yourself, nothing is submitted for you.
+skiffr is an open-source Chrome extension for job applications. The goal: fill the form from your own profile, learn from the corrections you make, and never submit anything for you. You host the api and the database yourself.
 
-> Pre-release. The backend, dashboard and fill engine are merged, the extension is not connected end to end yet. See [status](#status).
+> **Early development, not released.** There is no extension you can install and use yet. What exists today, separately, on `main`: the api and database, the dashboard, AI field mapping, the learning api (correction log and answer lookup) and a tested fill engine. What is coming: connecting them in the browser, so a page is detected, you are asked, it fills, and your edits are learned. See [status](#status).
 
 ## Status
 
@@ -24,10 +24,10 @@ What is on `main` today, and what is not.
 | Api: profile, answer bank, jobs, applications, notes, extension tokens | works | oRPC on bun, Postgres with pgvector, covered by router tests |
 | Dashboard | works | sign in, edit your profile, create and revoke extension tokens, notes |
 | AI field mapping and answer drafting | works, api only | Groq `openai/gpt-oss-120b`, the extension does not call it yet |
-| Extension shell | works | Manifest V3, options page (api url, token, test connection), token kept away from content scripts, `Ctrl/Cmd+Shift+F` registered |
-| Fill engine | merged, not wired | React and Vue controlled inputs, selects, comboboxes, shadow DOM, same-origin iframes, honeypots. Never submits. Tested on fixture pages, not yet called from the extension |
+| Extension shell | works, does not fill | Manifest V3, options page (api url, token, test connection), token kept away from content scripts. `Ctrl/Cmd+Shift+F` is registered but fills nothing yet |
+| Fill engine | merged, not wired | React and Vue controlled inputs, selects, comboboxes, shadow DOM, same-origin iframes, honeypots. Never submits a form. Tested on fixture pages, not yet called from the extension |
 | Form detection and the "autofill this application?" toast | in review | [#45](https://github.com/FindMalek/skiffr/pull/45) |
-| Learning: correction log, answer lookup, suggestions | merged, not wired to the extension yet | [#49](https://github.com/FindMalek/skiffr/pull/49) |
+| Learning: correction log, answer lookup, suggestions | merged, api only, the extension does not send corrections yet | [#49](https://github.com/FindMalek/skiffr/pull/49) |
 | Playwright harness for the extension | in review | [#51](https://github.com/FindMalek/skiffr/pull/51) |
 | CI with real Postgres and an extension zip | works | required `ci` check |
 | Detect, fill and learn running together in the browser | planned | |
@@ -39,7 +39,7 @@ What is on `main` today, and what is not.
 
 ## How it works
 
-This is the design. The [status](#status) table says which parts run today.
+This is the design being built, not what the extension does today. The [status](#status) table says which parts run.
 
 ```mermaid
 flowchart LR
@@ -51,9 +51,9 @@ flowchart LR
   L -->|better answers next time| P
 ```
 
-1. **Detect.** The extension recognizes an application form on a page and asks before doing anything.
-2. **Fill.** Each field is matched to your profile or your answer bank. Known answers are used first, a language model maps what is left. The fill engine sets values the way a user would, so React and Vue forms register them. It skips password, hidden and file inputs, ignores honeypot fields, and never clicks submit.
-3. **Learn.** When you edit a filled value, the edit is logged as a correction. Answers are looked up by exact field fingerprint, then by normalized label, then by embedding similarity. Similarity is only ever a suggestion, never an automatic fill. The goal is corrections per application trending to zero, with advice on which learned answers to keep.
+1. **Detect** (planned, [#45](https://github.com/FindMalek/skiffr/pull/45) in review). The extension will recognize an application form and ask before doing anything.
+2. **Fill** (engine merged, not wired yet). Each field will be matched to your profile or your answer bank. The fill engine sets values the way a user would, so React and Vue forms register them. It never submits a form and never clicks submit, next or apply buttons. It does not touch password or hidden inputs and ignores honeypot fields. It sets a file only on a resume or CV upload slot, and only when it is handed a file. The checkboxes, radios and custom dropdowns it fills are clicked, along with the dropdown's own options, and nothing else.
+3. **Learn** (api merged, extension side planned). When you edit a filled value, the edit will be logged as a correction. The api already looks answers up by exact field fingerprint (label, control type and options), then by normalized label, then by embedding similarity. Similarity is only ever a suggestion, never an automatic fill. The goal is corrections per application trending to zero, with advice on which learned answers to keep.
 
 ## Architecture
 
@@ -87,10 +87,14 @@ You need node 24, pnpm, bun and docker.
 
 ```bash
 pnpm install
-cp .env.example .env     # set BETTER_AUTH_SECRET (openssl rand -base64 32) and ADMIN_PASSWORD
+cp .env.example .env     # then set BETTER_AUTH_SECRET and ADMIN_PASSWORD, see below
 pnpm db:up               # Postgres with pgvector on :5432
-pnpm dev
+pnpm dev --filter='!extension'
 ```
+
+In `.env`, `BETTER_AUTH_SECRET` must be at least 32 characters (`openssl rand -base64 32` gives 44) or the api refuses to start. `ADMIN_PASSWORD` must be at least 10 characters. If it or `ADMIN_EMAIL` is empty, no admin is created. `DATABASE_URL` already matches the local Postgres from `pnpm db:up`.
+
+`pnpm dev` runs `turbo dev`, which starts every workspace that has a `dev` script: web, api, dashboard, docs and also `extension` (`wxt`, which opens a development browser with the extension loaded). `pnpm dev --filter='!extension'` starts only the four apps below. To run the extension on its own: `pnpm --filter extension dev`.
 
 | App | Url |
 | --- | --- |
@@ -101,9 +105,9 @@ pnpm dev
 
 Sign in to the dashboard with `ADMIN_EMAIL` and `ADMIN_PASSWORD` from `.env`, save your profile, and create a token on the Extension page.
 
-### Load the extension
+### Load the extension (development only)
 
-The extension is not part of `pnpm dev`. It needs Chrome 142 or newer, or a Chromium browser of the same age (Arc, Brave, Edge).
+The extension does not fill pages yet, so this is for developers: you can check the options page and the connection to your api. It needs Chrome 142 or newer, or a Chromium browser of the same age (Arc, Brave, Edge).
 
 ```bash
 pnpm --filter extension build
@@ -113,19 +117,26 @@ Open `chrome://extensions`, turn on developer mode, choose "Load unpacked" and p
 
 ### Install from a CI build
 
-Every pull request builds a zip, uploaded as the artifact `extension-chrome-pr-<number>`, and every push to `main` uploads `extension-chrome-latest`. Open the [CI runs](https://github.com/FindMalek/skiffr/actions/workflows/ci.yml), pick a run, download the artifact (GitHub login required, artifacts expire after 14 days, `latest` after 90), unzip it and load the folder as unpacked. Signed releases and a Chrome Web Store listing are coming, not available yet.
+For testers, not users: the build loads, but it does not fill pages yet. Every pull request builds the extension and uploads the artifact `extension-chrome-pr-<number>`, and every push to `main` uploads `extension-chrome-latest`.
+
+1. Open the [CI runs](https://github.com/FindMalek/skiffr/actions/workflows/ci.yml), pick a run and download the artifact (GitHub login required, artifacts expire after 14 days, `latest` after 90).
+2. Unzip the download. GitHub wraps the artifact in its own zip, so inside is another zip, `extension-<version>-chrome.zip`.
+3. Extract that zip into a new empty folder. Its files (`manifest.json`, `background.js` and so on) are at the top level.
+4. In `chrome://extensions`, turn on developer mode, choose "Load unpacked" and pick that folder.
+
+There are no releases, signed packages or Chrome Web Store listing yet.
 
 ### Keyboard shortcut
 
-`Ctrl+Shift+F` (`Cmd+Shift+F` on macOS) asks the extension to fill the current page. Remap it at `chrome://extensions/shortcuts`.
+`Ctrl+Shift+F` (`Cmd+Shift+F` on macOS) is registered in the manifest and the background worker forwards it to the page, but it does not fill anything yet: the content script only logs in development builds. It will ask the extension to fill the current page once the fill engine is wired. You can already remap it at `chrome://extensions/shortcuts`.
 
 ### Commands
 
 | Command | What it does |
 | --- | --- |
-| `pnpm dev` | run every app except the extension |
+| `pnpm dev` | every workspace with a `dev` script: the four apps and the extension dev server. `pnpm dev --filter='!extension'` leaves the extension out |
 | `pnpm build` | build everything with turbo |
-| `pnpm lint` | biome and oxlint |
+| `pnpm lint` | `biome ci . && oxlint` over the whole repo |
 | `pnpm check` | biome format and fix |
 | `pnpm check-types` | typescript across the repo |
 | `pnpm test` | tests in every package |
@@ -154,14 +165,15 @@ skiffr is built to run on your own server: the api, the Next apps and a Postgres
 
 ## Privacy
 
-Your profile and answers live in your Postgres. This is what leaves your machine, exactly:
+Your profile and answers live in your Postgres. The extension does not fill pages yet, so today it only calls your api for the connection test. Below is what the connected flow will send, and what the api already accepts:
 
-- **To your own api:** field labels, names, placeholders, input types and option texts of the form being filled, the answers you correct, and your token. The extension has no analytics and talks to no other server.
+- **To your own api:** field labels, names, placeholders, input types and option texts of the form being filled, and the filled and final values of fields you correct (up to 2000 characters each). The extension has no analytics and is built to talk to no server except the api you set.
 - **To the language model provider you configured (Groq by default):** the same field descriptors, plus the names of your profile keys, plus the values of a short allowlist of keys: first and last name, city, country, work authorization, links, and a few free-form fields such as headline, skills or availability. Email, phone, address, pay, ids and dates of birth are not in the allowlist and are never sent. Password, hidden and file inputs are dropped before the request. Page text is wrapped as untrusted data in the prompt. When you ask for a drafted answer, it also gets the question, the job description and up to 5 of your earlier answers. Source: `packages/ai/src/shared-keys.ts`.
 - **To OpenAI, only if you set `OPENAI_API_KEY` (learning):** the normalized question label, to compute an embedding. Never the answer.
-- **Never:** form submission. The fill engine does not submit, click buttons, or touch password or hidden inputs.
-- **Tokens:** kept in extension storage restricted to trusted contexts. Only the background worker reads it and calls the api, content scripts on web pages never see it. The server stores a SHA-256 hash.
-- **Learned answers:** labels for secrets, card and bank data, government and tax ids, birth dates and equal opportunity categories are skipped by the learning code. Stored embeddings never leave the api.
+- **Never:** form submission. The fill engine does not submit a form, click submit, next or apply buttons, or touch password or hidden inputs. It sets a file only on a resume or CV slot and only when handed one, and clicks only the controls it fills (checkboxes, radios, custom dropdowns and their own options).
+- **Tokens:** the background worker and the extension's options page read the token and call the api. Content scripts on web pages are kept from it by `storage.local.setAccessLevel("TRUSTED_CONTEXTS")`, which needs Chrome 142 or newer (the manifest's `minimum_chrome_version`). The server stores a SHA-256 hash.
+- **Learned answers:** labels for secrets, card and bank data, government and tax ids, birth dates and equal opportunity categories are skipped by the learning code, and so are values that look like a card number (Luhn), an IBAN or a US social security number, whatever the field is called. Stored embeddings never leave the api.
+- **The event log:** for every filled field the api keeps one row with the raw label, the filled value and the final value, per user. Rows older than 90 days are deleted, but only when the extension records events or asks for suggestions, and 500 rows at a time. On a quiet account older rows can stay. Rows are removed with the user (foreign key `on delete cascade`). There is no self-service account deletion in the dashboard yet.
 
 The model providers have their own retention terms. If that is not acceptable, leave their keys unset: the product degrades, but nothing is sent to them.
 

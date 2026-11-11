@@ -1,7 +1,6 @@
 import { Button } from "@skiffr/ui/components/button"
 import { BookOpenIcon } from "lucide-react"
-import { docsUrl } from "@/lib/seo"
-import { SITE } from "@/lib/site"
+import { docsHref, repoUrl } from "@/lib/seo"
 
 export function OpenSource() {
   return (
@@ -16,10 +15,10 @@ export function OpenSource() {
           with us.
         </p>
         <div className="mt-6 flex flex-wrap gap-3">
-          <Button variant="outline" render={<a href={`${docsUrl()}/docs/deploy`} />} nativeButton={false}>
+          <Button variant="outline" render={<a href={docsHref("deploy")} />} nativeButton={false}>
             <BookOpenIcon data-icon="inline-start" /> Self-hosting guide
           </Button>
-          <Button variant="outline" render={<a href={`${SITE.repo}/blob/main/CONTRIBUTING.md`} />} nativeButton={false}>
+          <Button variant="outline" render={<a href={`${repoUrl()}/blob/main/CONTRIBUTING.md`} />} nativeButton={false}>
             Contribute
           </Button>
         </div>

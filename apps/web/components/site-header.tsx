@@ -1,4 +1,4 @@
-import { docsUrl } from "@/lib/seo"
+import { docsHref, repoUrl } from "@/lib/seo"
 import { SITE } from "@/lib/site"
 
 const LINK = "outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
@@ -11,10 +11,10 @@ export function SiteHeader() {
           {SITE.name}
         </a>
         <span className="flex items-center gap-5 text-muted-foreground text-sm">
-          <a href={docsUrl()} className={LINK}>
+          <a href={docsHref()} className={LINK}>
             Docs
           </a>
-          <a href={SITE.repo} className={LINK}>
+          <a href={repoUrl()} className={LINK}>
             GitHub
           </a>
         </span>

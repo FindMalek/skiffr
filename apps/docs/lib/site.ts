@@ -3,7 +3,7 @@ export const SITE = {
   name: "skiffr",
   /** Public origin, no trailing slash. Set DOCS_URL when deployed. */
   url: (process.env.DOCS_URL ?? "http://localhost:3003").replace(/\/$/, ""),
-  tagline: "Open-source job application autofill that learns from every form you fix.",
+  tagline: "Open-source job application autofill that learns from your corrections. Early development, not released.",
   github: "https://github.com/FindMalek/skiffr",
   /** Colors of the social card (opengraph-image), filled from the preset. Any hex works. */
   og: {

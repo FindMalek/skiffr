@@ -8,10 +8,12 @@ You need node 24, pnpm, bun and docker.
 
 ```bash
 pnpm install
-cp .env.example .env   # then set BETTER_AUTH_SECRET and ADMIN_PASSWORD
+cp .env.example .env   # then set BETTER_AUTH_SECRET (32+ characters) and ADMIN_PASSWORD (10+)
 pnpm db:up
-pnpm dev
+pnpm dev --filter='!extension'
 ```
+
+`pnpm dev` also starts the extension's `wxt` dev server, which opens a development browser. Leave it out with `--filter='!extension'`, or run it alone with `pnpm --filter extension dev`.
 
 The full walkthrough, ports and extension loading are in the [README](README.md#quick-start).
 
@@ -50,7 +52,8 @@ One focused test per behavior or bug, one that fails before the fix. Test throug
 
 | Job | What it does |
 | --- | --- |
-| `lint`, `check-types`, `test`, `build` | the root scripts. On pull requests turbo runs only affected packages, on `main` everything |
+| `lint` | `biome ci . && oxlint` over the whole repo, always |
+| `check-types`, `test`, `build` | the root scripts. On pull requests turbo runs only affected packages, on `main` everything |
 | `extension` | builds and zips the Chrome extension and uploads it as the artifact `extension-chrome-pr-<n>` (`extension-chrome-latest` on `main`) |
 | `db-postgres` | runs the router tests on real Postgres with pgvector (`pgvector/pgvector:pg17`) and checks that no test database is left behind |
 | `aggregator-test` | tests the script that decides the final result |
@@ -62,7 +65,7 @@ One focused test per behavior or bug, one that fails before the fix. Test throug
 
 Changes here can leak personal data or act on a page without the user asking, so keep them small and say in the PR how you checked them:
 
-- the fill engine (`apps/extension/lib/fill`): it must never submit, click buttons, or touch password, hidden or file inputs
+- the fill engine (`apps/extension/lib/fill`): it must never submit a form, click submit, next or apply buttons, or touch password or hidden inputs. It may set a file only on a resume or CV slot when the caller hands it one, and may click only the controls it fills (checkboxes, radios, custom dropdowns and their own options)
 - token auth and the extension boundary: `apps/api/src/cors.ts`, `packages/orpc/src/lib/tokens.ts`, the `TOKEN_PROCEDURES` list in `packages/orpc/src/procedures.ts`, and the extension background worker. The token must never be readable from a content script
 - what goes to a model: `packages/ai`, especially `src/shared-keys.ts`, the allowlist of profile keys whose values may be sent
 - the learning and privacy lists, meaning which labels are never learned or filled: anything that widens what gets stored or sent

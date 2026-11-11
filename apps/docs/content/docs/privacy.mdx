@@ -3,7 +3,9 @@ title: Privacy and data flow
 description: Exactly what leaves your machine, and where it goes.
 ---
 
-skiffr is self-hosted. Your profile, answers and tokens are in your own Postgres, behind your own api. There are no analytics, and the extension talks to no server except the api you configured.
+skiffr is self-hosted. Your profile, answers and tokens are in your own Postgres, behind your own api. There are no analytics, and the extension is built to talk to no server except the api you configured.
+
+The extension does not fill pages yet. Today the only call it makes is the connection test on its options page. This page describes what the connected flow will send and what your api already accepts.
 
 ## Data flow
 
@@ -18,7 +20,7 @@ web page -> extension -> your api -> your Postgres
 
 | To | What | When |
 | --- | --- | --- |
-| your api | field labels, names, placeholders, types and option texts of the form, the values you correct, your token | when you fill |
+| your api | field labels, names, placeholders, types and option texts of the form, the filled and final values of fields you correct (up to 2000 characters each), your token | when you fill |
 | language model provider | the same field descriptors, your profile key names, and the values of an allowlist of profile keys | when a field needs mapping or an answer is drafted |
 | embeddings provider | the normalized question label | only with `OPENAI_API_KEY`, and only for learning |
 | nobody | form submissions | never |
@@ -38,13 +40,24 @@ The provider keeps what its own terms say. Leave the keys unset to send nothing:
 
 ### What the extension does on a page
 
-- the content script is injected on all pages, because an application form can be on any careers site
-- the fill engine never submits a form, never clicks a button, and never touches password, hidden or file inputs
+- the content script is injected on all pages, because an application form can be on any careers site. Today it does nothing there except log in development builds
+- the fill engine never submits a form and never clicks submit, next or apply buttons
+- it never touches password or hidden inputs
+- it sets a file only on a resume or CV upload slot, and only when the caller hands it a file
+- it opens custom dropdowns (including `button[role=combobox]` widgets) and clicks their own options, and clicks the checkboxes and radios it fills, nothing else
 - fields a person cannot see or reach (honeypots) are skipped
+
+### What the api stores about learning
+
+For every filled field the api keeps one event: the raw field label, the filled value and the final value, up to 2000 characters each, plus the site, the control type and an outcome (accepted, corrected, cleared). Answers you correct become learned answers, with an embedding of the question label only.
+
+- fields with sensitive labels or autocomplete tokens, and values that look like a card number (Luhn), an IBAN or a US social security number, are never stored or filled
+- events older than 90 days are deleted, but only inside the calls that record events or list suggestions, and 500 rows at a time. On a quiet account old events can stay until the next call
+- events, answers and tokens are removed with the user row (`on delete cascade`). The dashboard has no self-service account deletion yet, so today that is an admin or database operation
 
 ### Tokens
 
-The extension authenticates with a personal access token that starts with `skp_`. The server keeps its SHA-256 hash and a short display tail, never the token. In the extension it sits in storage restricted to trusted contexts, and only the background worker reads it and calls the api, content scripts on web pages never get it. A token can only call a fixed list of procedures (`TOKEN_PROCEDURES` in `packages/orpc/src/procedures.ts`): profile, answers, jobs, applications and the two ai calls. Account, auth and token management need a signed-in session. Set `EXTENSION_ORIGINS` to pin the api to your own extension id.
+The extension authenticates with a personal access token that starts with `skp_`. The server keeps its SHA-256 hash and a short display tail, never the token. In the extension the background worker and the options page read it. Content scripts on web pages are kept from it by `storage.local.setAccessLevel("TRUSTED_CONTEXTS")`, which needs Chrome 142 or newer (the manifest's `minimum_chrome_version`). Calls to the api are made by the background worker. A token can only call a fixed list of procedures (`TOKEN_PROCEDURES` in `packages/orpc/src/procedures.ts`): profile, answers, jobs, applications and the two ai calls. Account, auth and token management need a signed-in session. Set `EXTENSION_ORIGINS` to pin the api to your own extension id.
 
 ## Reporting a problem
 
