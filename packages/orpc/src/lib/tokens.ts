@@ -3,6 +3,7 @@ import type { Session } from "@skiffr/auth"
 import { TOKEN_PREFIX } from "@skiffr/common/constants"
 import { apiToken, type Db, user } from "@skiffr/db"
 import { and, eq, isNull, lt, or } from "drizzle-orm"
+import { describeError } from "./errors"
 
 const TOKEN_LENGTH = TOKEN_PREFIX.length + 43
 const LAST_USED_THROTTLE_MS = 60_000
@@ -37,28 +38,11 @@ export function tokenErrorFields({ name, operation, code, causeName }: TokenStor
   return { name, operation, code, causeName }
 }
 
-const ERROR_CODE = /^[A-Z0-9_]{3,40}$/
-const CLASS_NAME = /^[A-Za-z0-9_]{1,40}$/
-
-function describe(error: unknown): { code?: string; causeName?: string } {
-  let code: string | undefined
-  let innermost: unknown = error
-  for (let depth = 0; depth < 4 && innermost && typeof innermost === "object"; depth++) {
-    const candidate = (innermost as { code?: unknown }).code
-    if (code === undefined && typeof candidate === "string" && ERROR_CODE.test(candidate)) code = candidate
-    const next = (innermost as { cause?: unknown }).cause
-    if (!next || typeof next !== "object") break
-    innermost = next
-  }
-  const name = (innermost as { constructor?: { name?: unknown } } | null)?.constructor?.name
-  return { code, causeName: typeof name === "string" && CLASS_NAME.test(name) ? name : undefined }
-}
-
 export async function guardTokenDb<T>(operation: string, run: () => Promise<T>): Promise<T> {
   try {
     return await run()
   } catch (error) {
-    const { code, causeName } = describe(error)
+    const { code, causeName } = describeError(error)
     throw new TokenStoreError(operation, code, causeName)
   }
 }
@@ -98,7 +82,7 @@ export async function verifyToken(db: Db, secret: string, now: Date): Promise<To
     .set({ lastUsedAt: now })
     .where(and(eq(apiToken.id, token.id), or(isNull(apiToken.lastUsedAt), lt(apiToken.lastUsedAt, staleBefore))))
     .catch((error) => {
-      const { code, causeName } = describe(error)
+      const { code, causeName } = describeError(error)
       console.error("[tokens] lastUsedAt failed", tokenErrorFields(new TokenStoreError("touch", code, causeName)))
     })
 

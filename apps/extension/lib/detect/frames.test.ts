@@ -150,3 +150,39 @@ test("a report that arrives after the new top started is kept", async () => {
   await tracker.report(1, 7, { url: GH, documentId: "child" })
   expect(await ids(tracker)).toEqual([7])
 })
+
+test("a huge url is capped before it is stored and the origin still decides trust", async () => {
+  const storage = memory()
+  const tracker = createFrameTracker(storage)
+  const huge = `${GH}?${"x".repeat(1_500_000)}`
+  await tracker.startTop(1, `${TOP}?${"y".repeat(1_500_000)}`, "top")
+  await tracker.report(1, 7, { url: huge, documentId: "child" })
+  expect(await ids(tracker)).toEqual([7])
+  expect(JSON.stringify(storage.data).length).toBeLessThan(5_000)
+})
+
+test("a storage that throws does not stop detection, records stay in memory", async () => {
+  const broken: FrameStorage = {
+    get: async () => {
+      throw new Error("quota")
+    },
+    set: async () => {
+      throw new Error("QUOTA_BYTES quota exceeded")
+    },
+  }
+  const tracker = createFrameTracker(broken)
+  await tracker.startTop(1, TOP, "top")
+  expect(await tracker.report(1, 7, { url: GH, documentId: "child" })).toBe("new")
+  expect(await ids(tracker)).toEqual([7])
+})
+
+test("coming back to a page from the back/forward cache is a new start for that document", async () => {
+  const tracker = createFrameTracker(memory())
+  await tracker.startTop(1, "https://initech.example/careers", "embed-page")
+  await tracker.report(1, 7, { url: GH, documentId: "embed" })
+  await tracker.startTop(1, "https://acme.example/blog", "newsletter-page")
+  expect(await tracker.hasTrustedFrame(1)).toBe(false)
+  expect(await tracker.startTop(1, "https://initech.example/careers", "embed-page")).toBe("new-document")
+  await tracker.report(1, 7, { url: GH, documentId: "embed" })
+  expect(await ids(tracker)).toEqual([7])
+})

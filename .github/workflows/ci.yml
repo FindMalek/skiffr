@@ -118,6 +118,40 @@ jobs:
           turbo: "true"
           next-cache: "true"
 
+  extension:
+    needs: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - id: setup
+        uses: ./.github/actions/setup
+        with:
+          turbo: "true"
+      # always runs so every pr has a zip to test; an untouched extension is a turbo cache hit
+      - run: pnpm zip --filter=extension ${{ needs.changes.outputs.flags == '--force' && '--force' || '' }}
+      - uses: ./.github/actions/save-cache
+        with:
+          setup: ${{ toJSON(steps.setup.outputs) }}
+          turbo: "true"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: extension-chrome-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.sha }}
+          path: apps/extension/.output/*-chrome.zip
+          retention-days: 14
+          if-no-files-found: error
+          overwrite: true
+          include-hidden-files: true
+      - uses: actions/upload-artifact@v7
+        if: github.ref == 'refs/heads/main'
+        with:
+          name: extension-chrome-latest
+          path: apps/extension/.output/*-chrome.zip
+          retention-days: 90
+          if-no-files-found: error
+          overwrite: true
+          include-hidden-files: true
+
   db-postgres:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -164,7 +198,7 @@ jobs:
   ci:
     name: ci
     if: always()
-    needs: [changes, lint, check-types, test, build, db-postgres, aggregator-test]
+    needs: [changes, lint, check-types, test, build, extension, db-postgres, aggregator-test]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

@@ -58,9 +58,12 @@ execFileSync(
 const tls = { key: readFileSync(join(certDir, "key.pem")), cert: readFileSync(join(certDir, "cert.pem")) }
 rmSync(certDir, { recursive: true, force: true })
 
+const requests = []
+
 function serve(ports) {
   return createServer(tls, (req, res) => {
     const url = new URL(req.url, "http://x")
+    requests.push({ path: url.pathname + url.search, purpose: String(req.headers["sec-purpose"] ?? "") })
     const name = url.searchParams.get("f") ?? basename(url.pathname).replace(/\.html$/, "")
     try {
       const html = readFileSync(join(FIXTURES, `${name}.html`), "utf8")
@@ -74,10 +77,11 @@ function serve(ports) {
   })
 }
 
-async function launch(args = []) {
+async function launch(args = [], { bfcache = false } = {}) {
   const profile = mkdtempSync(join(tmpdir(), "skiffr-verify-"))
   const context = await chromium.launchPersistentContext(profile, {
     ignoreHTTPSErrors: true,
+    ignoreDefaultArgs: bfcache ? ["--disable-back-forward-cache"] : [],
     executablePath: process.env.CHROME_PATH,
     headless: false,
     viewport: { width: 1100, height: 800 },
@@ -279,7 +283,7 @@ await Promise.all(
   await page.close()
 }
 
-// blocker: a frame that navigates cross origin after reporting must not be filled
+// a frame that leaves for another origin after reporting is never filled, and the toast for it goes away
 {
   const page = await open(at("careers.initech.test", "/?f=nav-parent"))
   const toast = await waitToast(page, 3000)
@@ -289,10 +293,12 @@ await Promise.all(
     await sleep(200)
     moved = page.frames().find((frame) => frame.url().includes("newsletter"))
   }
-  await sleep(500)
-  await clickToast(page, "yes")
-  await sleep(800)
-  check("frame navigated away: top frame filled", (await fills(page.mainFrame())) === 1)
+  let gone = false
+  for (let waited = 0; !gone && waited < 4000; waited += 200) {
+    await sleep(200)
+    gone = (await toasts(page)).length === 0
+  }
+  check("frame navigated away: the toast for the frame's form is withdrawn", gone)
   check(
     "frame navigated away: the frame at the other origin got 0 fill",
     moved !== undefined && (await fills(moved)) === 0,
@@ -403,6 +409,110 @@ await Promise.all(
 }
 
 await close()
+
+// Playwright turns the back/forward cache off, so this check runs in its own browser with it on
+{
+  const cached = await launch(["--host-resolver-rules=MAP * 127.0.0.1"], { bfcache: true })
+  const page = await cached.context.newPage()
+  await page.goto(at("careers.initech.test", "/careers?f=careers-embed"), { waitUntil: "load" })
+  check("bfcache: toast on the embed page", (await waitToast(page, 4000)) !== null)
+  await page.evaluate(() => {
+    window.__persisted = null
+    window.addEventListener("pageshow", (event) => {
+      window.__persisted = event.persisted
+    })
+  })
+  await page.goto(at("acme.test", "/blog?f=newsletter"), { waitUntil: "load" })
+  await sleep(1500)
+  check("bfcache: no toast on the newsletter page", (await toasts(page)).length === 0)
+  // a page restored from the cache fires no load event
+  await page.goBack({ waitUntil: "commit" })
+  await sleep(1000)
+  check("bfcache: the embed page was restored from the cache", (await page.evaluate(() => window.__persisted)) === true)
+  check("bfcache: toast is shown again on the restored page", (await waitToast(page, 4000)) !== null)
+  // Playwright does not list a child frame restored from the cache, so the worker's own sends are the evidence
+  await cached.worker.evaluate(() => {
+    globalThis.fillSends = []
+    const send = chrome.tabs.sendMessage.bind(chrome.tabs)
+    chrome.tabs.sendMessage = async (tabId, message, options) => {
+      const entry = { type: message?.type, options }
+      globalThis.fillSends.push(entry)
+      try {
+        const result = await send(tabId, message, options)
+        entry.delivered = true
+        return result
+      } catch (error) {
+        entry.delivered = false
+        throw error
+      }
+    }
+  })
+  await clickToast(page, "yes")
+  await sleep(1000)
+  const sends = await cached.worker.evaluate(() => globalThis.fillSends.filter((entry) => entry.type === "fill"))
+  const { frameReports = {} } = await cached.worker.evaluate(() => chrome.storage.session.get("frameReports"))
+  const recorded = Object.values(frameReports).flatMap((tab) => Object.entries(tab.frames))
+  const [frameId, record] = recorded[0] ?? []
+  check(
+    "bfcache: yes sends fill to the restored embed frame with its documentId, and it is delivered",
+    recorded.length === 1 &&
+      sends.some(
+        (entry) =>
+          entry.options?.frameId === Number(frameId) &&
+          entry.options?.documentId === record.documentId &&
+          entry.delivered,
+      ),
+    JSON.stringify(sends),
+  )
+  await page.close()
+  await cached.close()
+}
+
+// prerender: reports from a prerendered page are ignored until it is activated, then it must start over
+{
+  const mark = requests.length
+  const prerendered = await launch(["--host-resolver-rules=MAP * 127.0.0.1"])
+  const page = await prerendered.context.newPage()
+  await page.goto(at("careers.initech.test", "/?f=prerender-source"), { waitUntil: "load" })
+  await sleep(3000)
+  await prerendered.worker.evaluate(() => {
+    globalThis.fillSends = []
+    const send = chrome.tabs.sendMessage.bind(chrome.tabs)
+    chrome.tabs.sendMessage = async (tabId, message, options) => {
+      const entry = { type: message?.type, options }
+      globalThis.fillSends.push(entry)
+      try {
+        const result = await send(tabId, message, options)
+        entry.delivered = true
+        return result
+      } catch (error) {
+        entry.delivered = false
+        throw error
+      }
+    }
+  })
+  await page.click("#go")
+  await page.waitForURL(/careers/)
+  // the browser fetched the page as a prerender and the click reused it instead of loading it again
+  const loads = requests.slice(mark).filter((request) => request.path === "/careers?f=careers-embed")
+  check(
+    "prerender: the page was really prerendered and activated",
+    loads.length === 1 && loads[0].purpose.includes("prerender"),
+    JSON.stringify(loads),
+  )
+  check("prerender: toast is shown after activation", (await waitToast(page, 5000)) !== null)
+  await clickToast(page, "yes")
+  await sleep(1000)
+  const sends = await prerendered.worker.evaluate(() => globalThis.fillSends.filter((entry) => entry.type === "fill"))
+  check(
+    "prerender: yes is delivered to the embed frame after activation",
+    sends.some((entry) => entry.options?.frameId > 0 && entry.delivered),
+    JSON.stringify(sends),
+  )
+  await page.close()
+  await prerendered.close()
+}
+
 mainServer.close()
 attackerServer.close()
 console.log(failures ? `${failures} FAILED` : "ALL PASS")

@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test"
 import {
+  isChildFormsGoneMessage,
   isFillMessage,
   isFormDetectedMessage,
   isFrameNavigatedMessage,
@@ -20,4 +21,6 @@ test("messages with unknown shapes are rejected", () => {
   expect(isFrameNavigatedMessage({ type: "frame-navigated", frameId: 3 })).toBe(false)
   expect(isReportAgainMessage({ type: "report-again" })).toBe(true)
   expect(isReportAgainMessage({ type: "report-again", x: 1 })).toBe(false)
+  expect(isChildFormsGoneMessage({ type: "child-forms-gone" })).toBe(true)
+  expect(isChildFormsGoneMessage({ type: "child-forms-gone", x: 1 })).toBe(false)
 })

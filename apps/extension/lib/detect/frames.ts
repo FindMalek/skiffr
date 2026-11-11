@@ -37,6 +37,11 @@ export type FrameTracker = {
 
 const STORAGE_KEY = "frameReports"
 const MAX_FRAMES_PER_TAB = 64
+// a page can make its own url huge, and session storage has a small quota shared by every tab
+export const MAX_URL_LENGTH = 2048
+const MAX_ID_LENGTH = 64
+
+const capUrl = (url: string): string => url.slice(0, MAX_URL_LENGTH)
 export const FRESH_MS = 5_000
 
 /**
@@ -64,11 +69,23 @@ export function createFrameTracker(storage: FrameStorage): FrameTracker {
   let loaded: Promise<Reports> | null = null
 
   function load(): Promise<Reports> {
-    loaded ??= storage.get(STORAGE_KEY).then((stored) => {
-      const value = stored[STORAGE_KEY]
-      return typeof value === "object" && value !== null ? (value as Reports) : {}
-    })
+    loaded ??= storage
+      .get(STORAGE_KEY)
+      .then((stored) => {
+        const value = stored[STORAGE_KEY]
+        return typeof value === "object" && value !== null ? (value as Reports) : {}
+      })
+      .catch(() => ({}))
     return loaded
+  }
+
+  // a full or failing storage must not take detection down, the records stay in memory for this worker
+  async function persist(reports: Reports): Promise<void> {
+    try {
+      await storage.set({ [STORAGE_KEY]: reports })
+    } catch (error) {
+      console.error("[skiffr] could not persist frame records", error)
+    }
   }
 
   function tabOf(reports: Reports, tabId: number): TabFrames {
@@ -82,39 +99,40 @@ export function createFrameTracker(storage: FrameStorage): FrameTracker {
   return {
     async setTop(tabId, url) {
       const reports = await load()
-      tabOf(reports, tabId).top = url
-      await storage.set({ [STORAGE_KEY]: reports })
+      tabOf(reports, tabId).top = capUrl(url)
+      await persist(reports)
     },
     async startTop(tabId, url, documentId) {
       const reports = await load()
       const known = reports[tabId]
       const same = known !== undefined && documentId !== undefined && known.topDocumentId === documentId
-      const tab = same ? known : { top: url, frames: {} }
-      tab.top = url
-      tab.topDocumentId = documentId
+      const tab = same ? known : { top: capUrl(url), frames: {} }
+      tab.top = capUrl(url)
+      tab.topDocumentId = documentId?.slice(0, MAX_ID_LENGTH)
       reports[tabId] = tab
-      await storage.set({ [STORAGE_KEY]: reports })
+      await persist(reports)
       return same ? "same-document" : "new-document"
     },
     async report(tabId, frameId, report, now = Date.now()) {
       const reports = await load()
       const known = reports[tabId]?.frames[frameId]
-      const same = known && (report.documentId ? known.documentId === report.documentId : known.url === report.url)
+      const same =
+        known && (report.documentId ? known.documentId === report.documentId : known.url === capUrl(report.url))
       if (!known && Object.keys(reports[tabId]?.frames ?? {}).length >= MAX_FRAMES_PER_TAB) return "duplicate"
       tabOf(reports, tabId).frames[frameId] = {
-        url: report.url,
-        documentId: report.documentId,
+        url: capUrl(report.url),
+        documentId: report.documentId?.slice(0, MAX_ID_LENGTH),
         opaque: report.origin === "null",
         at: now,
       }
-      await storage.set({ [STORAGE_KEY]: reports })
+      await persist(reports)
       return same ? "duplicate" : "new"
     },
     async drop(tabId, frameId) {
       const reports = await load()
       if (!reports[tabId]?.frames[frameId]) return
       delete reports[tabId].frames[frameId]
-      await storage.set({ [STORAGE_KEY]: reports })
+      await persist(reports)
     },
     async fillTargets(tabId, now = Date.now()) {
       const tab = (await load())[tabId]
@@ -128,7 +146,7 @@ export function createFrameTracker(storage: FrameStorage): FrameTracker {
       const reports = await load()
       if (!reports[tabId]) return
       delete reports[tabId]
-      await storage.set({ [STORAGE_KEY]: reports })
+      await persist(reports)
     },
   }
 }

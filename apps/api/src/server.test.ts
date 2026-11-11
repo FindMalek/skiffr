@@ -31,7 +31,15 @@ beforeAll(async () => {
     api: { getSession: async ({ headers }: { headers: Headers }) => (headers.has("cookie") ? COOKIE_SESSION : null) },
   } as unknown as Auth
   server = createServer(
-    { db, auth, now: () => new Date(), config: { deployEnv: "test", githubAuth: false }, storage: null, model: null },
+    {
+      db,
+      auth,
+      now: () => new Date(),
+      config: { deployEnv: "test", githubAuth: false },
+      storage: null,
+      model: null,
+      embeddingModel: null,
+    },
     { publicUrl: "http://api.test" },
   )
 })
@@ -62,6 +70,12 @@ test("a token calls the extension procedures over rpc without cookies or a csrf 
   expect((await rpc("tokens/list", { origin: EXTENSION, cookie: "session=1", "x-csrf-token": "orpc" })).status).toBe(
     401,
   )
+})
+
+test("every rpc answer carries a request id for the log line of a failure", async () => {
+  const [first, second] = await Promise.all([rpc("tokens/list", session), rpc("tokens/list", session)])
+  expect(first.headers.get("x-request-id")).toMatch(/^[0-9a-f-]{36}$/)
+  expect(first.headers.get("x-request-id")).not.toBe(second.headers.get("x-request-id"))
 })
 
 test("a bad token is a bare 401 even when a valid cookie rides along", async () => {

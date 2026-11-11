@@ -79,8 +79,12 @@ type FrameSender = { tabId: number; frameId: number; url: string; documentId?: s
 
 async function handleFrameMessage(message: unknown, { tabId, frameId, url, documentId, origin }: FrameSender) {
   if (frameId !== 0) {
-    if (isFrameNavigatedMessage(message)) await frames().drop(tabId, frameId)
-    else if (
+    if (isFrameNavigatedMessage(message)) {
+      const had = await frames().hasTrustedFrame(tabId)
+      await frames().drop(tabId, frameId)
+      // the toast was offered for a form in a frame that is gone, the top frame decides whether it still stands
+      if (had && !(await frames().hasTrustedFrame(tabId))) toTab(tabId, { type: "child-forms-gone" }, { frameId: 0 })
+    } else if (
       isFormDetectedMessage(message) &&
       (await frames().report(tabId, frameId, { url, documentId, origin })) === "new"
     ) {

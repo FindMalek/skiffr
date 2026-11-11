@@ -9,6 +9,7 @@ import {
   type FillFramesMessage,
   type FormDetectedMessage,
   type FrameNavigatedMessage,
+  isChildFormsGoneMessage,
   isFillMessage,
   isFormDetectedMessage,
   isReportAgainMessage,
@@ -72,14 +73,16 @@ export default defineContentScript({
       }
     }
 
-    const siteChecked: Promise<void> = isTop
-      ? browser.runtime
-          .sendMessage<SiteDisabledMessage, SiteDisabledResponse | undefined>({ type: "site-disabled" })
-          .then((response) => {
-            if (response?.disabled) dispatch("blocked")
-          })
-          .catch(() => {})
-      : Promise.resolve()
+    function checkSite(): Promise<void> {
+      return browser.runtime
+        .sendMessage<SiteDisabledMessage, SiteDisabledResponse | undefined>({ type: "site-disabled" })
+        .then((response) => {
+          if (response?.disabled) dispatch("blocked")
+        })
+        .catch(() => {})
+    }
+
+    let siteChecked: Promise<void> = isTop ? checkSite() : Promise.resolve()
 
     function onFormHere(): void {
       formHere = true
@@ -88,6 +91,8 @@ export default defineContentScript({
     }
 
     const watcher = createFormWatcher({ doc: document, onDetect: onFormHere })
+    // a new document replaces whatever this frame reported before, so the old record goes first
+    if (!isTop) send({ type: "frame-navigated" })
     watcher.start()
     ctx.onInvalidated(() => watcher.stop())
     ctx.addEventListener(document, "click", () => watcher.rearm(), { capture: true, passive: true })
@@ -105,6 +110,32 @@ export default defineContentScript({
       if (isTop) send({ type: "probe-frames" })
     })
 
+    // the same top document came back (back/forward cache) or became visible (prerender): no new script start
+    // announces it, so start over for this document and have the frames report again
+    function restart(): void {
+      formInChildFrame = false
+      formHere = false
+      dispatch("navigated")
+      watcher.start()
+      send({ type: "probe-frames" })
+    }
+
+    if (isTop) {
+      window.addEventListener("pageshow", (event) => {
+        if (event.persisted) restart()
+      })
+      if ((document as Document & { prerendering?: boolean }).prerendering) {
+        document.addEventListener(
+          "prerenderingchange",
+          () => {
+            siteChecked = checkSite()
+            restart()
+          },
+          { once: true },
+        )
+      }
+    }
+
     browser.runtime.onMessage.addListener((message: unknown) => {
       if (isFillMessage(message)) {
         if (message.skipTop && isTop) return
@@ -113,6 +144,9 @@ export default defineContentScript({
       } else if (isTop && isFormDetectedMessage(message)) {
         formInChildFrame = true
         void siteChecked.then(() => dispatch("detected"))
+      } else if (isTop && isChildFormsGoneMessage(message)) {
+        formInChildFrame = false
+        if (!formHere) dispatch("navigated")
       } else if (!isTop && isReportAgainMessage(message) && formHere) {
         send({ type: "form-detected" })
       }
