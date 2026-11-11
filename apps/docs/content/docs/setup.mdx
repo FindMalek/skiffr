@@ -7,9 +7,14 @@ You need node 24, pnpm, bun and docker.
 
 ```bash
 pnpm install
+cp .env.example .env
 pnpm db:up
-pnpm dev
+pnpm dev --filter='!extension'
 ```
+
+Edit `.env` before the first start. `BETTER_AUTH_SECRET` must be at least 32 characters (`openssl rand -base64 32` gives 44), otherwise the api refuses to start. `ADMIN_PASSWORD` must be at least 10 characters, and with `ADMIN_EMAIL` or `ADMIN_PASSWORD` empty no admin is created. `DATABASE_URL` in `.env.example` already matches the local postgres from `pnpm db:up`.
+
+`pnpm dev` runs `turbo dev`, which starts every workspace with a `dev` script: web, api, dashboard, docs and the extension (`wxt`, which opens a development browser). `pnpm dev --filter='!extension'` starts only the four apps. Run the extension on its own with `pnpm --filter extension dev`.
 
 `pnpm db:up` starts a local postgres (`pgvector/pgvector:pg17`) from `docker/docker-compose.yml`. The api applies migrations on start and, when `SEED=demo`, fills an empty database with sample data.
 
@@ -23,6 +28,16 @@ The pgvector image is debian based, the old alpine based postgres image used a d
 | docs | http://localhost:3003 |
 
 Sign in to the dashboard with `ADMIN_EMAIL` and `ADMIN_PASSWORD` from `.env`. The admin is created or reset on every api start.
+
+## Load the extension
+
+The extension does not fill pages yet, so this is for development: you can check the options page and the connection to the api. It needs Chrome 142 or a Chromium browser of the same age.
+
+```bash
+pnpm --filter extension build
+```
+
+In `chrome://extensions` turn on developer mode, choose Load unpacked and pick `apps/extension/.output/chrome-mv3`. Create a token on the dashboard's Extension page, then set the api url (`http://localhost:3001`) and the token in the extension options and press test connection. `Ctrl+Shift+F` (`Cmd+Shift+F` on macOS) is registered as the fill shortcut but does nothing yet, because the fill engine is not wired to it. You can already remap it at `chrome://extensions/shortcuts`.
 
 ## Working on one app
 
