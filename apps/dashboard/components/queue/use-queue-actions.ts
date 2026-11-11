@@ -104,7 +104,12 @@ export function useQueueActions(announce: (message: string) => void) {
         } else {
           failed = true
           patch(queryClient, intent, before, true)
-          toast.error(`${messages.failed} ${errorMessage(error)}`)
+          const changed = code(error, "CONFLICT") || code(error, "NOT_FOUND")
+          toast.error(
+            changed
+              ? `${messages.failed} That job changed somewhere else, so the list was refreshed.`
+              : `${messages.failed} ${errorMessage(error)}`,
+          )
           announce(messages.failed)
         }
       } finally {

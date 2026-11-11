@@ -7,6 +7,7 @@ import {
   JOB_SOURCES_MAX,
   JOB_STATUSES,
   SHORT_TEXT_MAX,
+  URL_MAX,
 } from "../constants"
 import { pageSchema } from "./page"
 import { CLEAN_MESSAGE, clean } from "./text"
@@ -28,20 +29,43 @@ export const jobSchema = z.object({
   updatedAt: z.date(),
 })
 
-/** A job link ends up as an `href` the user clicks, so it can't carry a `user:password@` part that makes it look like another host. */
-export const jobUrlSchema = httpUrlSchema.pipe(
-  z.string().refine((url) => {
-    const parsed = new URL(url)
-    return !parsed.username && !parsed.password
-  }, "The link can't contain a username or password."),
-)
+export const NOT_PUBLIC_MESSAGE = "That address is not a public job link."
+export const CREDENTIALS_MESSAGE = "The link can't contain a username or password."
+
+const PRIVATE_HOST = /(?:^|\.)(?:localhost|local|internal|lan|home\.arpa)$/
+const NUMERIC_HOST = /^[\d.]+$|^0x[0-9a-f]+$/i
+
+/**
+ * A job link ends up as an `href` the user clicks. So no control characters (postgres rejects a NUL), no
+ * `user:password@` part that makes it look like another host, and nothing that points inside a network: `localhost`,
+ * `.local`, `.internal`, `.lan`, `.home.arpa`, ip addresses and IPv6 literals.
+ */
+export const jobUrlSchema = z
+  .string()
+  .trim()
+  .max(URL_MAX)
+  .superRefine((value, ctx) => {
+    if (!clean(value)) return void ctx.addIssue({ code: "custom", message: CLEAN_MESSAGE })
+    let parsed: URL
+    try {
+      parsed = new URL(value)
+    } catch {
+      return
+    }
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return
+    if (parsed.username || parsed.password) return void ctx.addIssue({ code: "custom", message: CREDENTIALS_MESSAGE })
+    const host = parsed.hostname.toLowerCase().replace(/\.$/, "")
+    if (host.startsWith("[") || NUMERIC_HOST.test(host) || PRIVATE_HOST.test(host)) {
+      ctx.addIssue({ code: "custom", message: NOT_PUBLIC_MESSAGE })
+    }
+  })
+  .pipe(httpUrlSchema)
 
 const jobText = z.string().trim().min(1).max(SHORT_TEXT_MAX).refine(clean, CLEAN_MESSAGE)
 
-/** `canonicalId` is derived from the url when left out (`canonicalJobId`), which is what makes the same job from two sources one row. */
+/** The id is always derived from the url on the server (`canonicalizeJob`), so a client can't split one job into two rows by sending its own. */
 export const jobInputSchema = z.object({
   url: jobUrlSchema,
-  canonicalId: jobText.optional(),
   title: jobText,
   company: jobText,
   source: jobText,

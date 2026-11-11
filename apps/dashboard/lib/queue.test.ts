@@ -9,6 +9,7 @@ import {
   pruneList,
   revertCounts,
   revertList,
+  sourceLabel,
 } from "./queue"
 
 const job = (n: number, extra: Partial<Job> = {}): Job => ({
@@ -102,4 +103,13 @@ test("a search filter keeps a restored row out of lists it would not match", () 
   const row = job(1, { company: "Globex" })
   expect(revertList([], { limit: 51, order: "newest", q: "acme" }, [row])).toEqual([])
   expect(revertList([], { limit: 51, order: "newest", q: "GLOBEX" }, [row])).toEqual([row])
+})
+
+test("source names: known sources and gmail providers read plainly, anything else is kept as stored", () => {
+  expect(sourceLabel("manual")).toBe("Added by hand")
+  expect(sourceLabel("gmail")).toBe("Gmail alert")
+  expect(sourceLabel("gmail:linkedin")).toBe("Gmail · LinkedIn")
+  expect(sourceLabel("gmail:indeed")).toBe("Gmail · Indeed")
+  expect(sourceLabel("gmail:somewhere")).toBe("Gmail · somewhere")
+  expect(sourceLabel("<b>x</b>")).toBe("<b>x</b>")
 })

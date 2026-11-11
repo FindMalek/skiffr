@@ -1,7 +1,7 @@
 "use client"
 
 import { SHORT_TEXT_MAX, URL_MAX } from "@skiffr/common/constants"
-import { type Job, jobUrlSchema } from "@skiffr/common/schemas"
+import { CREDENTIALS_MESSAGE, type Job, jobUrlSchema, NOT_PUBLIC_MESSAGE } from "@skiffr/common/schemas"
 import { linkHost } from "@skiffr/common/utils"
 import { errorMessage } from "@skiffr/orpc/errors"
 import { orpc } from "@skiffr/orpc/react"
@@ -18,7 +18,7 @@ import { useQueueApi } from "./queue-api"
 type Result = { kind: "added" | "duplicate"; job: Job } | { kind: "error"; message: string } | null
 
 const URL_HELP = "Enter a full web address that starts with http:// or https://, like https://company.com/jobs/123."
-const CREDENTIALS = "The link can't contain a username or password."
+const OWN_MESSAGES = new Set([CREDENTIALS_MESSAGE, NOT_PUBLIC_MESSAGE, "Control characters are not allowed."])
 
 export function AddJobForm({ announce }: { announce: (message: string) => void }) {
   const api = useQueueApi()
@@ -33,10 +33,15 @@ export function AddJobForm({ announce }: { announce: (message: string) => void }
     if (sending.current) return
     const form = event.currentTarget
     const data = new FormData(form)
-    const parsed = jobUrlSchema.safeParse(String(data.get("url") ?? ""))
+    const raw = String(data.get("url") ?? "")
+    const parsed = jobUrlSchema.safeParse(raw)
     if (!parsed.success) {
-      const credentials = parsed.error.issues.some((issue) => issue.message === CREDENTIALS)
-      setResult({ kind: "error", message: credentials ? CREDENTIALS : URL_HELP })
+      const own = parsed.error.issues.map((issue) => issue.message).find((message) => OWN_MESSAGES.has(message))
+      // `http://localhost/` and `http://10.0.0.1/` do start with http: say the address is the problem.
+      setResult({
+        kind: "error",
+        message: own ?? (/^https?:\/\/\S+$/i.test(raw.trim()) ? NOT_PUBLIC_MESSAGE : URL_HELP),
+      })
       urlField.current?.focus()
       return
     }

@@ -28,20 +28,29 @@ export function JobLink({
   url,
   label,
   className,
+  disabled = false,
   children,
 }: {
   url: string
+  /** Already neutralized text, e.g. `jobName(job)`. */
   label: string
   className: string
+  /** While the job is being changed the link is a disabled button like the other actions. */
+  disabled?: boolean
   children?: React.ReactNode
 }) {
   const href = safeHref(url)
   const host = linkHost(url)
-  if (!href || !host) {
+  if (!href || !host || disabled) {
     return (
-      <button type="button" disabled className={className} title="This link is not a web address and was blocked.">
+      <button
+        type="button"
+        disabled
+        className={className}
+        title={disabled && href ? "Wait for the change to finish." : "This link is not a web address and was blocked."}
+      >
         <ExternalLinkIcon aria-hidden="true" />
-        {children ?? "Blocked"}
+        {href && disabled ? (children ?? "Open") : (children ?? "Blocked")}
       </button>
     )
   }

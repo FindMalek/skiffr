@@ -13,6 +13,8 @@ export type QueueApi = {
   setStatus(ids: readonly string[], status: "queued" | "skipped"): Promise<unknown>
   remove(ids: readonly string[]): Promise<unknown>
   markApplied(job: Job): Promise<unknown>
+  /** The server's oldest queued job right now, never a cached one. */
+  next(): Promise<Job | null>
 }
 
 export const orpcQueueApi: QueueApi = {
@@ -23,6 +25,7 @@ export const orpcQueueApi: QueueApi = {
       : browserClient.jobs.bulkUpdate({ ids: [...ids], status }),
   remove: (ids) =>
     ids.length === 1 ? browserClient.jobs.remove({ id: ids[0]! }) : browserClient.jobs.bulkRemove({ ids: [...ids] }),
+  next: () => browserClient.jobs.next(),
   markApplied: (job) => browserClient.applications.create({ jobId: job.id, ats: atsFromCanonicalId(job.canonicalId) }),
 }
 

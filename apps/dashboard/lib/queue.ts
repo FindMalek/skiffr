@@ -1,4 +1,5 @@
 import type { Job, JobCounts } from "@skiffr/common/schemas"
+import { displayText } from "@skiffr/common/utils"
 
 /** Rows added per "Show more". The query asks for one extra row so the page knows whether there is more. */
 export const QUEUE_PAGE = 50
@@ -134,5 +135,25 @@ const SOURCE_LABEL: Record<string, string> = {
   careers: "Careers page",
 }
 
-/** Known sources get a plain name; anything else is shown as it was stored (already text, never markup). */
-export const sourceLabel = (source: string): string => SOURCE_LABEL[source] ?? source
+const PROVIDER_LABEL: Record<string, string> = {
+  linkedin: "LinkedIn",
+  indeed: "Indeed",
+  glassdoor: "Glassdoor",
+  wellfound: "Wellfound",
+}
+
+/**
+ * Known sources get a plain name; `gmail:<provider>` reads "Gmail · LinkedIn". Anything else is shown as it was stored:
+ * the caller renders it as text (neutralized and clipped), never as markup.
+ */
+export function sourceLabel(source: string): string {
+  const known = SOURCE_LABEL[source]
+  if (known) return known
+  const match = /^gmail:(.+)$/.exec(source)
+  if (match) return `Gmail · ${PROVIDER_LABEL[match[1]!] ?? match[1]}`
+  return source
+}
+
+/** "Title at Company" for accessible names and tooltips: neutralized and clipped like everything shown from a posting. */
+export const jobName = (job: Pick<Job, "title" | "company">): string =>
+  `${displayText(job.title, 50)} at ${displayText(job.company, 30)}`

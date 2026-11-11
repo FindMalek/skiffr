@@ -12,10 +12,10 @@ import {
   jobUpdateSchema,
   okSchema,
 } from "@skiffr/common/schemas"
-import { canonicalJobId } from "@skiffr/common/utils"
 import { job } from "@skiffr/db"
 import { and, asc, desc, eq, ilike, inArray, ne, or, sql } from "drizzle-orm"
 import { z } from "zod"
+import { queueJob } from "../lib/jobs"
 import { mine, orNotFound } from "../lib/owned"
 import { protectedProcedure } from "../procedures"
 
@@ -106,18 +106,8 @@ export const jobsRouter = {
     .input(jobInputSchema)
     .output(jobCreatedSchema)
     .handler(async ({ context, input }) => {
-      const canonicalId = input.canonicalId ?? canonicalJobId(input.url)
-      const [created] = await context.db
-        .insert(job)
-        .values({ ...input, canonicalId, userId: context.user.id, queuedAt: context.now() })
-        .onConflictDoNothing()
-        .returning()
-      if (created) return { ...created, created: true }
-      const [existing] = await context.db
-        .select()
-        .from(job)
-        .where(and(eq(job.userId, context.user.id), eq(job.canonicalId, canonicalId)))
-      return { ...existing!, created: false }
+      const { job: saved, created } = await queueJob(context.db, context.user.id, input, context.now())
+      return { ...saved, created }
     }),
 
   update: protectedProcedure

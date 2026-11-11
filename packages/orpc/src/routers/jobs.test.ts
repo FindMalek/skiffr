@@ -102,16 +102,51 @@ test("the same job from two sources and two url spellings is one row, and a seco
   expect(theirs.id).not.toBe(first.id)
 })
 
-test("a stored canonical id still wins when a caller sends one, and ids stay within the column bound", async () => {
+test("a vendor link is stored as the vendor's clean link, and a hostile link can't take over a job's id", async () => {
+  const ana = await newUser()
+  const first = await add(ana, {
+    url: "https://uk.linkedin.com/jobs/view/senior-3912345678/?trackingId=x&refId=y&mkt_tok=secret",
+  })
+  expect(first).toMatchObject({
+    canonicalId: "linkedin:3912345678",
+    url: "https://www.linkedin.com/jobs/view/3912345678",
+  })
+
+  const spoof = await add(ana, {
+    url: "https://linkedin.com/safety/go?url=https%3A%2F%2Fevil.example&currentJobId=3912345679",
+  })
+  expect(spoof.canonicalId).toStartWith("url:")
+  const lookalike = await add(ana, { url: "https://indeed.xyz/viewjob?jk=abcdef0123456789" })
+  expect(lookalike.canonicalId).toStartWith("url:")
+  const real = await add(ana, { url: "https://www.indeed.com/viewjob?jk=abcdef0123456789&from=email" })
+  expect(real).toMatchObject({
+    created: true,
+    canonicalId: "indeed:abcdef0123456789",
+    url: "https://www.indeed.com/viewjob?jk=abcdef0123456789",
+  })
+  expect(real.id).not.toBe(lookalike.id)
+
+  const unknown = await add(ana, { url: "https://careers.example.com/#/job/1?x=1" })
+  expect(unknown.url).toBe("https://careers.example.com/#/job/1?x=1")
+  expect((await add(ana, { url: "https://careers.example.com/#/job/2" })).created).toBe(true)
+  const long = await add(ana, { url: `https://jobs.acme.dev/${"a".repeat(1500)}?q=${"b".repeat(400)}` })
+  expect(long.canonicalId).toMatch(/^url:[0-9a-f]{32}$/)
+})
+
+test("a client-sent canonical id is ignored: the server derives it from the url", async () => {
   const ana = await newUser()
   const sent = await call(
     appRouter.jobs.create,
-    { url: "https://jobs.acme.dev/x", canonicalId: "acme:x", title: "T", company: "C", source: "manual" },
+    {
+      url: "https://www.linkedin.com/jobs/view/3912345678",
+      canonicalId: "mine:1",
+      title: "T",
+      company: "C",
+      source: "manual",
+    } as never,
     ana.as(),
   )
-  expect(sent.canonicalId).toBe("acme:x")
-  const long = await add(ana, { url: `https://jobs.acme.dev/${"a".repeat(1500)}?q=${"b".repeat(400)}` })
-  expect(long.canonicalId.length).toBeLessThanOrEqual(200)
+  expect(sent.canonicalId).toBe("linkedin:3912345678")
 })
 
 test("urls that are not plain http(s) links, and text with control characters, can't be stored", async () => {
@@ -123,6 +158,15 @@ test("urls that are not plain http(s) links, and text with control characters, c
     "file:///etc/passwd",
     "https://google.com@evil.example.com/jobs/1",
     "http://localhost:3000/a",
+    "https://foo.localhost/a",
+    "https://printer.local/a",
+    "http://svc.internal/a",
+    "http://nas.lan/a",
+    "http://box.home.arpa/a",
+    "http://[::1]/a",
+    "http://10.0.0.1/a",
+    "https://example.com/\u0000x",
+    "https://example.com/?q=\u0001",
   ]
   for (const url of bad) {
     await expect(add(ana, { url }), url).rejects.toMatchObject({ code: "BAD_REQUEST" })

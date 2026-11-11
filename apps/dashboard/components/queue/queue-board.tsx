@@ -1,6 +1,8 @@
 "use client"
 
 import type { Job } from "@skiffr/common/schemas"
+import { displayText, safeHref } from "@skiffr/common/utils"
+import { errorMessage } from "@skiffr/orpc/errors"
 import { orpc } from "@skiffr/orpc/react"
 import { Alert, AlertDescription, AlertTitle } from "@skiffr/ui/components/alert"
 import {
@@ -13,12 +15,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@skiffr/ui/components/alert-dialog"
-import { Button, buttonVariants } from "@skiffr/ui/components/button"
+import { Button } from "@skiffr/ui/components/button"
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@skiffr/ui/components/empty"
 import { Input } from "@skiffr/ui/components/input"
-import { keepPreviousData, useQuery } from "@tanstack/react-query"
-import { ExternalLinkIcon } from "lucide-react"
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query"
+import { ExternalLinkIcon, PlusIcon } from "lucide-react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { toast } from "sonner"
 import { PageHeader } from "@/components/page-header"
 import {
   DEFAULT_FILTERS,
@@ -32,7 +35,8 @@ import {
 } from "@/lib/queue"
 import { AddJobForm } from "./add-job-form"
 import { JobList, type OnAction } from "./job-rows"
-import { JobLink, SafeText } from "./job-text"
+import { SafeText } from "./job-text"
+import { useQueueApi } from "./queue-api"
 import { useQueueActions } from "./use-queue-actions"
 
 const STATUS_TABS: StatusFilter[] = ["queued", "applied", "skipped", "all"]
@@ -48,23 +52,52 @@ function useDebounced<T>(value: T, ms: number): T {
   return debounced
 }
 
+/** The queue changes from other tabs and from the extension, so what is on screen is refreshed when the tab is focused again. */
+const LIVE = { staleTime: 5_000, refetchOnWindowFocus: true } as const
+
+/**
+ * Opens the server's current next job in a new tab. The button shows the cached next job, but a click first asks the
+ * server again and opens what it answers, so a job applied or deleted elsewhere is never opened by a stale page.
+ */
 function OpenNext({ disabled }: { disabled: boolean }) {
-  const next = useQuery(orpc.jobs.next.queryOptions())
-  const job = next.data
-  const ready = !disabled && !next.isFetching && job != null
-  const className = buttonVariants({ variant: "default" })
-  if (!ready) {
-    return (
-      <Button disabled title={job === null ? "Nothing is queued." : "Updating the queue…"}>
-        <ExternalLinkIcon data-icon="inline-start" />
-        Open next
-      </Button>
-    )
+  const api = useQueueApi()
+  const queryClient = useQueryClient()
+  const next = useQuery({ ...orpc.jobs.next.queryOptions(), ...LIVE })
+  const opening = useRef(false)
+  const shown = next.data
+
+  const open = async () => {
+    if (opening.current) return
+    opening.current = true
+    try {
+      const fresh = await queryClient.fetchQuery({
+        queryKey: orpc.jobs.next.queryKey(),
+        queryFn: () => api.next(),
+        staleTime: 0,
+      })
+      if ((fresh?.id ?? null) !== (shown?.id ?? null)) {
+        // The queue moved on elsewhere: refresh what the page shows (the next job itself was just fetched).
+        void queryClient.invalidateQueries({ queryKey: orpc.jobs.list.key() })
+        void queryClient.invalidateQueries({ queryKey: orpc.jobs.counts.key() })
+      }
+      if (!fresh) return void toast.info("Nothing is queued.")
+      const href = safeHref(fresh.url)
+      if (!href) return void toast.error("That job's link is not a web address, so it was not opened.")
+      window.open(href, "_blank", "noopener,noreferrer")
+    } catch (error) {
+      toast.error(errorMessage(error))
+    } finally {
+      opening.current = false
+    }
   }
+
   return (
-    <JobLink url={job.url} label={`Open next job ${job.title}`} className={className}>
-      Open next
-    </JobLink>
+    <Button disabled={disabled || !shown} onClick={open} className="max-w-full">
+      <ExternalLinkIcon data-icon="inline-start" />
+      <span className="truncate">
+        {shown ? `Open next: ${displayText(shown.company, 24)}, ${displayText(shown.title, 32)}` : "Open next"}
+      </span>
+    </Button>
   )
 }
 
@@ -74,6 +107,7 @@ export function QueueBoard() {
   const [shown, setShown] = useState(QUEUE_PAGE)
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set())
   const [confirm, setConfirm] = useState<Confirm>(null)
+  const [addOpen, setAddOpen] = useState(false)
   const [message, setMessage] = useState({ text: "", n: 0 })
   const announce = useCallback((text: string) => setMessage((m) => ({ text, n: m.n + 1 })), [])
   const results = useRef<HTMLHeadingElement>(null)
@@ -83,8 +117,8 @@ export function QueueBoard() {
   const q = useDebounced(search, 250)
   const active = useMemo(() => ({ ...filters, q }), [filters, q])
   const input = listInput(active, shown)
-  const list = useQuery({ ...orpc.jobs.list.queryOptions({ input }), placeholderData: keepPreviousData })
-  const counts = useQuery(orpc.jobs.counts.queryOptions())
+  const list = useQuery({ ...orpc.jobs.list.queryOptions({ input }), ...LIVE, placeholderData: keepPreviousData })
+  const counts = useQuery({ ...orpc.jobs.counts.queryOptions(), ...LIVE })
   const actions = useQueueActions(announce)
 
   const rows = useMemo(() => (list.data ?? []).slice(0, shown), [list.data, shown])
@@ -107,6 +141,10 @@ export function QueueBoard() {
       else next.delete(id)
       return next
     })
+  }, [])
+
+  const dropSelection = useCallback((ids: readonly string[]) => {
+    setSelected((prev) => new Set([...prev].filter((id) => !ids.includes(id))))
   }, [])
 
   const askConfirm = useCallback((next: Exclude<Confirm, null>) => {
@@ -147,8 +185,8 @@ export function QueueBoard() {
     parkFocus.current = true
     if (confirmed.kind === "applied") void actions.markApplied(confirmed.job)
     else {
-      void actions.remove(confirmed.ids)
-      setSelected(new Set())
+      const { ids } = confirmed
+      void actions.remove(ids).then((ok) => ok && dropSelection(ids))
     }
   }
 
@@ -175,7 +213,19 @@ export function QueueBoard() {
           {message.text}
           {message.n % 2 ? " " : ""}
         </p>
-        <AddJobForm announce={announce} />
+        <Button
+          variant="outline"
+          className="md:hidden"
+          aria-expanded={addOpen}
+          aria-controls="add-job"
+          onClick={() => setAddOpen((open) => !open)}
+        >
+          <PlusIcon data-icon="inline-start" />
+          {addOpen ? "Hide the add form" : "Add a job"}
+        </Button>
+        <div id="add-job" className={addOpen ? undefined : "max-md:hidden"}>
+          <AddJobForm announce={announce} />
+        </div>
 
         <section aria-labelledby="queue-results" className="grid min-w-0 grid-cols-1 gap-3">
           <h2 id="queue-results" ref={results} tabIndex={-1} className="sr-only outline-none">
@@ -209,8 +259,8 @@ export function QueueBoard() {
                   disabled={anySelectedBusy}
                   onClick={() => {
                     parkFocus.current = true
-                    void actions.skip(selectedRows.map((row) => row.id))
-                    setSelected(new Set())
+                    const ids = selectedRows.map((row) => row.id)
+                    void actions.skip(ids).then((ok) => ok && dropSelection(ids))
                   }}
                 >
                   Skip selected
@@ -259,7 +309,7 @@ export function QueueBoard() {
                   <option value="">All sources</option>
                   {sourceOptions.map((entry) => (
                     <option key={entry.source} value={entry.source}>
-                      {sourceLabel(entry.source).slice(0, 40)} ({entry.count})
+                      {displayText(sourceLabel(entry.source), 40)} ({entry.count})
                     </option>
                   ))}
                 </select>
@@ -343,8 +393,9 @@ export function QueueBoard() {
             <AlertDialogDescription>
               {confirm?.kind === "applied" ? (
                 <>
-                  Records an application for <SafeText value={confirm.job.title} max={80} /> at{" "}
-                  <SafeText value={confirm.job.company} max={40} />. This page can't undo it.
+                  This adds <SafeText value={confirm.job.title} max={80} /> at{" "}
+                  <SafeText value={confirm.job.company} max={40} /> to your applications and cannot be undone from this
+                  page. Removing the job deletes the application too.
                 </>
               ) : confirm?.job ? (
                 <>
@@ -373,7 +424,7 @@ export function QueueSkeleton() {
   return (
     <div aria-hidden="true" className="grid gap-2">
       {Array.from({ length: 8 }, (_, i) => (
-        <div key={i} className="h-12 animate-pulse bg-muted" />
+        <div key={i} className="h-12 animate-pulse bg-muted motion-reduce:animate-none" />
       ))}
     </div>
   )

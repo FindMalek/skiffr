@@ -59,6 +59,7 @@ async function mount(rows: Job[], api: Partial<QueueApi> = {}) {
     setStatus: mock(async () => ({})),
     remove: mock(async () => ({})),
     markApplied: mock(async () => ({})),
+    next: mock(async () => rows[0] ?? null),
     ...api,
   } as QueueApi
   await act(async () => {
@@ -188,4 +189,96 @@ test("an invalid or non-http link is refused before anything is sent, and a doub
   await act(async () => finish(false))
   expect(host.querySelector("#job-url-result")?.textContent).toContain("Already saved as")
   expect(host.querySelector("#job-url-result")?.textContent).toContain("Nothing was added")
+})
+
+const openNext = () =>
+  [...host.querySelectorAll("header button")].find((b) => b.textContent?.startsWith("Open next")) as HTMLButtonElement
+
+test("Open next asks the server when it is pressed and opens what it answers, not the stale job on screen", async () => {
+  const opened = mock((..._args: unknown[]) => null)
+  window.open = opened as unknown as typeof window.open
+  const next = mock(async () => job(2))
+  await mount([job(1), job(2)], { next })
+  expect(openNext().textContent).toContain("Role 1")
+
+  await act(async () => {
+    openNext().click()
+  })
+  expect(next).toHaveBeenCalledTimes(1)
+  expect(opened).toHaveBeenCalledTimes(1)
+  expect(opened.mock.calls[0]).toEqual([job(2).url, "_blank", "noopener,noreferrer"])
+  expect(openNext().textContent).toContain("Role 2")
+
+  next.mockImplementation(async () => null as never)
+  await act(async () => {
+    openNext().click()
+  })
+  expect(opened).toHaveBeenCalledTimes(1)
+})
+
+test("Open next never opens a link that is not a web address", async () => {
+  const opened = mock((..._args: unknown[]) => null)
+  window.open = opened as unknown as typeof window.open
+  await mount([job(1)], { next: mock(async () => job(1, { url: "javascript:alert(1)" })) })
+  await act(async () => {
+    openNext().click()
+  })
+  expect(opened).not.toHaveBeenCalled()
+})
+
+test("accessible names use the neutralized, clipped text, and a changing row's Open link is disabled", async () => {
+  let finish: () => void = () => {}
+  const setStatus = mock(
+    (_ids: readonly string[], _status: "queued" | "skipped") =>
+      new Promise<unknown>((resolve) => (finish = () => resolve({}))),
+  )
+  await mount([job(1, { title: `Evil${cp(0x202e)}title${cp(0x7)} ${"x".repeat(5000)}` }), job(2)], { setStatus })
+  const names = [...table().querySelectorAll("[aria-label]")].map((el) => el.getAttribute("aria-label") ?? "")
+  expect(names.length).toBeGreaterThan(5)
+  for (const name of names) {
+    expect(name).not.toContain(cp(0x202e))
+    expect(name).not.toContain(cp(0x7))
+    expect(name.length).toBeLessThan(160)
+  }
+  expect(names.some((name) => name.includes("[U+202E]"))).toBe(true)
+
+  const rows = () => [...table().querySelectorAll("tbody tr")]
+  await act(async () => {
+    button("Skip: Role 2").click()
+  })
+  expect(rows()[1]?.querySelector("a[href]")).toBeNull()
+  expect(rows()[1]?.querySelector("button[disabled]")?.textContent).toBe("Open")
+  expect(rows()[0]?.querySelector("a[href]")).not.toBeNull()
+  await act(async () => finish())
+})
+
+test("a bulk skip keeps the selection until the server answers, and a failed one keeps it", async () => {
+  let settle: (ok: boolean) => void = () => {}
+  const setStatus = mock(
+    (_ids: readonly string[], _status: "queued" | "skipped") =>
+      new Promise<unknown>((resolve, reject) => (settle = (ok) => (ok ? resolve({}) : reject(new Error("boom"))))),
+  )
+  await mount([job(1), job(2), job(3)], { setStatus })
+  const bulk = () => host.querySelector('section[aria-label="Bulk actions"]')
+  await act(async () => {
+    for (const box of [...table().querySelectorAll("tbody input[type=checkbox]")].slice(0, 2))
+      (box as HTMLInputElement).click()
+  })
+  expect(bulk()?.textContent).toContain("2 selected")
+  const skip = () =>
+    [...bulk()!.querySelectorAll("button")].find((b) => b.textContent === "Skip selected") as HTMLButtonElement
+
+  await act(async () => {
+    skip().click()
+  })
+  expect(setStatus).toHaveBeenCalledTimes(1)
+  expect(bulk()?.textContent).toContain("2 selected")
+  await act(async () => settle(false))
+  expect(bulk()?.textContent).toContain("2 selected")
+
+  await act(async () => {
+    skip().click()
+  })
+  await act(async () => settle(true))
+  expect(bulk()).toBeNull()
 })
