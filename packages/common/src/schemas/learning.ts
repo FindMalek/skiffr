@@ -12,6 +12,7 @@ import {
   STATS_APPLICATIONS_MAX,
 } from "../constants"
 import { answerSchema } from "./answers"
+import { queryInt } from "./query"
 import { CLEAN_MESSAGE, clean } from "./text"
 
 /** The host the form lives on, plus the first path segment on multi-tenant ATS hosts (`boards.greenhouse.io/acme`). */
@@ -101,19 +102,30 @@ export const recordInputSchema = z
 
 /**
  * What happened to the batch's site profile. The extension must send an event for every learnable field of the form,
- * the empty ones too (`filledValue` and `finalValue` both empty): a batch of only some of them is `partial_form` and not
- * saved, and one with nothing learnable is `no_learnable_fields`.
+ * the empty ones too (`filledValue` and `finalValue` both empty). A batch that is only a small part of the site's latest
+ * form is still saved as a form of its own but comes back with the `partial_form` warning; one with nothing learnable is
+ * skipped.
  */
 export const siteProfileStatusSchema = z.object({
   status: z.enum(["saved", "skipped"]),
-  reason: z.enum(["partial_form", "no_learnable_fields"]).optional(),
+  reason: z.enum(["no_learnable_fields"]).optional(),
+  warning: z.enum(["partial_form"]).optional(),
+})
+
+/** `bank_full`: the answer bank is at its cap, so `skipped` corrected answers with a new question were not saved. Everything else of the batch was. */
+export const recordAnswersStatusSchema = z.object({
+  status: z.enum(["saved", "bank_full"]),
+  skipped: z.number(),
 })
 
 export const recordOutputSchema = z.object({
   recorded: z.number(),
   skipped: z.number(),
   siteProfile: siteProfileStatusSchema,
+  answers: recordAnswersStatusSchema,
 })
+
+export type RecordOutput = z.infer<typeof recordOutputSchema>
 
 export const suggestionSchema = z.object({
   kind: z.enum(["keep", "flip_flop", "cleared", "stale"]),
@@ -130,7 +142,7 @@ export const resolveSuggestionInputSchema = z.object({
 })
 
 export const statsInputSchema = z.object({
-  limit: z.coerce.number().int().min(1).max(STATS_APPLICATIONS_MAX).default(50),
+  limit: queryInt(z.number().int().min(1).max(STATS_APPLICATIONS_MAX)).default(50),
 })
 
 export const statsOutputSchema = z.object({
@@ -173,7 +185,7 @@ export const siteProfileSchema = z.object({
   fields: z.array(siteFieldEntrySchema.extend({ fieldKey: z.string() })),
 })
 
-export const siteProfilesInputSchema = z.object({ limit: z.coerce.number().int().min(1).max(200).default(50) })
+export const siteProfilesInputSchema = z.object({ limit: queryInt(z.number().int().min(1).max(200)).default(50) })
 export const siteProfilesOutputSchema = z.array(siteProfileSchema)
 /** Forgets the learned form maps of one site and nothing else: saved answers, the profile and logged corrections stay. */
 export const forgetSiteInputSchema = z.object({ siteKey: siteKeySchema })

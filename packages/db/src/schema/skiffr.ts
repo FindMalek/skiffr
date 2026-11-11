@@ -4,7 +4,7 @@ import {
   FIELD_EVENT_OUTCOMES,
   FIELD_EVENT_SOURCES,
 } from "@skiffr/common/constants"
-import type { ProfileData, ProfileFields, SiteFieldMap } from "@skiffr/common/schemas"
+import type { ProfileData, ProfileFields, RecordOutput, SiteFieldMap } from "@skiffr/common/schemas"
 import { getTableColumns } from "drizzle-orm"
 import {
   index,
@@ -190,6 +190,8 @@ export const recordBatch = pgTable(
     batchId: uuid("batch_id").notNull(),
     /** Hash of the batch's content, so the same id with different events is refused instead of silently ignored. */
     payloadHash: text("payload_hash").notNull(),
+    /** What the first attempt answered (counts and statuses only), so a replay answers the same. Null for a batch still running. */
+    response: jsonb("response").$type<RecordOutput>(),
     createdAt: createdAt(),
   },
   (t) => [primaryKey({ columns: [t.userId, t.batchId] })],

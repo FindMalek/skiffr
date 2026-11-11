@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Weather</title></head>
+<body>
+<h1>Weather today</h1>
+<iframe id="f" title="widget" width="500" height="400" src="/attacker-frame.html"></iframe>
+<script>
+  // the frame reports a form from this origin, then the page points it at another origin
+  setTimeout(() => {
+    document.getElementById("f").src = "https://127.0.0.1:ATTACKER_PORT/newsletter.html"
+  }, 3000)
+</script>
+</body></html>

@@ -12,5 +12,6 @@ CREATE TABLE "site_profile" (
 	CONSTRAINT "site_profile_user_site_form_unique" UNIQUE("user_id","site_key","form_signature")
 );
 --> statement-breakpoint
+ALTER TABLE "record_batch" ADD COLUMN "response" jsonb;--> statement-breakpoint
 ALTER TABLE "site_profile" ADD CONSTRAINT "site_profile_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "site_profile_user_last_used_idx" ON "site_profile" USING btree ("user_id","last_used_at");

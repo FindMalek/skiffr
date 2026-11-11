@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Apply now</title></head>
+<body>
+<h1>Apply for this job</h1>
+<form>
+  <input name="full_name" placeholder="Full name"><input type="email" placeholder="Email"><input type="tel" placeholder="Phone">
+  <input type="file" name="resume" aria-label="Resume"><button type="submit">Apply</button>
+</form>
+<script>
+  // flood mode: one pushState per 20ms, each one fires a navigatesuccess in the content script
+  if (location.hash === "#flood") {
+    let n = 0
+    const timer = setInterval(() => {
+      history.pushState({}, "", `/attacker-frame.html?n=${n++}#flood`)
+      if (n > 150) clearInterval(timer)
+    }, 20)
+  }
+</script>
+</body></html>

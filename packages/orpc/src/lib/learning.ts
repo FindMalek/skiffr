@@ -162,22 +162,39 @@ export async function embedMissing(
   }
 }
 
-/** A user's answer bank is capped. Updating a label that already exists is always fine. Call it inside the transaction that writes: it takes a per-user lock so parallel writes can't all squeeze under the cap. */
+/**
+ * The labels that don't fit in a user's answer bank: new ones beyond the cap (updating a label that exists is always
+ * fine). Call it inside the transaction that writes: it takes a per-user lock so parallel writes can't all squeeze under the cap.
+ */
+export async function labelsWithoutRoom(
+  db: Pick<Db, "select" | "execute">,
+  userId: string,
+  labels: string[],
+): Promise<Set<string>> {
+  const unique = [...new Set(labels)]
+  if (unique.length === 0) return new Set()
+  await db.execute(sql`select pg_advisory_xact_lock(hashtext(${`answers:${userId}`}))`)
+  const [row] = await db.select({ count: sql<number>`count(*)::int` }).from(answer).where(eq(answer.userId, userId))
+  const room = ANSWERS_PER_USER_MAX - (row?.count ?? 0)
+  if (room >= unique.length) return new Set()
+  const existing = new Set(
+    (
+      await db
+        .select({ label: answer.normalizedLabel })
+        .from(answer)
+        .where(and(eq(answer.userId, userId), inArray(answer.normalizedLabel, unique)))
+    ).map((r) => r.label),
+  )
+  return new Set(unique.filter((label) => !existing.has(label)).slice(Math.max(room, 0)))
+}
+
+/** Saving one answer by hand fails at the cap. */
 export async function assertAnswerRoom(
   db: Pick<Db, "select" | "execute">,
   userId: string,
   labels: string[],
 ): Promise<void> {
-  const unique = [...new Set(labels)]
-  if (unique.length === 0) return
-  await db.execute(sql`select pg_advisory_xact_lock(hashtext(${`answers:${userId}`}))`)
-  const [row] = await db.select({ count: sql<number>`count(*)::int` }).from(answer).where(eq(answer.userId, userId))
-  if ((row?.count ?? 0) + unique.length <= ANSWERS_PER_USER_MAX) return
-  const existing = await db
-    .select({ label: answer.normalizedLabel })
-    .from(answer)
-    .where(and(eq(answer.userId, userId), inArray(answer.normalizedLabel, unique)))
-  if ((row?.count ?? 0) + unique.length - existing.length > ANSWERS_PER_USER_MAX) {
+  if ((await labelsWithoutRoom(db, userId, labels)).size > 0) {
     throw new ORPCError("BAD_REQUEST", { message: `You can save up to ${ANSWERS_PER_USER_MAX} answers.` })
   }
 }

@@ -589,10 +589,11 @@ test("an answer bank holds at most 2000 answers, but existing labels can still c
   await expect(call(appRouter.answers.create, { rawLabel: "One more", value: "x" }, as())).rejects.toMatchObject({
     code: "BAD_REQUEST",
   })
-  await expect(record(as, [event("One more", "", "x")])).rejects.toMatchObject({ code: "BAD_REQUEST" })
-  expect(await db.select().from(fieldEvent).where(eq(fieldEvent.userId, as().id))).toEqual([])
+  expect(await record(as, [event("One more", "", "x")])).toMatchObject({ answers: { status: "bank_full", skipped: 1 } })
+  expect(await answerOf(as().id, "one more")).toBeUndefined()
+  expect(await db.select().from(fieldEvent).where(eq(fieldEvent.userId, as().id))).toHaveLength(1)
   await call(appRouter.answers.create, { rawLabel: "L1", value: "y" }, as())
-  await record(as, [event("L2", "x", "z")])
+  expect(await record(as, [event("L2", "x", "z")])).toMatchObject({ answers: { status: "saved", skipped: 0 } })
   expect(await answerOf(as().id, "l2")).toMatchObject({ value: "z" })
 })
 
@@ -1286,23 +1287,23 @@ test("one site keeps 20 forms and drops its own oldest, other sites are untouche
   expect(rows.filter((r) => r.siteKey === SITE_B)).toHaveLength(1)
 })
 
-test("record says whether the form was saved, and why not", async () => {
+test("record says whether the form was saved, warns about a partial one and still saves it", async () => {
   const as = await newUser()
   const labels = ["Alpha one", "Beta two", "Gamma three", "Delta four", "Epsilon five", "Zeta six"]
   const all = labels.map((label) => event(label, "x", "x", { source: "ai" }))
-  expect(await record(as, all)).toMatchObject({ siteProfile: { status: "saved" } })
-  expect(await record(as, all.slice(0, 2))).toMatchObject({
-    recorded: 2,
-    siteProfile: { status: "skipped", reason: "partial_form" },
-  })
-  expect(await sitesOf(as().id)).toHaveLength(1)
+  expect(await record(as, all)).toMatchObject({ siteProfile: { status: "saved" }, answers: { status: "saved" } })
+  expect((await record(as, all)).siteProfile).toEqual({ status: "saved" })
+  expect((await record(as, all.slice(0, 2))).siteProfile).toEqual({ status: "saved", warning: "partial_form" })
+  expect(await sitesOf(as().id)).toHaveLength(2)
+  // the small form is the latest now, so a full one isn't a part of it
+  expect((await record(as, all)).siteProfile).toEqual({ status: "saved" })
   expect(await record(as, [event("Password", "", "hunter2", { type: "password" })])).toMatchObject({
     recorded: 0,
     siteProfile: { status: "skipped", reason: "no_learnable_fields" },
   })
 })
 
-test("a full answer bank rejects the batch's answers but not its site profile", async () => {
+test("a full answer bank skips only the new questions: events, updates and the site profile still go in", async () => {
   const as = await newUser()
   await db.insert(answer).values(
     Array.from({ length: 2000 }, (_, i) => ({
@@ -1312,11 +1313,43 @@ test("a full answer bank rejects the batch's answers but not its site profile", 
       value: "x",
     })),
   )
+  const events = [
+    event("One more", "", "x"),
+    event("L7", "x", "changed"),
+    event("Nickname", "Ana", "Ana", { source: "ai" }),
+  ]
+  expect(await record(as, events)).toMatchObject({
+    recorded: 3,
+    answers: { status: "bank_full", skipped: 1 },
+    siteProfile: { status: "saved" },
+  })
+  expect(await db.select().from(fieldEvent).where(eq(fieldEvent.userId, as().id))).toHaveLength(3)
+  expect(await answerOf(as().id, "one more")).toBeUndefined()
+  expect(await answerOf(as().id, "l7")).toMatchObject({ value: "changed", timesCorrected: 1 })
+  expect(Object.keys((await sitesOf(as().id))[0]!.fieldMap).sort()).toEqual([
+    "l7|text",
+    "nickname|text",
+    "one more|text",
+  ])
+})
+
+test("a replayed batch gets the first answer back and applies nothing", async () => {
+  const as = await newUser()
+  await db.insert(answer).values(
+    Array.from({ length: 2000 }, (_, i) => ({
+      userId: as().id,
+      normalizedLabel: `l${i}`,
+      rawLabel: `l${i}`,
+      value: "x",
+    })),
+  )
+  const batchId = crypto.randomUUID()
   const events = [event("One more", "", "x"), event("Nickname", "Ana", "Ana", { source: "ai" })]
-  await expect(record(as, events)).rejects.toMatchObject({ code: "BAD_REQUEST" })
-  expect(await db.select().from(fieldEvent).where(eq(fieldEvent.userId, as().id))).toEqual([])
-  expect(await db.select().from(answer).where(eq(answer.normalizedLabel, "one more"))).toEqual([])
-  expect(Object.keys((await sitesOf(as().id))[0]!.fieldMap).sort()).toEqual(["nickname|text", "one more|text"])
+  const first = await record(as, events, { batchId })
+  expect(first).toMatchObject({ answers: { status: "bank_full", skipped: 1 }, siteProfile: { status: "saved" } })
+  expect(await record(as, events, { batchId })).toEqual(first)
+  expect(await db.select().from(fieldEvent).where(eq(fieldEvent.userId, as().id))).toHaveLength(2)
+  expect(await sitesOf(as().id)).toMatchObject([{ timesUsed: 1 }])
 })
 
 test("forgetting a site while records of it run neither deadlocks nor leaves a half written form", async () => {
@@ -1330,4 +1363,41 @@ test("forgetting a site while records of it run neither deadlocks nor leaves a h
   const rows = await sitesOf(as().id)
   expect(rows.length).toBeLessThanOrEqual(1)
   for (const row of rows) expect(Object.keys(row.fieldMap).sort()).toEqual(["alpha|text", "beta|text"])
+})
+
+test("a changed form keeps where an entry came from when the user accepts it, for answers and for the profile", async () => {
+  const as = await newUser()
+  const labels = ["Alpha one", "Beta two", "Gamma three", "Delta four", "Preferred name"]
+  const at = (days: number) => ({ now: () => new Date(Date.now() + days * DAY) })
+  await call(appRouter.answers.create, { rawLabel: "Preferred name", value: "Ana" }, as())
+  const form = (source: "answer" | "site", extra: object[] = []) => [
+    ...labels.slice(0, 3).map((label) => event(label, "x", "x", { source: "ai" })),
+    event("Email", "a@b.dev", "a@b.dev", { source: source === "answer" ? "profile" : "site" }),
+    event("Preferred name", "Ana", "Ana", { source }),
+    ...extra,
+  ]
+  await record(as, form("answer"), {}, at(0))
+  await db.insert(profile).values({ userId: as().id, data: {} as never, updatedAt: new Date(Date.now() + DAY) })
+
+  // a sixth field: 5 of 6 fields in common, so it is looked up as the saved form and recorded as a new one
+  const changed = [
+    ...labels.slice(0, 3).map((label, i) => field(`f${i}`, label)),
+    field("e", "Email"),
+    field("n", "Preferred name"),
+    field("z", "Zeta six"),
+  ]
+  const asked = await lookupAt(as, SITE, changed)
+  expect(asked.matches.map((m) => m.source)).toEqual(["site", "site", "site", "none", "site", "none"])
+  await record(as, form("site", [event("Zeta six", "", "6")]), {}, at(2))
+
+  const rows = await sitesOf(as().id)
+  expect(rows).toHaveLength(2)
+  const grown = rows.find((r) => r.fieldKeys.length === 6)!
+  expect(grown.fieldMap["preferred name|text"]).toMatchObject({ source: "answer", answerId: expect.any(String) })
+  expect(grown.fieldMap["email|text"]).toMatchObject({ source: "profile" })
+
+  await call(appRouter.answers.create, { rawLabel: "Preferred name", value: "Anita" }, as())
+  const again = await lookupAt(as, SITE, changed)
+  expect(again.matches.map((m) => m.source)).toEqual(["site", "site", "site", "none", "label", "site"])
+  expect(first(again.matches.slice(4))).toMatchObject({ value: "Anita" })
 })

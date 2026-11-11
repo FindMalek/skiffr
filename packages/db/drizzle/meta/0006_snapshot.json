@@ -1,5 +1,5 @@
 {
-  "id": "9652938c-9c39-4e8e-8681-3c95930a376b",
+  "id": "38284ffc-dc71-4922-bbd4-dce82879c67b",
   "prevId": "8cb752bf-df75-454f-8404-839b88749d68",
   "version": "7",
   "dialect": "postgresql",
@@ -1398,6 +1398,12 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "response": {
+          "name": "response",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
         },
         "created_at": {
           "name": "created_at",

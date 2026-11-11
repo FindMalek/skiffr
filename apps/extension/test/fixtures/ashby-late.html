@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Product Engineer @ Acme</title></head>
+<body>
+<div id="root"><h1>Product Engineer</h1><p>Loading application...</p></div>
+<script>
+  // jobs.ashbyhq.com renders the application client side, well after load, with free text custom questions
+  setTimeout(() => {
+    document.getElementById("root").innerHTML = `<h1>Product Engineer</h1>
+<form>
+  <div><label for="_systemfield_name">Name</label><input id="_systemfield_name" name="_systemfield_name" type="text"></div>
+  <div><label for="_systemfield_email">Email</label><input id="_systemfield_email" name="_systemfield_email" type="email"></div>
+  <div><label id="rl">Resume</label><button type="button">Upload File</button><input id="_systemfield_resume" type="file" aria-labelledby="rl" hidden></div>
+  <div><label for="q1">Describe a choice you made when shipping a product that traded speed for quality, and what you would change.</label><textarea id="q1"></textarea></div>
+  <div><label for="q2">How have you handled billing and payment disputes in a previous role, if at all?</label><input id="q2" type="text"></div>
+  <div><label for="q3">What is your preferred order of working on projects?</label><textarea id="q3"></textarea></div>
+  <button type="submit">Submit Application</button>
+</form>`
+  }, 2500)
+</script>
+</body></html>

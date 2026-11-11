@@ -24,6 +24,7 @@ import {
   recordInputSchema,
   recordOutputSchema,
   resolveSuggestionInputSchema,
+  type SiteFieldMap,
   siteProfilesInputSchema,
   siteProfilesOutputSchema,
   statsInputSchema,
@@ -43,11 +44,11 @@ import {
 } from "@skiffr/db"
 import { and, desc, eq, gte, inArray, isNotNull, lt, ne, or, sql } from "drizzle-orm"
 import {
-  assertAnswerRoom,
   embeddingText,
   embedMissing,
   fingerprintOf,
   guardLearningDb,
+  labelsWithoutRoom,
   logBestEffort,
   payloadHash,
   usableValue,
@@ -122,19 +123,13 @@ async function purgeOld(db: Db, userId: string, now: Date): Promise<void> {
   }
 }
 
-/** The saved form for these fields: the exact one by its key, else the most alike of the site's forms (their map is read for that one only). */
-async function findSavedForm(db: Db, userId: string, siteKey: string, keys: string[]) {
-  const site = and(eq(siteProfile.userId, userId), eq(siteProfile.siteKey, siteKey))
-  const [exact] = await db
-    .select({ fieldMap: siteProfile.fieldMap })
-    .from(siteProfile)
-    .where(and(site, eq(siteProfile.formSignature, formSignature(keys))))
-  if (exact) return exact
+/** The most alike saved form of the site (at least 80% of its fields in common), with its map: only that row's map is read. */
+async function findAlikeForm(db: Pick<Db, "select">, userId: string, siteKey: string, keys: string[]) {
   const candidates = await db
     .select({ id: siteProfile.id, fieldKeys: siteProfile.fieldKeys, lastUsedAt: siteProfile.lastUsedAt })
     .from(siteProfile)
-    .where(site)
-    .orderBy(desc(siteProfile.lastUsedAt))
+    .where(and(eq(siteProfile.userId, userId), eq(siteProfile.siteKey, siteKey)))
+    .orderBy(desc(siteProfile.lastUsedAt), desc(siteProfile.id))
     .limit(SITE_PROFILES_PER_SITE_MAX)
   const alike = pickAlikeForm(candidates, keys)
   if (!alike) return null
@@ -145,7 +140,26 @@ async function findSavedForm(db: Db, userId: string, siteKey: string, keys: stri
   return row ?? null
 }
 
-type SiteProfileStatus = { status: "saved" | "skipped"; reason?: "partial_form" | "no_learnable_fields" }
+/** The saved form for these fields: the exact one by its key, else the most alike. */
+async function findSavedForm(db: Db, userId: string, siteKey: string, keys: string[]) {
+  const [exact] = await db
+    .select({ fieldMap: siteProfile.fieldMap })
+    .from(siteProfile)
+    .where(
+      and(
+        eq(siteProfile.userId, userId),
+        eq(siteProfile.siteKey, siteKey),
+        eq(siteProfile.formSignature, formSignature(keys)),
+      ),
+    )
+  return exact ?? (await findAlikeForm(db, userId, siteKey, keys))
+}
+
+type SiteProfileStatus = {
+  status: "saved" | "skipped"
+  reason?: "no_learnable_fields"
+  warning?: "partial_form"
+}
 
 /** Folds a batch into the site profile of its form. `withSiteLock` makes it the last lock of the transaction, after the answers. */
 async function saveSiteProfile(
@@ -171,6 +185,8 @@ async function saveSiteProfile(
       .where(
         and(eq(siteProfile.userId, userId), eq(siteProfile.siteKey, siteKey), eq(siteProfile.formSignature, signature)),
       )
+    let warning: SiteProfileStatus["warning"]
+    let previous: SiteFieldMap = {}
     if (!existing) {
       const [latest] = await tx
         .select({ fieldKeys: siteProfile.fieldKeys })
@@ -178,7 +194,8 @@ async function saveSiteProfile(
         .where(and(eq(siteProfile.userId, userId), eq(siteProfile.siteKey, siteKey)))
         .orderBy(desc(siteProfile.lastUsedAt), desc(siteProfile.id))
         .limit(1)
-      if (latest && isPartialForm(latest.fieldKeys, keys)) return { status: "skipped", reason: "partial_form" }
+      if (latest && isPartialForm(latest.fieldKeys, keys)) warning = "partial_form"
+      previous = (await findAlikeForm(tx, userId, siteKey, keys))?.fieldMap ?? {}
     }
     const fromAnswers = events.filter((e) => e.outcome === "accepted" && e.event.source === "answer")
     const globals = fromAnswers.length
@@ -205,7 +222,7 @@ async function saveSiteProfile(
       source: e.event.source,
       answerId: globals.find((g) => g.normalizedLabel === e.normalizedLabel && g.value === e.final)?.id,
     }))
-    const { fieldMap, accepted } = applyEvents(existing?.fieldMap ?? {}, siteEvents, now)
+    const { fieldMap, accepted } = applyEvents(existing?.fieldMap ?? {}, siteEvents, now, previous)
     if (!existing && Object.keys(fieldMap).length === 0) return { status: "skipped", reason: "no_learnable_fields" }
     const used = accepted > 0 ? 1 : 0
     const [saved] = await tx
@@ -225,7 +242,7 @@ async function saveSiteProfile(
       })
       .returning({ id: siteProfile.id })
     if (!existing && saved) await evictLeastRecent(tx, userId, siteKey, saved.id)
-    return { status: "saved" }
+    return warning ? { status: "saved", warning } : { status: "saved" }
   })
 }
 
@@ -418,7 +435,11 @@ export const learningRouter = {
         .sort((a, b) => (a.normalizedLabel < b.normalizedLabel ? -1 : a.normalizedLabel > b.normalizedLabel ? 1 : 0))
       const result = { recorded: events.length, skipped: input.events.length - events.length }
       if (events.length === 0) {
-        return { ...result, siteProfile: { status: "skipped" as const, reason: "no_learnable_fields" as const } }
+        return {
+          ...result,
+          siteProfile: { status: "skipped" as const, reason: "no_learnable_fields" as const },
+          answers: { status: "saved" as const, skipped: 0 },
+        }
       }
       // The form is every learnable field the batch reports, filled or not, so it matches what lookup sends. A client can't choose the signature.
       const formKeys = formFieldKeys(
@@ -440,128 +461,139 @@ export const learningRouter = {
               .returning({ batchId: recordBatch.batchId })
             if (!fresh) {
               const [spent] = await tx
-                .select({ payloadHash: recordBatch.payloadHash })
+                .select({ payloadHash: recordBatch.payloadHash, response: recordBatch.response })
                 .from(recordBatch)
                 .where(and(eq(recordBatch.userId, userId), eq(recordBatch.batchId, input.batchId)))
               if (spent?.payloadHash !== hash) {
                 throw new ORPCError("CONFLICT", { message: "That batch id was already used for different events." })
               }
-              return null
+              return {
+                replay: spent.response ?? {
+                  ...result,
+                  siteProfile: { status: "saved" as const },
+                  answers: { status: "saved" as const, skipped: 0 },
+                },
+                touched: [],
+              }
             }
           }
 
-          // The answers part runs in a savepoint: a full answer bank skips it (and the events) but never the site profile below.
-          let capError: ORPCError<string, unknown> | null = null
-          const touched = await tx
-            .transaction(async (sp) => {
-              const learnable = (e: (typeof events)[number]) =>
-                e.outcome === "corrected" && e.final.length <= LEARNING_AUTOFILL_VALUE_MAX
-              await assertAnswerRoom(
-                sp,
-                userId,
-                events.filter(learnable).map((e) => e.normalizedLabel),
-              )
-              await sp.insert(fieldEvent).values(
-                events.map((e) => ({
+          // New questions beyond the answer bank's cap are left out; their events, the updates to existing answers and the site profile still go in.
+          const learnable = (e: (typeof events)[number]) =>
+            e.outcome === "corrected" && e.final.length <= LEARNING_AUTOFILL_VALUE_MAX
+          const full = await labelsWithoutRoom(
+            tx,
+            userId,
+            events.filter(learnable).map((e) => e.normalizedLabel),
+          )
+          await tx.insert(fieldEvent).values(
+            events.map((e) => ({
+              userId,
+              applicationId: input.applicationId ?? null,
+              siteKey: input.siteKey,
+              fingerprint: e.fingerprint,
+              normalizedLabel: e.normalizedLabel,
+              rawLabel: e.event.label,
+              fieldType: (e.event.type ?? "").toLowerCase(),
+              filledValue: e.filled,
+              finalValue: e.final,
+              source: e.event.source,
+              outcome: e.outcome,
+            })),
+          )
+
+          const touched: { id: string; normalizedLabel: string }[] = []
+          let skippedAnswers = 0
+          for (const e of events) {
+            const sameValue = and(
+              eq(answer.userId, userId),
+              eq(answer.normalizedLabel, e.normalizedLabel),
+              eq(answer.value, e.filled),
+            )
+            if (e.outcome === "accepted") {
+              await tx
+                .update(answer)
+                .set({ timesUsed: sql`${answer.timesUsed} + 1`, timesCleared: 0, updatedAt: now })
+                .where(sameValue)
+            } else if (e.outcome === "cleared") {
+              await tx
+                .update(answer)
+                .set({
+                  timesUsed: sql`${answer.timesUsed} + 1`,
+                  timesCorrected: sql`${answer.timesCorrected} + 1`,
+                  timesCleared: sql`${answer.timesCleared} + 1`,
+                  lastCorrectedAt: now,
+                  updatedAt: now,
+                })
+                .where(sameValue)
+            } else if (e.final.length > LEARNING_AUTOFILL_VALUE_MAX) {
+              await tx
+                .delete(answer)
+                .where(
+                  and(
+                    eq(answer.userId, userId),
+                    eq(answer.normalizedLabel, e.normalizedLabel),
+                    eq(answer.status, "learned"),
+                  ),
+                )
+            } else if (full.has(e.normalizedLabel)) {
+              skippedAnswers++
+            } else {
+              const [row] = await tx
+                .insert(answer)
+                .values({
                   userId,
-                  applicationId: input.applicationId ?? null,
-                  siteKey: input.siteKey,
-                  fingerprint: e.fingerprint,
                   normalizedLabel: e.normalizedLabel,
                   rawLabel: e.event.label,
-                  fieldType: (e.event.type ?? "").toLowerCase(),
-                  filledValue: e.filled,
-                  finalValue: e.final,
-                  source: e.event.source,
-                  outcome: e.outcome,
-                })),
-              )
-
-              const touched: { id: string; normalizedLabel: string }[] = []
-              for (const e of events) {
-                const sameValue = and(
-                  eq(answer.userId, userId),
-                  eq(answer.normalizedLabel, e.normalizedLabel),
-                  eq(answer.value, e.filled),
-                )
-                if (e.outcome === "accepted") {
-                  await sp
-                    .update(answer)
-                    .set({ timesUsed: sql`${answer.timesUsed} + 1`, timesCleared: 0, updatedAt: now })
-                    .where(sameValue)
-                } else if (e.outcome === "cleared") {
-                  await sp
-                    .update(answer)
-                    .set({
-                      timesUsed: sql`${answer.timesUsed} + 1`,
-                      timesCorrected: sql`${answer.timesCorrected} + 1`,
-                      timesCleared: sql`${answer.timesCleared} + 1`,
-                      lastCorrectedAt: now,
-                      updatedAt: now,
-                    })
-                    .where(sameValue)
-                } else if (e.final.length > LEARNING_AUTOFILL_VALUE_MAX) {
-                  await sp
-                    .delete(answer)
-                    .where(
-                      and(
-                        eq(answer.userId, userId),
-                        eq(answer.normalizedLabel, e.normalizedLabel),
-                        eq(answer.status, "learned"),
-                      ),
-                    )
-                } else {
-                  const [row] = await sp
-                    .insert(answer)
-                    .values({
-                      userId,
-                      normalizedLabel: e.normalizedLabel,
-                      rawLabel: e.event.label,
-                      value: e.final,
-                      source: "autofill",
-                      timesCorrected: 1,
-                      lastCorrectedAt: now,
-                      fingerprint: e.fingerprint,
-                    })
-                    .onConflictDoUpdate({
-                      target: [answer.userId, answer.normalizedLabel],
-                      // An answer the user confirmed by hand keeps its value: the correction stays in the site profile.
-                      setWhere: or(ne(answer.status, "confirmed"), eq(answer.value, e.final)),
-                      set: {
-                        rawLabel: e.event.label,
-                        value: e.final,
-                        source: "autofill",
-                        fingerprint: e.fingerprint,
-                        timesUsed: sql`${answer.timesUsed} + case when ${answer.value} = ${e.filled} then 1 else 0 end`,
-                        timesCorrected: sql`${answer.timesCorrected} + 1`,
-                        timesCleared: 0,
-                        lastCorrectedAt: now,
-                        updatedAt: now,
-                      },
-                    })
-                    .returning({ id: answer.id })
-                  if (row) touched.push({ id: row.id, normalizedLabel: e.normalizedLabel })
-                }
-              }
-              return touched
-            })
-            .catch((error: unknown) => {
-              if (error instanceof ORPCError && error.code === "BAD_REQUEST") {
-                capError = error
-                return []
-              }
-              throw error
-            })
+                  value: e.final,
+                  source: "autofill",
+                  timesCorrected: 1,
+                  lastCorrectedAt: now,
+                  fingerprint: e.fingerprint,
+                })
+                .onConflictDoUpdate({
+                  target: [answer.userId, answer.normalizedLabel],
+                  // An answer the user confirmed by hand keeps its value: the correction stays in the site profile.
+                  setWhere: or(ne(answer.status, "confirmed"), eq(answer.value, e.final)),
+                  set: {
+                    rawLabel: e.event.label,
+                    value: e.final,
+                    source: "autofill",
+                    fingerprint: e.fingerprint,
+                    timesUsed: sql`${answer.timesUsed} + case when ${answer.value} = ${e.filled} then 1 else 0 end`,
+                    timesCorrected: sql`${answer.timesCorrected} + 1`,
+                    timesCleared: 0,
+                    lastCorrectedAt: now,
+                    updatedAt: now,
+                  },
+                })
+                .returning({ id: answer.id })
+              if (row) touched.push({ id: row.id, normalizedLabel: e.normalizedLabel })
+            }
+          }
           const siteProfileStatus = await saveSiteProfile(tx, userId, input.siteKey, formKeys, events, now)
-          return { touched, capError, siteProfileStatus }
+          const response = {
+            ...result,
+            siteProfile: siteProfileStatus,
+            answers: {
+              status: skippedAnswers > 0 ? ("bank_full" as const) : ("saved" as const),
+              skipped: skippedAnswers,
+            },
+          }
+          if (input.batchId) {
+            await tx
+              .update(recordBatch)
+              .set({ response })
+              .where(and(eq(recordBatch.userId, userId), eq(recordBatch.batchId, input.batchId)))
+          }
+          return { replay: null, touched, response }
         }),
       )
-      if (learned === null) return { ...result, siteProfile: { status: "saved" as const } }
-      if (learned.capError) throw learned.capError
+      if (learned.replay) return learned.replay
 
       await embedMissing(context, "learning.record", userId, learned.touched)
       await purgeOld(context.db, userId, now)
-      return { ...result, siteProfile: learned.siteProfileStatus }
+      return learned.response
     }),
 
   siteProfiles: protectedProcedure

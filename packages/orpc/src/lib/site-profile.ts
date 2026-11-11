@@ -75,11 +75,13 @@ export function applyEvents(
   current: SiteFieldMap,
   events: SiteEvent[],
   now: Date,
+  /** The map of the saved form this one was matched to, when it has none of its own yet: what an event's field was there. */
+  previous: SiteFieldMap = {},
 ): { fieldMap: SiteFieldMap; accepted: number } {
   const fieldMap: SiteFieldMap = { ...current }
   let accepted = 0
   for (const e of events) {
-    const old = fieldMap[e.fieldKey]
+    const old = fieldMap[e.fieldKey] ?? previous[e.fieldKey]
     if (e.outcome === "cleared") {
       if (old) {
         fieldMap[e.fieldKey] = {
