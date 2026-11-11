@@ -16,6 +16,7 @@ import {
 } from "@skiffr/ui/components/sidebar"
 import {
   LayoutDashboardIcon,
+  ListChecksIcon,
   LogOutIcon,
   MailIcon,
   NotebookPenIcon,
@@ -37,6 +38,7 @@ interface Me {
 const NAV: { href: Route; label: string; icon: typeof LayoutDashboardIcon; admin?: boolean }[] = [
   { href: "/", label: "Overview", icon: LayoutDashboardIcon },
   { href: "/notes", label: "Notes", icon: NotebookPenIcon },
+  { href: "/answers", label: "Answers", icon: ListChecksIcon },
   { href: "/extension", label: "Extension", icon: PuzzleIcon },
   { href: "/users", label: "Users", icon: UsersIcon, admin: true },
   { href: "/settings/gmail", label: "Gmail", icon: MailIcon },
