@@ -4,7 +4,7 @@ description: Lookup order, what is learned, what never is, and how skiffr advise
 ---
 
 <Callout>
-The correction log, the lookup and the suggestions are in review ([#49](https://github.com/FindMalek/skiffr/pull/49)) and not on `main` yet. This page describes that design. The pieces on `main` today are the profile, the answer bank and the ai field mapping.
+The correction log, the lookup and the suggestions are on `main` ([#49](https://github.com/FindMalek/skiffr/pull/49)) and covered by tests on real Postgres. The extension does not call them yet: until that wiring lands, nothing is learned from your edits.
 </Callout>
 
 skiffr fills a form, you fix what is wrong, and the fixes become answers. The target is fewer corrections per application over time.

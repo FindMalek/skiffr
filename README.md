@@ -27,7 +27,7 @@ What is on `main` today, and what is not.
 | Extension shell | works | Manifest V3, options page (api url, token, test connection), token kept away from content scripts, `Ctrl/Cmd+Shift+F` registered |
 | Fill engine | merged, not wired | React and Vue controlled inputs, selects, comboboxes, shadow DOM, same-origin iframes, honeypots. Never submits. Tested on fixture pages, not yet called from the extension |
 | Form detection and the "autofill this application?" toast | in review | [#45](https://github.com/FindMalek/skiffr/pull/45) |
-| Learning: correction log, answer lookup, suggestions | in review | [#49](https://github.com/FindMalek/skiffr/pull/49) |
+| Learning: correction log, answer lookup, suggestions | merged, not wired to the extension yet | [#49](https://github.com/FindMalek/skiffr/pull/49) |
 | Playwright harness for the extension | in review | [#51](https://github.com/FindMalek/skiffr/pull/51) |
 | CI with real Postgres and an extension zip | works | required `ci` check |
 | Detect, fill and learn running together in the browser | planned | |
@@ -158,10 +158,10 @@ Your profile and answers live in your Postgres. This is what leaves your machine
 
 - **To your own api:** field labels, names, placeholders, input types and option texts of the form being filled, the answers you correct, and your token. The extension has no analytics and talks to no other server.
 - **To the language model provider you configured (Groq by default):** the same field descriptors, plus the names of your profile keys, plus the values of a short allowlist of keys: first and last name, city, country, work authorization, links, and a few free-form fields such as headline, skills or availability. Email, phone, address, pay, ids and dates of birth are not in the allowlist and are never sent. Password, hidden and file inputs are dropped before the request. Page text is wrapped as untrusted data in the prompt. When you ask for a drafted answer, it also gets the question, the job description and up to 5 of your earlier answers. Source: `packages/ai/src/shared-keys.ts`.
-- **To OpenAI, only if you set `OPENAI_API_KEY` (learning, in review):** the normalized question label, to compute an embedding. Never the answer.
+- **To OpenAI, only if you set `OPENAI_API_KEY` (learning):** the normalized question label, to compute an embedding. Never the answer.
 - **Never:** form submission. The fill engine does not submit, click buttons, or touch password or hidden inputs.
 - **Tokens:** kept in extension storage restricted to trusted contexts. Only the background worker reads it and calls the api, content scripts on web pages never see it. The server stores a SHA-256 hash.
-- **Learned answers:** labels for secrets, card and bank data, government and tax ids, birth dates and equal opportunity categories are skipped by the learning code (in review). Stored embeddings never leave the api.
+- **Learned answers:** labels for secrets, card and bank data, government and tax ids, birth dates and equal opportunity categories are skipped by the learning code. Stored embeddings never leave the api.
 
 The model providers have their own retention terms. If that is not acceptable, leave their keys unset: the product degrades, but nothing is sent to them.
 
