@@ -1,0 +1,66 @@
+---
+title: How skiffr learns
+description: Lookup order, what is learned, what never is, and how skiffr advises you.
+---
+
+<Callout>
+The correction log, the lookup and the suggestions are on `main` ([#49](https://github.com/FindMalek/skiffr/pull/49)) and covered by tests on real Postgres. The extension does not call them yet: until that wiring lands, nothing is learned from your edits.
+</Callout>
+
+skiffr fills a form, you fix what is wrong, and the fixes become answers. The target is fewer corrections per application over time.
+
+## Lookup order
+
+For every field the api tries, in this order, and stops at the first hit:
+
+1. **Exact fingerprint.** The same normalized label, the same control type and the same set of options (a hash of the option texts) as an answer you already have.
+2. **Normalized label.** The same question with different wording around it: case, punctuation and spacing are ignored.
+3. **Embedding similarity.** Questions that mean the same thing. This needs `OPENAI_API_KEY`, and it only ever produces a suggestion.
+4. **None.** The extension falls back to the language model, which maps the field to a profile key.
+
+Rules that apply to every candidate:
+
+- the control has to be the same kind (a text answer is never put in a select)
+- when the field has options, the answer has to be one of them, and the option text is what gets filled
+- an answer you rejected is never returned
+- a similarity match needs a cosine score of at least 0.92 and a clear lead of 0.05 over the runner-up. It comes back with `autofill: false`, so the extension shows it as a suggestion and does not fill it by itself. The threshold is a floor until there is real data to tune it
+
+An exact or label match is filled automatically, except long values (over 300 characters) and answers you cleared three times in a row.
+
+## What is learned
+
+Every filled field is compared with its final value when you move on.
+
+- **Accepted:** the answer's use count goes up.
+- **Corrected:** your final value becomes the answer for that label, and its correction count goes up.
+- **Cleared:** counted as a correction. An empty value is never learned, and three clears in a row stop automatic filling of that answer.
+
+Each event is stored with the application it belongs to, which gives corrections per field for every application. The sequence over your applications is the metric to watch. Repeated sends of the same batch change nothing, so a retry never double counts.
+
+## What is never learned
+
+- password, one-time code and card fields, and anything the page marks with an autocomplete token such as `cc-*`, `one-time-code`, `new-password`, `current-password` or `bday*`
+- labels for secrets, card and bank data, government and tax ids, birth dates, and equal opportunity categories (gender, ethnicity, race, disability, religion, veteran status, orientation, marital status), in English, French, German, Spanish and Arabic
+- control kinds outside an allowlist, and fields with no declared type
+- values over 300 characters: the correction is logged but not learned, and if you correct a field to a value over 300 characters, the old learned answer for that label is deleted
+- values that look like a card number (13 to 19 digits that pass the Luhn check), a valid IBAN or a US social security number (`123-45-6789`): never stored or filled, whatever the field is called. This is a backstop for labels the lists above do not think of
+- anything beyond 2000 answers per user
+
+Embeddings are computed from the normalized question, never from the answer.
+
+## Suggestions
+
+skiffr tells you which learned answers to keep or drop:
+
+| Suggestion | When |
+| --- | --- |
+| keep | corrected at least twice in 90 days and every correction ended on the current value |
+| flip-flop | corrected at least three times, with more than one distinct value, and the last three are not identical |
+| cleared | cleared three times in a row |
+| stale | untouched for 180 days |
+
+You resolve each one. Nothing is deleted or rewritten without that.
+
+## Retention
+
+Each filled field is logged as an event: raw label, the value that was filled and the value you left (up to 2000 characters each), per user. Events older than 90 days are deleted, but only when the extension records new events or asks for suggestions, and at most 500 per call. An account that goes quiet keeps its old events until the next call. Events are deleted with the user (cascade), see [privacy](/docs/privacy).

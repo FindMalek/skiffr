@@ -3,13 +3,16 @@ title: Introduction
 description: What Skiffr is made of and where to find things.
 ---
 
-Skiffr is a turborepo with a landing page, a dashboard with login, and an api, wired to postgres, auth and typed rpc. These pages describe the project as it was generated. Edit them in `apps/docs/content/docs`, they are plain mdx.
+skiffr is an open-source Chrome extension that will fill job applications from your own profile and learn from the corrections you make. You host the api and the database yourself. It is in early development and not released: the api, dashboard, AI field mapping, learning api and a fill engine are merged, but the extension is not connected to them yet and fills nothing. See the status table in the README.
+
+The repo is a turborepo with a landing page, a dashboard with login, an api, and the extension, wired to postgres with pgvector, auth and typed rpc. Edit these pages in `apps/docs/content/docs`, they are plain mdx.
 
 ## What is in the repo
 
 - `apps/web`: the landing page. It only talks to the api
 - `apps/dashboard`: login and the app shell. It only talks to the api
 - `apps/api`: orpc on bun. The only app that touches the database, auth and providers
+- `apps/extension`: the Chrome extension (WXT, React, Manifest V3). It calls the api with a token
 - `apps/docs`: this site
 - `packages/*`: shared code, see [structure](/docs/structure)
 
@@ -20,4 +23,6 @@ Skiffr is a turborepo with a landing page, a dashboard with login, and an api, w
   <Card title="Environment" href="/docs/environment">Every key in the root `.env`.</Card>
   <Card title="Structure" href="/docs/structure">Apps, packages and the rules between them.</Card>
   <Card title="Deploy" href="/docs/deploy">Vercel or your own server.</Card>
+  <Card title="How skiffr learns" href="/docs/learning">Lookup order, what is learned, what never is.</Card>
+  <Card title="Privacy and data flow" href="/docs/privacy">Exactly what leaves your machine.</Card>
 </Cards>

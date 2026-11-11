@@ -9,10 +9,16 @@ import { fontVariables } from "./fonts"
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl()),
-  title: { default: SITE.name, template: `%s | ${SITE.name}` },
+  title: { default: `${SITE.name} | Job application autofill that learns`, template: `%s | ${SITE.name}` },
   description: SITE.tagline,
   alternates: { canonical: "./" },
-  openGraph: { title: SITE.name, description: SITE.tagline, type: "website", siteName: SITE.name, url: "./" },
+  openGraph: {
+    title: `${SITE.name} | Job application autofill that learns`,
+    description: SITE.tagline,
+    type: "website",
+    siteName: SITE.name,
+    url: "./",
+  },
   twitter: { card: "summary_large_image" },
 }
 
