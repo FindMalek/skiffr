@@ -7,6 +7,7 @@ import {
   LEARNING_FIELDS_MAX,
   LEARNING_REQUEST_CHARS_MAX,
   LEARNING_VALUE_MAX,
+  SITE_FIELD_SOURCES,
   SITE_KEY_MAX,
   STATS_APPLICATIONS_MAX,
 } from "../constants"
@@ -55,9 +56,11 @@ export const lookupInputSchema = z
 
 const lookupMatchSchema = z.object({
   fieldId: z.string(),
-  answerId: z.string(),
+  /** The saved answer behind the match: absent for a site entry the user typed on that site. */
+  answerId: z.string().optional(),
   value: z.string(),
-  source: z.enum(["exact", "label", "similar"]),
+  /** `site` is what happened last time on this very form: it beats the answer bank for the field. */
+  source: z.enum(["site", "exact", "label", "similar"]),
   /** False for a suggestion the extension must not fill by itself. */
   autofill: z.boolean(),
   score: z.number(),
@@ -130,3 +133,34 @@ export const statsOutputSchema = z.object({
 
 export type LearningField = z.infer<typeof learningFieldSchema>
 export type FieldEventInput = z.infer<typeof fieldEventInputSchema>
+
+export const siteFieldSourceSchema = z.enum(SITE_FIELD_SOURCES)
+
+/** What one field of a saved form was last time, keyed by the field's fingerprint in `site_profile.field_map`. */
+export const siteFieldEntrySchema = z.object({
+  label: z.string(),
+  value: z.string(),
+  kind: z.string(),
+  source: siteFieldSourceSchema,
+  answerId: z.string().optional(),
+  timesUsed: z.number(),
+  timesCorrected: z.number(),
+  /** Clears in a row: any accept or correction resets it, three stop the autofill. */
+  timesCleared: z.number(),
+})
+
+export const siteProfileSchema = z.object({
+  id: z.string(),
+  siteKey: z.string(),
+  timesUsed: z.number(),
+  lastUsedAt: z.date(),
+  fields: z.array(siteFieldEntrySchema.extend({ fingerprint: z.string() })),
+})
+
+export const siteProfilesInputSchema = z.object({ limit: z.number().int().min(1).max(200).default(50) })
+export const siteProfilesOutputSchema = z.array(siteProfileSchema)
+export const forgetSiteInputSchema = z.object({ siteKey: siteKeySchema })
+export const forgetSiteOutputSchema = z.object({ removed: z.number() })
+
+export type SiteFieldEntry = z.infer<typeof siteFieldEntrySchema>
+export type SiteFieldMap = Record<string, SiteFieldEntry>

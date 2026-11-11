@@ -4,7 +4,7 @@ import {
   FIELD_EVENT_OUTCOMES,
   FIELD_EVENT_SOURCES,
 } from "@skiffr/common/constants"
-import type { ProfileData, ProfileFields } from "@skiffr/common/schemas"
+import type { ProfileData, ProfileFields, SiteFieldMap } from "@skiffr/common/schemas"
 import { getTableColumns } from "drizzle-orm"
 import {
   index,
@@ -152,6 +152,32 @@ export const fieldEvent = pgTable(
     index("field_event_user_label_idx").on(t.userId, t.normalizedLabel, t.createdAt.desc()),
     index("field_event_user_created_idx").on(t.userId, t.createdAt),
     index("field_event_application_idx").on(t.applicationId),
+  ],
+)
+
+/**
+ * What the user left in each field the last time they filled one form of a site, so the next visit fills the same without
+ * asking a model. `form_signature` is the hash of the form's sorted field fingerprints, `fingerprints` those fingerprints
+ * (a changed form is matched by their overlap) and `field_map` the learned value per fingerprint. The values are the
+ * user's own data: never log them.
+ */
+export const siteProfile = pgTable(
+  "site_profile",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: userId(),
+    siteKey: text("site_key").notNull(),
+    formSignature: text("form_signature").notNull(),
+    fingerprints: jsonb("fingerprints").$type<string[]>().notNull(),
+    fieldMap: jsonb("field_map").$type<SiteFieldMap>().notNull().default({}),
+    timesUsed: integer("times_used").notNull().default(0),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    unique("site_profile_user_site_form_unique").on(t.userId, t.siteKey, t.formSignature),
+    index("site_profile_user_last_used_idx").on(t.userId, t.lastUsedAt),
   ],
 )
 

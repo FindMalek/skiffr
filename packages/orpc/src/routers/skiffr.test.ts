@@ -456,9 +456,11 @@ test("a token can record and look up corrections but not read the learning dashb
     events: [{ label: "Pronouns", type: "text", filledValue: "", finalValue: "she/her", source: "site" }],
   })
   const { matches } = await client.learning.lookup({ siteKey, fields: [{ id: "f", label: "Pronouns", type: "text" }] })
-  expect(matches[0]).toMatchObject({ source: "exact", value: "she/her" })
+  expect(matches[0]).toMatchObject({ source: "site", value: "she/her" })
   await expect(client.learning.stats({})).rejects.toMatchObject({ code: "FORBIDDEN" })
   await expect(client.learning.suggestions()).rejects.toMatchObject({ code: "FORBIDDEN" })
+  await expect(client.learning.siteProfiles({})).rejects.toMatchObject({ code: "FORBIDDEN" })
+  await expect(client.learning.forgetSite({ siteKey })).rejects.toMatchObject({ code: "FORBIDDEN" })
 })
 
 test("lastUsedAt is written at most once a minute", async () => {

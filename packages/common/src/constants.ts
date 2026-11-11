@@ -60,3 +60,10 @@ export const CLEARED_STOP_MIN = 3
 export const FIELD_EVENT_RETENTION_DAYS = 90
 export const FIELD_EVENT_PURGE_BATCH = 500
 export const ANSWERS_PER_USER_MAX = 2_000
+export const SITE_PROFILES_PER_USER_MAX = 500
+export const SITE_PROFILE_RETENTION_DAYS = 180
+/** A changed form still uses a site's saved profile when this share of its fields is unchanged (see `lib/site-profile.ts`). */
+export const SITE_PROFILE_OVERLAP_MIN = 0.8
+/** Saved forms looked at per site when the exact one is missing: the most recently used ones. */
+export const SITE_PROFILE_CANDIDATES_MAX = 20
+export const SITE_FIELD_SOURCES = ["answer", "profile", "literal"] as const

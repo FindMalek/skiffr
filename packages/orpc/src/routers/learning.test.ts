@@ -6,11 +6,11 @@ import { call, ORPCError } from "@orpc/server"
 import { mockEmbeddingModel } from "@skiffr/ai/testing"
 import type { Session } from "@skiffr/auth"
 import { EMBEDDING_DIMENSIONS } from "@skiffr/common/constants"
-import { answer, application, type Db, fieldEvent, job, recordBatch, user } from "@skiffr/db"
+import { answer, application, type Db, fieldEvent, job, profile, recordBatch, siteProfile, user } from "@skiffr/db"
 import * as schema from "@skiffr/db/schema"
 import { createTestDb, strictDateSerializers } from "@skiffr/db/test-db"
 import { APICallError } from "ai"
-import { and, eq } from "drizzle-orm"
+import { and, eq, sql } from "drizzle-orm"
 import { drizzle } from "drizzle-orm/pglite"
 import { migrate } from "drizzle-orm/pglite/migrator"
 import type { Context } from "../context"
@@ -97,8 +97,9 @@ const record = (
   extra: object = {},
   ctx: Partial<Context> = {},
 ) => call(appRouter.learning.record, { siteKey: SITE, events, ...extra } as never, as(ctx))
+/** Looks up on a site nothing was recorded on, so the answer bank is what answers; the site profile tests use `lookupAt`. */
 const lookup = (as: Awaited<ReturnType<typeof newUser>>, fields: object[], ctx: Partial<Context> = {}) =>
-  call(appRouter.learning.lookup, { siteKey: SITE, fields } as never, as(ctx))
+  call(appRouter.learning.lookup, { siteKey: "careers.elsewhere.dev", fields } as never, as(ctx))
 const field = (id: string, label: string, extra: object = {}) => ({ id, label, type: "text", ...extra })
 const answerOf = async (userId: string, normalizedLabel: string) =>
   (
@@ -930,4 +931,259 @@ test("correcting a learned value to a long one drops the old short value instead
     fieldId: "a",
     source: "none",
   })
+})
+
+const SITE_B = "jobs.lever.co/beta"
+const atSite = (as: Awaited<ReturnType<typeof newUser>>, siteKey: string, events: object[], extra: object = {}) =>
+  record(as, events, { siteKey, ...extra })
+const lookupAt = (as: Awaited<ReturnType<typeof newUser>>, siteKey: string, fields: object[]) =>
+  call(appRouter.learning.lookup, { siteKey, fields } as never, as())
+const sitesOf = (userId: string) => db.select().from(siteProfile).where(eq(siteProfile.userId, userId))
+const select = (id: string, label: string, options: string[]) => field(id, label, { type: "select", options })
+const first = (matches: Awaited<ReturnType<typeof lookup>>["matches"]) => matches[0] as Record<string, unknown>
+
+test("site entries come first with source site and beat the global answer for that field", async () => {
+  const as = await newUser()
+  await call(appRouter.answers.create, { rawLabel: "Notice period", value: "1 month" }, as())
+  await call(appRouter.answers.create, { rawLabel: "Pronouns", value: "she/her" }, as())
+  const options = ["1 month", "2 weeks"]
+  await record(as, [
+    event("Notice period", "1 month", "2 weeks", { type: "select", options }),
+    event("Pronouns", "she/her", "she/her", { source: "answer" }),
+  ])
+
+  const { matches } = await lookupAt(as, SITE, [select("n", "Notice period", options), field("p", "Pronouns")])
+  expect(matches).toMatchObject([
+    { fieldId: "n", source: "site", value: "2 weeks", autofill: true },
+    { fieldId: "p", source: "site", value: "she/her", autofill: true },
+  ])
+  const other = await lookupAt(as, SITE_B, [select("n", "Notice period", options)])
+  expect(first(other.matches)).toMatchObject({ source: "label", value: "1 month" })
+})
+
+test("a correction on one site does not change what another site gets", async () => {
+  const as = await newUser()
+  const options = ["Remote", "Onsite"]
+  const work = (filled: string, final: string) => event("Work mode", filled, final, { type: "select", options })
+  await atSite(as, SITE_B, [work("", "Remote")])
+  await atSite(as, SITE, [work("Remote", "Onsite")])
+
+  expect(first((await lookupAt(as, SITE_B, [select("w", "Work mode", options)])).matches)).toMatchObject({
+    source: "site",
+    value: "Remote",
+  })
+  expect(first((await lookupAt(as, SITE, [select("w", "Work mode", options)])).matches)).toMatchObject({
+    source: "site",
+    value: "Onsite",
+  })
+  await atSite(as, SITE_B, [work("Remote", "Remote")])
+  expect(await answerOf(as().id, "work mode")).toMatchObject({ value: "Onsite", timesCorrected: 2 })
+})
+
+test("a correction on a site never overwrites a global answer the user confirmed, but is logged and kept for that site", async () => {
+  const as = await newUser()
+  await call(appRouter.answers.create, { rawLabel: "Preferred name", value: "Ana" }, as())
+  await record(as, [event("Preferred name", "Ana", "Anita")])
+
+  expect(await answerOf(as().id, "preferred name")).toMatchObject({
+    value: "Ana",
+    status: "confirmed",
+    timesCorrected: 0,
+  })
+  expect(await db.select().from(fieldEvent).where(eq(fieldEvent.userId, as().id))).toMatchObject([
+    { outcome: "corrected", finalValue: "Anita" },
+  ])
+  expect(first((await lookupAt(as, SITE, [field("n", "Preferred name")])).matches)).toMatchObject({
+    source: "site",
+    value: "Anita",
+  })
+  expect(first((await lookupAt(as, SITE_B, [field("n", "Preferred name")])).matches)).toMatchObject({
+    source: "label",
+    value: "Ana",
+  })
+})
+
+test("a form changed by one field still matches, a different form does not", async () => {
+  const as = await newUser()
+  const labels = ["Alpha one", "Beta two", "Gamma three", "Delta four", "Epsilon five"]
+  await record(
+    as,
+    labels.map((label) => event(label, "", `${label} v`)),
+  )
+  await call(appRouter.answers.create, { rawLabel: "Zeta six", value: "global zeta" }, as())
+
+  const form = (names: string[]) => names.map((label, i) => field(`f${i}`, label))
+  const changed = await lookupAt(as, SITE, form([...labels.slice(0, 4), "Zeta six"]))
+  expect(changed.matches.map((m) => m.source)).toEqual(["site", "site", "site", "site", "label"])
+
+  const different = await lookupAt(as, SITE, form(["Alpha one", "Beta two", "Zeta six", "Eta seven", "Theta eight"]))
+  expect(different.matches.map((m) => m.source)).toEqual(["exact", "exact", "label", "none", "none"])
+})
+
+test("password, card, hidden and long values never reach a site profile", async () => {
+  const as = await newUser()
+  await record(as, [
+    event("Pronouns", "", "she/her"),
+    event("Password", "", "hunter2", { type: "password" }),
+    event("Card number", "", "4111 1111 1111 1111"),
+    event("Account", "", "x", { autocomplete: "cc-number" }),
+    event("Reference", "", "4111111111111111"),
+    event("Secret file", "", "cv.pdf", { type: "file" }),
+    event("About you", "", "x".repeat(301), { type: "textarea" }),
+  ])
+  const [saved] = await sitesOf(as().id)
+  expect(Object.values(saved!.fieldMap).map((entry) => entry.label)).toEqual(["pronouns"])
+  const stored = JSON.stringify(saved)
+  for (const text of ["hunter2", "4111", "password", "card number", "cv.pdf", "xxxxxxxx"]) {
+    expect(stored).not.toContain(text)
+  }
+})
+
+test("clearing a site value three times stops the autofill for that site only, an accept starts over", async () => {
+  const as = await newUser()
+  await record(as, [event("Nickname", "", "Ana")])
+  const clear = () => record(as, [event("Nickname", "Ana", "")])
+  const autofill = async () => first((await lookupAt(as, SITE, [field("n", "Nickname")])).matches).autofill
+  await clear()
+  await clear()
+  expect(await autofill()).toBe(true)
+  await clear()
+  expect(await autofill()).toBe(false)
+  await record(as, [event("Nickname", "Ana", "Ana", { source: "site" })])
+  expect(await autofill()).toBe(true)
+})
+
+test("entries copied from the profile or an answer are dropped once their source changes", async () => {
+  const as = await newUser()
+  await db.insert(profile).values({ userId: as().id, data: {} as never, updatedAt: new Date(Date.now() - DAY) })
+  await call(appRouter.answers.create, { rawLabel: "Preferred name", value: "Ana" }, as())
+  await record(as, [
+    event("Preferred name", "Ana", "Ana", { source: "answer" }),
+    event("Email", "a@b.dev", "a@b.dev", { source: "profile" }),
+    event("Pronouns", "x", "x", { source: "ai" }),
+  ])
+  const ask = () => lookupAt(as, SITE, [field("n", "Preferred name"), field("e", "Email"), field("p", "Pronouns")])
+  expect((await ask()).matches.map((m) => m.source)).toEqual(["site", "site", "site"])
+
+  await call(appRouter.answers.create, { rawLabel: "Preferred name", value: "Anita" }, as())
+  await db
+    .update(profile)
+    .set({ updatedAt: new Date(Date.now() + DAY) })
+    .where(eq(profile.userId, as().id))
+  expect((await ask()).matches.map((m) => m.source)).toEqual(["label", "none", "site"])
+})
+
+test("the cap keeps 500 forms per user and drops the least recently used", async () => {
+  const as = await newUser()
+  const base = Date.now() - 400 * 60_000
+  await db.insert(siteProfile).values(
+    Array.from({ length: 500 }, (_, i) => ({
+      userId: as().id,
+      siteKey: `site${i}.dev`,
+      formSignature: `sig${i}`,
+      fingerprints: [],
+      fieldMap: {},
+      lastUsedAt: new Date(base + i * 1_000),
+    })),
+  )
+  await atSite(as, "new.dev", [event("Pronouns", "", "she/her")], {})
+  const rows = await sitesOf(as().id)
+  expect(rows).toHaveLength(500)
+  expect(rows.map((r) => r.siteKey)).toContain("new.dev")
+  expect(rows.map((r) => r.siteKey)).not.toContain("site0.dev")
+  expect(rows.map((r) => r.siteKey)).toContain("site1.dev")
+})
+
+test("forms unused for 180 days are purged when the user records again, newer ones stay", async () => {
+  const as = await newUser()
+  const row = (siteKey: string, days: number) => ({
+    userId: as().id,
+    siteKey,
+    formSignature: siteKey,
+    fingerprints: [],
+    fieldMap: {},
+    lastUsedAt: new Date(Date.now() - days * DAY),
+  })
+  await db.insert(siteProfile).values([row("old.dev", 200), row("recent.dev", 100)])
+  await record(as, [event("Pronouns", "", "she/her")])
+  expect((await sitesOf(as().id)).map((r) => r.siteKey).sort()).toEqual([SITE, "recent.dev"].sort())
+})
+
+test("parallel records of one form, with the fields in opposite order, finish and count every accept", async () => {
+  const as = await newUser()
+  const pair = (swap: boolean) => {
+    const a = event("Alpha", "1", "1", { source: "ai" })
+    const b = event("Beta", "2", "2", { source: "ai" })
+    return swap ? [b, a] : [a, b]
+  }
+  await Promise.all(Array.from({ length: 20 }, (_, i) => record(as, pair(i % 2 === 0))))
+  const rows = await sitesOf(as().id)
+  expect(rows).toHaveLength(1)
+  expect(rows[0]).toMatchObject({ timesUsed: 20 })
+  expect(Object.values(rows[0]!.fieldMap).map((entry) => entry.timesUsed)).toEqual([20, 20])
+})
+
+test("a retried batch counts once in the site profile too", async () => {
+  const as = await newUser()
+  const batchId = crypto.randomUUID()
+  const send = () => record(as, [event("Alpha", "1", "1", { source: "ai" })], { batchId })
+  await Promise.all([send(), send(), send()])
+  expect(await sitesOf(as().id)).toMatchObject([{ timesUsed: 1 }])
+})
+
+test("site profiles are listed and forgotten per site, for their owner only", async () => {
+  const as = await newUser()
+  const other = await newUser()
+  await atSite(as, SITE, [event("Pronouns", "", "she/her")])
+  await atSite(as, SITE_B, [event("Pronouns", "", "they/them")])
+  await atSite(other, SITE, [event("Pronouns", "", "he/him")])
+
+  const listed = await call(appRouter.learning.siteProfiles, { limit: 50 }, as())
+  expect(listed.map((s) => s.siteKey).sort()).toEqual([SITE_B, SITE].sort())
+  expect(listed.find((s) => s.siteKey === SITE)?.fields).toMatchObject([{ label: "pronouns", value: "she/her" }])
+  expect(first((await lookupAt(other, SITE_B, [field("p", "Pronouns")])).matches)).toMatchObject({
+    source: "exact",
+    value: "he/him",
+  })
+
+  expect(await call(appRouter.learning.forgetSite, { siteKey: SITE }, other())).toEqual({ removed: 1 })
+  expect(await call(appRouter.learning.forgetSite, { siteKey: SITE }, other())).toEqual({ removed: 0 })
+  expect(await call(appRouter.learning.siteProfiles, { limit: 50 }, as())).toHaveLength(2)
+  expect(await call(appRouter.learning.forgetSite, { siteKey: SITE }, as())).toEqual({ removed: 1 })
+  expect(first((await lookupAt(as, SITE, [field("p", "Pronouns")])).matches)).not.toMatchObject({ source: "site" })
+})
+
+test("a failing site profile query is logged by class and code only, never with the site", async () => {
+  const as = await newUser()
+  const driverError = () => Object.assign(new Error("Failed query: zebra.dev params: zebra"), { code: "22021" })
+  const broken = {
+    delete: () => {
+      throw driverError()
+    },
+    select: () => {
+      throw driverError()
+    },
+  } as unknown as Db
+  const logged = spyOn(console, "error").mockImplementation(() => {})
+  try {
+    const errors = await Promise.all([
+      call(appRouter.learning.forgetSite, { siteKey: "zebra.dev" }, as({ db: broken })).catch((e) => e),
+      call(appRouter.learning.siteProfiles, { limit: 5 }, as({ db: broken })).catch((e) => e),
+    ])
+    for (const error of errors) expect(error.message).not.toContain("zebra")
+    const lines = inspect(logged.mock.calls, { depth: 10 })
+    expect(lines).toContain("LearningStoreError")
+    for (const text of ["zebra", "Failed query", "params"]) expect(lines).not.toContain(text)
+  } finally {
+    logged.mockRestore()
+  }
+})
+
+test("the site profile of a deleted user goes with them", async () => {
+  const as = await newUser()
+  await record(as, [event("Pronouns", "", "she/her")])
+  await db.delete(user).where(eq(user.id, as().id))
+  expect(
+    await db.select({ n: sql<number>`count(*)::int` }).from(siteProfile).where(eq(siteProfile.userId, as().id)),
+  ).toEqual([{ n: 0 }])
 })
