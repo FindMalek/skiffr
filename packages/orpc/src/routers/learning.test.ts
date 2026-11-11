@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, spyOn, test } from "bun:test"
 import { inspect } from "node:util"
 import { PGlite } from "@electric-sql/pglite"
 import { vector } from "@electric-sql/pglite-pgvector"
-import { call } from "@orpc/server"
+import { call, ORPCError } from "@orpc/server"
 import { mockEmbeddingModel } from "@skiffr/ai/testing"
 import type { Session } from "@skiffr/auth"
 import { EMBEDDING_DIMENSIONS } from "@skiffr/common/constants"
@@ -565,7 +565,9 @@ test("events older than 90 days and spent batch ids are purged when the user rec
     outcome: "corrected",
     createdAt: old,
   })
-  await db.insert(recordBatch).values({ userId: as().id, batchId: crypto.randomUUID(), createdAt: old })
+  await db
+    .insert(recordBatch)
+    .values({ userId: as().id, batchId: crypto.randomUUID(), payloadHash: "h", createdAt: old })
   await record(as, [event("Nickname", "", "Ana")])
   expect(
     (await db.select().from(fieldEvent).where(eq(fieldEvent.userId, as().id))).map((e) => e.normalizedLabel),
@@ -670,4 +672,262 @@ test("control characters and lone surrogates in page text are a 400, tabs and ne
     })
   }
   expect(await record(as, [event("Notice\nperiod", "", "line one\n\tline two")])).toEqual({ recorded: 1, skipped: 0 })
+})
+
+const choice = (id: string, label: string, options: string[], type = "select") => field(id, label, { type, options })
+
+test("options that differ only by symbols are told apart, and ambiguous ones fill nothing", async () => {
+  const as = await newUser()
+  const langs = ["C", "C++", "C#"]
+  const sizes = ["<5", ">5"]
+  await record(as, [
+    event("Language", "x", "C++", { type: "select", options: langs }),
+    event("Team size", "x", ">5", { type: "select", options: sizes }),
+    event("Tool", "x", "c", { type: "select", options: ["c", "d"] }),
+  ])
+  const { matches } = await lookup(as, [
+    choice("a", "Language", ["C#", "C++", "C"]),
+    choice("b", "Team size", sizes),
+    choice("c", "Tool", ["C++", "C#"]),
+    choice("d", "Language", ["c#", "C++ ", "Java"]),
+  ])
+  expect(matches.map((m) => ("value" in m ? m.value : m.source))).toEqual(["C++", ">5", "none", "C++"])
+})
+
+test("a choice fills a choice of any kind, text fills a choice that has the value, but a choice never fills free text", async () => {
+  const as = await newUser()
+  await record(as, [
+    event("Country", "x", "Canada"),
+    event("Region", "x", "EU", { type: "select", options: ["EU", "US"] }),
+  ])
+  const sources = async (fields: object[]) =>
+    (await lookup(as, fields)).matches.map((m) => ("value" in m ? m.value : "none"))
+  expect(
+    await sources([choice("a", "Country", ["USA", "Canada"]), choice("b", "Country", ["USA", "Mexico"], "radio")]),
+  ).toEqual(["Canada", "none"])
+  expect(
+    await sources([choice("a", "Region", ["US", "EU", "UK"], "radio"), choice("b", "Region", ["EU", "x"], "combobox")]),
+  ).toEqual(["EU", "EU"])
+  expect(await sources([field("a", "Region")])).toEqual(["none"])
+})
+
+test("free text only goes into a typed control when it looks right for it", async () => {
+  const as = await newUser()
+  await record(as, [event("Years of work", "x", "five years"), event("Team", "x", "5")])
+  const values = async (type: string) =>
+    (await lookup(as, [field("a", "Years of work", { type }), field("b", "Team", { type })])).matches.map((m) =>
+      "value" in m ? m.value : "none",
+    )
+  expect(await values("number")).toEqual(["none", "5"])
+  expect(await values("date")).toEqual(["none", "none"])
+  expect(await values("text")).toEqual(["five years", "5"])
+
+  await record(as, [event("Count", "x", "7", { type: "number" })])
+  expect((await lookup(as, [field("a", "Count", { type: "text" })])).matches[0]).toMatchObject({ value: "7" })
+})
+
+test("values that look like a card number, an iban or an ssn are never recorded or filled, ordinary numbers are", async () => {
+  const as = await newUser()
+  const result = await record(as, [
+    event("Favorite number", "", "4111 1111 1111 1111"),
+    event("Reference", "", "GB82 WEST 1234 5698 7654 32"),
+    event("Lucky", "", "123-45-6789"),
+    event("Years of experience", "", "15"),
+    event("Long number", "", "1234567812345678"),
+  ])
+  expect(result).toEqual({ recorded: 2, skipped: 3 })
+  await db
+    .insert(answer)
+    .values({ userId: as().id, normalizedLabel: "serial", rawLabel: "Serial", value: "4111111111111111" })
+  const { matches } = await lookup(as, [field("a", "Serial"), field("b", "Years of experience")])
+  expect(matches.map((m) => m.source)).toEqual(["none", "exact"])
+})
+
+test("a failing write logs frames, constraint and table names and safe messages, never the error message or params", async () => {
+  const as = await newUser()
+  const secret = "zebra-secret"
+  const boom = () =>
+    Object.assign(new Error(`bad ${secret}\n    at fake (zebra.ts:1:1)`), {
+      code: "23505",
+      constraint_name: "answer_user_label_unique",
+      table_name: "answer",
+      detail: secret,
+      params: [secret],
+    })
+  const broken = {
+    transaction: async () => {
+      throw boom()
+    },
+    select: () => {
+      throw new ORPCError("INTERNAL_SERVER_ERROR", { message: secret })
+    },
+  } as unknown as Db
+  const logged = spyOn(console, "error").mockImplementation(() => {})
+  try {
+    await record(as, [event("Nickname", "", "Ana")], {}, { db: broken, requestId: "req-1" } as never).catch(() => {})
+    await call(appRouter.answers.list, undefined, as({ db: broken, requestId: "req-2" } as never)).catch(() => {})
+    const lines = inspect(logged.mock.calls, { depth: 10 })
+    expect(lines).toContain("23505")
+    expect(lines).toContain("req-1")
+    expect(lines).toContain("req-2")
+    expect(lines).toContain("INTERNAL_SERVER_ERROR")
+    expect(lines).toContain("The learning store failed.")
+    expect(lines).toMatch(/at .*learning/)
+    for (const text of [secret, "zebra.ts", "detail", "params"]) expect(lines).not.toContain(text)
+
+    logged.mockClear()
+    const plain = {
+      select: () => {
+        throw boom()
+      },
+    } as unknown as Db
+    await call(appRouter.answers.list, undefined, as({ db: plain } as never)).catch(() => {})
+    const direct = inspect(logged.mock.calls, { depth: 10 })
+    expect(direct).toContain("answer_user_label_unique")
+    expect(direct).toContain("table: 'answer'")
+    expect(direct).toContain("at ")
+    for (const text of [secret, "zebra.ts"]) expect(direct).not.toContain(text)
+  } finally {
+    logged.mockRestore()
+  }
+})
+
+test("suggestions also purge old events of a user who stopped recording", async () => {
+  const as = await newUser()
+  const old = new Date(Date.now() - 100 * DAY)
+  await db.insert(fieldEvent).values({
+    userId: as().id,
+    siteKey: "x.dev",
+    fingerprint: "f",
+    normalizedLabel: "f",
+    rawLabel: "f",
+    filledValue: "",
+    finalValue: "v",
+    source: "site",
+    outcome: "corrected",
+    createdAt: old,
+  })
+  await db
+    .insert(recordBatch)
+    .values({ userId: as().id, batchId: crypto.randomUUID(), payloadHash: "h", createdAt: old })
+  await call(appRouter.learning.suggestions, undefined, as())
+  expect(await db.select().from(fieldEvent).where(eq(fieldEvent.userId, as().id))).toEqual([])
+  expect(await db.select().from(recordBatch).where(eq(recordBatch.userId, as().id))).toEqual([])
+})
+
+test("a batch id reused for different events is refused, the same events are a no-op", async () => {
+  const as = await newUser()
+  const batchId = crypto.randomUUID()
+  expect(await record(as, [event("Nickname", "", "Ana")], { batchId })).toEqual({ recorded: 1, skipped: 0 })
+  expect(await record(as, [event("Nickname", "", "Ana")], { batchId })).toEqual({ recorded: 1, skipped: 0 })
+  await expect(record(as, [event("Nickname", "", "Bea"), event("Other", "", "x")], { batchId })).rejects.toMatchObject({
+    code: "CONFLICT",
+  })
+  expect(await answerOf(as().id, "nickname")).toMatchObject({ value: "Ana", timesCorrected: 1 })
+})
+
+test("parallel creates at the cap can't all get in", async () => {
+  const as = await newUser()
+  await db.insert(answer).values(
+    Array.from({ length: 1999 }, (_, i) => ({
+      userId: as().id,
+      normalizedLabel: `l${i}`,
+      rawLabel: `l${i}`,
+      value: "x",
+    })),
+  )
+  const results = await Promise.all(
+    ["One", "Two", "Three", "Four"].map((rawLabel) =>
+      call(appRouter.answers.create, { rawLabel, value: "x" }, as()).catch((e) => e),
+    ),
+  )
+  expect(results.filter((r) => r.code === "BAD_REQUEST")).toHaveLength(3)
+  expect((await db.select().from(answer).where(eq(answer.userId, as().id))).length).toBe(2000)
+})
+
+test("many keep suggestions can't hide a flip-flop or a cleared answer", async () => {
+  const as = await newUser()
+  const labels = Array.from({ length: 60 }, (_, i) => `keep ${String(i).padStart(2, "0")}`)
+  await db.insert(answer).values(
+    labels.map((normalizedLabel) => ({
+      userId: as().id,
+      normalizedLabel,
+      rawLabel: normalizedLabel,
+      value: "v",
+      timesCorrected: 2,
+    })),
+  )
+  await db.insert(fieldEvent).values(
+    labels.flatMap((normalizedLabel) =>
+      [0, 1].map(() => ({
+        userId: as().id,
+        siteKey: "x.dev",
+        fingerprint: normalizedLabel,
+        normalizedLabel,
+        rawLabel: normalizedLabel,
+        filledValue: "o",
+        finalValue: "v",
+        source: "site" as const,
+        outcome: "corrected" as const,
+      })),
+    ),
+  )
+  await corrections(as, ["a", "b", "a", "b"], "Zzz salary")
+  await record(as, [event("Zzz nickname", "x", "Ana")])
+  for (let i = 0; i < 3; i++) await record(as, [event("Zzz nickname", "Ana", "")])
+
+  const kinds = (await call(appRouter.learning.suggestions, undefined, as())).map((s) => s.kind)
+  expect(kinds).toContain("flip_flop")
+  expect(kinds).toContain("cleared")
+  expect(kinds.filter((k) => k === "keep").length).toBeLessThanOrEqual(50)
+})
+
+test("a confirmed answer stops auto filling after three clears in a row, like any other", async () => {
+  const as = await newUser()
+  await call(appRouter.answers.create, { rawLabel: "Nickname", value: "Ana" }, as())
+  for (let i = 0; i < 3; i++) await record(as, [event("Nickname", "Ana", "")])
+  expect((await lookup(as, [field("a", "Nickname")])).matches[0]).toMatchObject({ source: "label", autofill: false })
+  expect(await suggested(as)).toContainEqual(["cleared", 3])
+})
+
+test("saving an answer by hand makes it the confirmed, untyped default again, and control characters are a 400", async () => {
+  const as = await newUser()
+  await record(as, [event("Region", "x", "EU", { type: "select", options: ["EU", "US"] })])
+  const learned = await answerOf(as().id, "region")
+  await call(appRouter.learning.resolveSuggestion, { answerId: learned!.id, decision: "reject" }, as())
+  expect(
+    (await lookup(as, [field("a", "Region", { type: "select", options: ["EU", "US"] })])).matches[0],
+  ).toMatchObject({ source: "none" })
+
+  await call(appRouter.answers.create, { rawLabel: "Region", value: "US" }, as())
+  expect(await answerOf(as().id, "region")).toMatchObject({
+    status: "confirmed",
+    fingerprint: null,
+    timesCleared: 0,
+    value: "US",
+  })
+  expect((await lookup(as, [field("a", "Region")])).matches[0]).toMatchObject({ source: "label", value: "US" })
+
+  await call(appRouter.answers.update, { id: learned!.id, value: "EU" }, as())
+  expect(await answerOf(as().id, "region")).toMatchObject({ status: "confirmed", value: "EU" })
+  for (const input of [
+    { rawLabel: "a\u0000b", value: "x" },
+    { rawLabel: "Label", value: "x\u0000" },
+  ]) {
+    await expect(call(appRouter.answers.create, input, as())).rejects.toMatchObject({ code: "BAD_REQUEST" })
+  }
+})
+
+test("correcting a learned value to a long one drops the old short value instead of filling it again", async () => {
+  const as = await newUser()
+  await record(as, [event("Motivation", "x", "short", { type: "textarea" })])
+  expect((await lookup(as, [field("a", "Motivation", { type: "textarea" })])).matches[0]).toMatchObject({
+    value: "short",
+  })
+  await record(as, [event("Motivation", "short", "w".repeat(301), { type: "textarea" })])
+  expect(await answerOf(as().id, "motivation")).toBeUndefined()
+  expect((await lookup(as, [field("a", "Motivation", { type: "textarea" })])).matches[0]).toEqual({
+    fieldId: "a",
+    source: "none",
+  })
 })

@@ -1,5 +1,5 @@
 {
-  "id": "a2c10802-6a6c-41bc-98f8-61a0b2391f75",
+  "id": "8cb752bf-df75-454f-8404-839b88749d68",
   "prevId": "9999d350-7fb5-4f05-a4cb-4db59f03f284",
   "version": "7",
   "dialect": "postgresql",
@@ -1390,6 +1390,12 @@
         "batch_id": {
           "name": "batch_id",
           "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "payload_hash": {
+          "name": "payload_hash",
+          "type": "text",
           "primaryKey": false,
           "notNull": true
         },

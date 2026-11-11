@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { ANSWER_SOURCES, ANSWER_STATUSES, ANSWER_VALUE_MAX, LABEL_MAX } from "../constants"
+import { CLEAN_MESSAGE, clean } from "./text"
 
 export const answerSourceSchema = z.enum(ANSWER_SOURCES)
 
@@ -20,14 +21,14 @@ export const answerSchema = z.object({
 })
 
 export const answerInputSchema = z.object({
-  rawLabel: z.string().trim().min(1).max(LABEL_MAX),
-  value: z.string().max(ANSWER_VALUE_MAX),
+  rawLabel: z.string().trim().min(1).max(LABEL_MAX).refine(clean, CLEAN_MESSAGE),
+  value: z.string().max(ANSWER_VALUE_MAX).refine(clean, CLEAN_MESSAGE),
   source: answerSourceSchema.default("manual"),
 })
 
 export const answerUpdateSchema = z.object({
   id: z.uuid(),
-  value: z.string().max(ANSWER_VALUE_MAX).optional(),
+  value: z.string().max(ANSWER_VALUE_MAX).refine(clean, CLEAN_MESSAGE).optional(),
   source: answerSourceSchema.optional(),
 })
 

@@ -12,7 +12,10 @@ const logErrors = o.middleware(async (options) => {
   try {
     return await options.next()
   } catch (error) {
-    if (!(error instanceof ORPCError)) console.error(`[${route}]`, { route, ...safeErrorFields(error) })
+    const requestId = (options.context as { requestId?: string }).requestId
+    if (!(error instanceof ORPCError)) console.error(`[${route}]`, { route, requestId, ...safeErrorFields(error) })
+    else if (error.status >= 500)
+      console.error(`[${route}]`, { route, requestId, code: error.code, status: error.status })
     throw error
   }
 })

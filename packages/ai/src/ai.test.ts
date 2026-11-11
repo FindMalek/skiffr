@@ -4,7 +4,7 @@ import { normalizeLabel } from "@skiffr/common/utils"
 import { draftAnswer, fitLength } from "./draft-answer"
 import { embedTexts } from "./embeddings"
 import { AiInputError, AiModelError } from "./errors"
-import { controlKind, isLearnableField } from "./learnable"
+import { controlKind, isLearnableField, isSensitiveValue } from "./learnable"
 import { mapFields } from "./map-fields"
 import { mockEmbeddingModel, mockModel } from "./testing"
 
@@ -311,7 +311,9 @@ test("only known input kinds with harmless labels are learnable", () => {
   for (const type of [undefined, "", "password", "hidden", "file", "submit", " pass\u200bword "]) {
     expect(isLearnableField({ label: "Name", type }), String(type)).toBe(false)
   }
-  expect(controlKind(" Select-One ")).toBe("select")
+  expect(controlKind(" Select-One ")).toBe("choice")
+  expect(controlKind("radio")).toBe("choice")
+  expect(controlKind("Number")).toBe("number")
   expect(controlKind("textarea")).toBe("text")
 })
 
@@ -402,4 +404,160 @@ test("embeddings are checked for count and size before the call, and provider fa
   const error = await embedTexts({ model: broken, texts: ["secret-text"] }).catch((e) => e)
   expect(error).toBeInstanceOf(AiModelError)
   expect(JSON.stringify(error) + error.message).not.toContain("secret-text")
+})
+
+const SENSITIVE: Record<string, string[]> = {
+  french: [
+    "CIN",
+    "Numéro CIN",
+    "Carte d'identité nationale",
+    "Pièce d'identité",
+    "RIB",
+    "IBAN / RIB",
+    "Numéro de compte",
+    "Code de sécurité",
+    "Mot de passe",
+    "Numéro de sécurité sociale",
+    "NSS",
+    "Sexe",
+    "Genre",
+    "Handicap",
+    "Origine ethnique",
+    "Statut marital",
+    "Situation familiale",
+    "Orientation sexuelle",
+    "Date de naissance",
+    "Carte bancaire",
+  ],
+  german: [
+    "Steuer-ID",
+    "Steuernummer",
+    "Ausweisnummer",
+    "Sozialversicherungsnummer",
+    "Kontonummer",
+    "Bankleitzahl",
+    "Geschlecht",
+    "Behinderung",
+    "Ethnische Herkunft",
+    "Familienstand",
+    "Sexuelle Orientierung",
+    "Geburtsdatum",
+    "Passwort",
+    "Kreditkarte",
+  ],
+  spanish: [
+    "DNI",
+    "NIF",
+    "Cédula",
+    "Documento de identidad",
+    "Número de cuenta",
+    "Código de seguridad",
+    "Contraseña",
+    "Género",
+    "Sexo",
+    "Discapacidad",
+    "Estado civil",
+    "Orientación sexual",
+    "Fecha de nacimiento",
+    "Número de tarjeta",
+  ],
+  arabic: [
+    "الرقم الوطني",
+    "رقم الجواز",
+    "رقم بطاقة التعريف الوطنية",
+    "رقم الهوية",
+    "رقم الحساب",
+    "الرقم السري",
+    "رمز التحقق",
+    "كلمة المرور",
+    "الجنس",
+    "الإعاقة",
+    "الحالة الاجتماعية",
+    "الديانة",
+    "الدين",
+    "تاريخ الميلاد",
+  ],
+  other: [
+    "BSN",
+    "Codice fiscale",
+    "PESEL",
+    "CPF",
+    "Aadhaar",
+    "SSN",
+    "SIN",
+    "Social Insurance Number",
+    "National ID",
+    "Tax number",
+    "Sort code",
+    "Routing number",
+    "SWIFT code",
+    "Account number",
+    "Account no",
+    "Credit card",
+    "Card expiry",
+    "Expiry date",
+    "CVC2",
+    "Authenticator code",
+    "Backup code",
+    "SMS code",
+    "Criminal record",
+    "Have you been convicted of a crime",
+    "Health conditions",
+    "Medical history",
+    "Political affiliation",
+    "Union membership",
+    "Salary history",
+  ],
+}
+
+for (const [language, labels] of Object.entries(SENSITIVE)) {
+  test(`${language} labels for ids, bank, secrets and protected categories are never learnable`, () => {
+    for (const label of labels) expect(isLearnableField({ label, type: "text" }), label).toBe(false)
+  })
+}
+
+test("skill questions and near misses stay learnable", () => {
+  const labels = [
+    "Swift programming years",
+    "Bank reconciliation experience",
+    "Credit control experience",
+    "Routing protocols experience",
+    "Account notes",
+    "Account notifications",
+    "Visa expiry date",
+    "Are you authorized to work in the European Union?",
+    "Taxi driver experience",
+    "Years of experience",
+    "Website",
+  ]
+  for (const label of labels) expect(isLearnableField({ label, type: "text" }), label).toBe(true)
+})
+
+test("sex and gender autocomplete tokens keep a field out", () => {
+  for (const autocomplete of ["sex", "gender"]) {
+    expect(isLearnableField({ label: "Something harmless", type: "text", autocomplete })).toBe(false)
+  }
+})
+
+test("card numbers, valid ibans and ssn shaped values are sensitive whatever the label, ordinary numbers are not", () => {
+  for (const value of [
+    "4111 1111 1111 1111",
+    "4111-1111-1111-1111",
+    "378282246310005",
+    "GB82 WEST 1234 5698 7654 32",
+    "123-45-6789",
+  ]) {
+    expect(isSensitiveValue(value), value).toBe(true)
+  }
+  for (const value of [
+    "15",
+    "2024",
+    "1234567812345678",
+    "GB00 TEST 1234 5698 7654 32",
+    "+44 7911 123456",
+    "5 years",
+    "12-34-5678",
+  ]) {
+    expect(isSensitiveValue(value), value).toBe(false)
+  }
 })

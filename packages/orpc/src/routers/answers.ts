@@ -42,15 +42,25 @@ export const answersRouter = {
     .handler(async ({ context, input }) => {
       const normalizedLabel = normalizeLabel(input.rawLabel)
       if (!normalizedLabel) throw new ORPCError("BAD_REQUEST", { message: "The label has no letters or digits." })
-      await assertAnswerRoom(context.db, context.user.id, [normalizedLabel])
-      const [row] = await context.db
-        .insert(answer)
-        .values({ ...input, normalizedLabel, userId: context.user.id })
-        .onConflictDoUpdate({
-          target: [answer.userId, answer.normalizedLabel],
-          set: { rawLabel: input.rawLabel, value: input.value, source: input.source, updatedAt: context.now() },
-        })
-        .returning(answerColumns)
+      const manual = { status: "confirmed" as const, fingerprint: null, timesCleared: 0 }
+      const row = await context.db.transaction(async (tx) => {
+        await assertAnswerRoom(tx, context.user.id, [normalizedLabel])
+        const [saved] = await tx
+          .insert(answer)
+          .values({ ...input, ...manual, normalizedLabel, userId: context.user.id })
+          .onConflictDoUpdate({
+            target: [answer.userId, answer.normalizedLabel],
+            set: {
+              ...manual,
+              rawLabel: input.rawLabel,
+              value: input.value,
+              source: input.source,
+              updatedAt: context.now(),
+            },
+          })
+          .returning(answerColumns)
+        return saved
+      })
       await embedMissing(context, "answers.create", context.user.id, [row!])
       return row!
     }),
@@ -62,7 +72,11 @@ export const answersRouter = {
     .handler(async ({ context, input: { id, ...patch } }) => {
       const [row] = await context.db
         .update(answer)
-        .set({ ...patch, updatedAt: context.now() })
+        .set({
+          ...patch,
+          ...(patch.value === undefined ? {} : { status: "confirmed" as const, fingerprint: null, timesCleared: 0 }),
+          updatedAt: context.now(),
+        })
         .where(mine(answer, context.user.id, id))
         .returning(answerColumns)
       const found = orNotFound(row, "Answer")

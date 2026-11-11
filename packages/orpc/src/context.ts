@@ -26,6 +26,8 @@ export interface Services {
  * null when it is not valid) and cookies are ignored. `tokenUnavailable` means the token could not be checked at all.
  */
 export type Context = Services & {
+  /** Also returned as `x-request-id`, so a log line can be tied to the failing request. */
+  requestId: string
   headers: Headers
   session: Session | null
   bearer: boolean
@@ -33,18 +35,22 @@ export type Context = Services & {
   tokenUnavailable: boolean
 }
 
-export async function createContext(services: Services, headers: Headers): Promise<Context> {
+export async function createContext(
+  services: Services,
+  headers: Headers,
+  requestId: string = crypto.randomUUID(),
+): Promise<Context> {
   const secret = bearerSecret(headers)
   if (secret !== null) {
     try {
       const token = await verifyToken(services.db, secret, services.now())
-      return { ...services, headers, session: null, bearer: true, token, tokenUnavailable: false }
+      return { ...services, requestId, headers, session: null, bearer: true, token, tokenUnavailable: false }
     } catch (error) {
       if (!(error instanceof TokenStoreError)) throw error
       console.error("[tokens] verify failed", tokenErrorFields(error))
-      return { ...services, headers, session: null, bearer: true, token: null, tokenUnavailable: true }
+      return { ...services, requestId, headers, session: null, bearer: true, token: null, tokenUnavailable: true }
     }
   }
   const session = await services.auth.api.getSession({ headers }).catch(() => null)
-  return { ...services, headers, session, bearer: false, token: null, tokenUnavailable: false }
+  return { ...services, requestId, headers, session, bearer: false, token: null, tokenUnavailable: false }
 }

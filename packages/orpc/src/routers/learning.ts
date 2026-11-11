@@ -1,4 +1,5 @@
-import { embedTexts, isLearnableField } from "@skiffr/ai"
+import { ORPCError } from "@orpc/server"
+import { embedTexts, isLearnableField, isSensitiveValue } from "@skiffr/ai"
 import {
   CLEARED_STOP_MIN,
   FIELD_EVENT_PURGE_BATCH,
@@ -40,13 +41,13 @@ import {
   fingerprintOf,
   guardLearningDb,
   logBestEffort,
+  payloadHash,
   usableValue,
 } from "../lib/learning"
 import { mine, orNotFound } from "../lib/owned"
 import { protectedProcedure } from "../procedures"
 
 const DAY_MS = 86_400_000
-const SUGGESTIONS_MAX = 100
 const SUGGESTION_EVENTS_MAX = 1_000
 const NEIGHBOURS = 3
 
@@ -134,12 +135,10 @@ export const learningRouter = {
 
       const toMatch = (fieldId: string, row: Row, source: "exact" | "label" | "similar", score: number) => {
         const f = fields.find((candidate) => candidate.field.id === fieldId)!
-        const value = row.status === "rejected" ? null : usableValue(row, f.field)
+        const value = row.status === "rejected" || isSensitiveValue(row.value) ? null : usableValue(row, f.field)
         if (value === null) return null
         const autofill =
-          source !== "similar" &&
-          value.length <= LEARNING_AUTOFILL_VALUE_MAX &&
-          (row.status === "confirmed" || row.timesCleared < CLEARED_STOP_MIN)
+          source !== "similar" && value.length <= LEARNING_AUTOFILL_VALUE_MAX && row.timesCleared < CLEARED_STOP_MIN
         return {
           fieldId,
           answerId: row.id,
@@ -231,7 +230,10 @@ export const learningRouter = {
       }
 
       const events = input.events
-        .filter((event) => isLearnableField(event))
+        .filter(
+          (event) =>
+            isLearnableField(event) && !isSensitiveValue(event.filledValue) && !isSensitiveValue(event.finalValue),
+        )
         .flatMap((event) => {
           const filled = event.filledValue.trim()
           const final = event.finalValue.trim()
@@ -247,12 +249,22 @@ export const learningRouter = {
       const learned = await guardLearningDb("record", () =>
         context.db.transaction(async (tx) => {
           if (input.batchId) {
+            const hash = payloadHash([input.siteKey, input.applicationId ?? null, input.events])
             const [fresh] = await tx
               .insert(recordBatch)
-              .values({ userId, batchId: input.batchId })
+              .values({ userId, batchId: input.batchId, payloadHash: hash })
               .onConflictDoNothing()
               .returning({ batchId: recordBatch.batchId })
-            if (!fresh) return null
+            if (!fresh) {
+              const [spent] = await tx
+                .select({ payloadHash: recordBatch.payloadHash })
+                .from(recordBatch)
+                .where(and(eq(recordBatch.userId, userId), eq(recordBatch.batchId, input.batchId)))
+              if (spent?.payloadHash !== hash) {
+                throw new ORPCError("CONFLICT", { message: "That batch id was already used for different events." })
+              }
+              return null
+            }
           }
 
           const learnable = (e: (typeof events)[number]) =>
@@ -301,7 +313,17 @@ export const learningRouter = {
                   updatedAt: now,
                 })
                 .where(sameValue)
-            } else if (learnable(e)) {
+            } else if (e.final.length > LEARNING_AUTOFILL_VALUE_MAX) {
+              await tx
+                .delete(answer)
+                .where(
+                  and(
+                    eq(answer.userId, userId),
+                    eq(answer.normalizedLabel, e.normalizedLabel),
+                    eq(answer.status, "learned"),
+                  ),
+                )
+            } else {
               const [row] = await tx
                 .insert(answer)
                 .values({
@@ -357,20 +379,49 @@ export const learningRouter = {
       const staleBefore = new Date(now - SUGGEST_STALE_DAYS * DAY_MS)
       const since = new Date(now - SUGGEST_WINDOW_DAYS * DAY_MS)
 
-      const corrected = and(eq(answer.status, "learned"), sql`${answer.timesCorrected} >= ${SUGGEST_KEEP_MIN}`)
-      const cleared = sql`${answer.timesCleared} >= ${CLEARED_STOP_MIN}`
-      const candidates = await context.db
-        .select(answerColumns)
-        .from(answer)
-        .where(
-          and(
-            eq(answer.userId, userId),
-            ne(answer.status, "rejected"),
-            or(corrected, cleared, lt(answer.updatedAt, staleBefore)),
-          ),
-        )
-        .orderBy(sql`case when ${corrected} then 0 when ${cleared} then 1 else 2 end`, answer.normalizedLabel)
-        .limit(SUGGESTIONS_MAX)
+      const PER_KIND = 50
+      const recent = and(
+        eq(fieldEvent.userId, userId),
+        eq(fieldEvent.outcome, "corrected"),
+        gte(fieldEvent.createdAt, since),
+      )
+      const labelsWhere = (having: ReturnType<typeof sql>) =>
+        context.db
+          .select({ label: fieldEvent.normalizedLabel })
+          .from(fieldEvent)
+          .where(recent)
+          .groupBy(fieldEvent.normalizedLabel)
+          .having(having)
+          .orderBy(desc(sql`max(${fieldEvent.createdAt})`))
+          .limit(PER_KIND)
+      const [flipLabels, keepLabels] = await Promise.all([
+        labelsWhere(sql`count(*) >= ${SUGGEST_FLIP_FLOP_MIN} and count(distinct ${fieldEvent.finalValue}) > 1`),
+        labelsWhere(sql`count(*) >= ${SUGGEST_KEEP_MIN} and count(distinct ${fieldEvent.finalValue}) = 1`),
+      ])
+      const learnedLabels = [...new Set([...flipLabels, ...keepLabels].map((row) => row.label))]
+      const open = and(eq(answer.userId, userId), ne(answer.status, "rejected"))
+      const [learned, clearing, stale] = await Promise.all([
+        learnedLabels.length === 0
+          ? []
+          : context.db
+              .select(answerColumns)
+              .from(answer)
+              .where(and(open, eq(answer.status, "learned"), inArray(answer.normalizedLabel, learnedLabels))),
+        context.db
+          .select(answerColumns)
+          .from(answer)
+          .where(and(open, sql`${answer.timesCleared} >= ${CLEARED_STOP_MIN}`))
+          .orderBy(answer.normalizedLabel)
+          .limit(PER_KIND),
+        context.db
+          .select(answerColumns)
+          .from(answer)
+          .where(and(open, lt(answer.updatedAt, staleBefore)))
+          .orderBy(answer.normalizedLabel)
+          .limit(PER_KIND),
+      ])
+      const candidates = [...new Map([...learned, ...clearing, ...stale].map((row) => [row.id, row])).values()]
+      await purgeOld(context.db, userId, context.now())
       if (candidates.length === 0) return []
 
       const events = await context.db

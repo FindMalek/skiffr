@@ -11,6 +11,7 @@ import {
   STATS_APPLICATIONS_MAX,
 } from "../constants"
 import { answerSchema } from "./answers"
+import { CLEAN_MESSAGE, clean } from "./text"
 
 /** The host the form lives on, plus the first path segment on multi-tenant ATS hosts (`boards.greenhouse.io/acme`). */
 export const siteKeySchema = z
@@ -20,15 +21,6 @@ export const siteKeySchema = z
   .max(SITE_KEY_MAX)
   .regex(/^[a-z0-9.:-]+(\/[a-z0-9._~%-]+)?$/, "Use the host, optionally with the first path segment.")
 
-/** Page-controlled text: no NUL or other control characters (tab, newline and return are fine) and no lone surrogates, which postgres would reject. */
-const hasControl = (text: string) =>
-  [...text].some((char) => {
-    const code = char.codePointAt(0) ?? 0
-    return (code < 32 && code !== 9 && code !== 10 && code !== 13) || code === 127
-  })
-const LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/
-const clean = (text: string) => !hasControl(text) && !LONE_SURROGATE.test(text)
-const CLEAN_MESSAGE = "Control characters are not allowed."
 const text = (max: number) => z.string().max(max).refine(clean, CLEAN_MESSAGE)
 const trimmed = (max: number) => z.string().trim().max(max).refine(clean, CLEAN_MESSAGE)
 

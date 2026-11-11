@@ -72,6 +72,12 @@ test("a token calls the extension procedures over rpc without cookies or a csrf 
   )
 })
 
+test("every rpc answer carries a request id for the log line of a failure", async () => {
+  const [first, second] = await Promise.all([rpc("tokens/list", session), rpc("tokens/list", session)])
+  expect(first.headers.get("x-request-id")).toMatch(/^[0-9a-f-]{36}$/)
+  expect(first.headers.get("x-request-id")).not.toBe(second.headers.get("x-request-id"))
+})
+
 test("a bad token is a bare 401 even when a valid cookie rides along", async () => {
   const res = await rpc("extension/whoami", { authorization: "Bearer skp_nope", ...session })
   expect(res.status).toBe(401)

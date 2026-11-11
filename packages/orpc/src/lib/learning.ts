@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto"
 import { ORPCError } from "@orpc/server"
-import { AiModelError, controlKind, embedTexts } from "@skiffr/ai"
+import { AiModelError, type ControlKind, controlKind, embedTexts } from "@skiffr/ai"
 import { ANSWERS_PER_USER_MAX, EMBEDDING_TEXT_MAX } from "@skiffr/common/constants"
 import { normalizeLabel } from "@skiffr/common/utils"
 import { answer, type Db } from "@skiffr/db"
@@ -24,10 +24,35 @@ export function fingerprintOf(field: { label: string; type?: string; options?: s
 /** The question text that gets embedded and matched. */
 export const embeddingText = (normalizedLabel: string) => normalizedLabel.slice(0, EMBEDDING_TEXT_MAX)
 
+const plain = (text: string) => text.normalize("NFD").replace(/\p{M}/gu, "").trim().toLowerCase()
+
+/** The option the value stands for: the same text first, then the same words, but only when no other option reads the same. */
+function pickOption(value: string, options: string[]): string | null {
+  const wanted = plain(value)
+  if (!wanted) return null
+  const exact = options.find((option) => plain(option) === wanted)
+  if (exact !== undefined) return exact
+  const words = normalizeLabel(value)
+  if (!words) return null
+  const loose = options.filter((option) => normalizeLabel(option) === words)
+  return loose.length === 1 ? loose[0]! : null
+}
+
+/** Whether free text can go into a typed control: "five years" can't go into a number field. */
+const FITS: Partial<Record<ControlKind, RegExp>> = {
+  number: /^-?\d+(?:[.,]\d+)?$/,
+  date: /^\d{4}-\d{2}-\d{2}$/,
+  email: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+  tel: /^\+?[\d\s().-]{5,}$/,
+  url: /^https?:\/\/\S+$/i,
+}
+
 /**
- * The value to offer for this field, or `null` when it doesn't fit: the learned control must be the same broad kind
- * (a manual answer has none and fits anything but a checkbox), and when the field lists options the value must be one
- * of them. It comes back as the option's own text, which is what the page can select.
+ * The value to offer for this field, or `null` when it doesn't fit. The learned control must be the same kind, with
+ * three exceptions: text (and manual answers, which have no control) can serve a typed control when the value looks
+ * right for it, text can serve a choice when it is one of the options, and a typed answer can serve a text field. A
+ * choice never fills free text. When the field lists options the value must be one of them and comes back as the
+ * option's own text, which is what the page can select.
  */
 export function usableValue(
   learned: { value: string; fingerprint: string | null },
@@ -35,11 +60,15 @@ export function usableValue(
 ): string | null {
   const fieldKind = controlKind(field.type)
   if (!fieldKind) return null
-  const learnedKind = learned.fingerprint ? controlKind(learned.fingerprint.split("|")[1]) : null
-  if (learnedKind ? learnedKind !== fieldKind : fieldKind === "checkbox") return null
-  if (field.options.length === 0) return learned.value
-  const wanted = normalizeLabel(learned.value)
-  return wanted ? (field.options.find((option) => normalizeLabel(option) === wanted) ?? null) : null
+  const learnedKind = (learned.fingerprint ? controlKind(learned.fingerprint.split("|")[1]) : "text") ?? "text"
+  if (learnedKind !== fieldKind) {
+    const typedToText = fieldKind === "text" && learnedKind !== "choice" && learnedKind !== "checkbox"
+    const textToChoice = learnedKind === "text" && fieldKind === "choice"
+    const textToTyped = learnedKind === "text" && FITS[fieldKind]?.test(learned.value.trim())
+    if (!typedToText && !textToChoice && !textToTyped) return null
+  }
+  if (field.options.length > 0) return pickOption(learned.value, field.options)
+  return fieldKind === "choice" && learnedKind !== "choice" ? null : learned.value
 }
 
 /**
@@ -124,10 +153,15 @@ export async function embedMissing(
   }
 }
 
-/** A user's answer bank is capped. Updating a label that already exists is always fine. */
-export async function assertAnswerRoom(db: Pick<Db, "select">, userId: string, labels: string[]): Promise<void> {
+/** A user's answer bank is capped. Updating a label that already exists is always fine. Call it inside the transaction that writes: it takes a per-user lock so parallel writes can't all squeeze under the cap. */
+export async function assertAnswerRoom(
+  db: Pick<Db, "select" | "execute">,
+  userId: string,
+  labels: string[],
+): Promise<void> {
   const unique = [...new Set(labels)]
   if (unique.length === 0) return
+  await db.execute(sql`select pg_advisory_xact_lock(hashtext(${`answers:${userId}`}))`)
   const [row] = await db.select({ count: sql<number>`count(*)::int` }).from(answer).where(eq(answer.userId, userId))
   if ((row?.count ?? 0) + unique.length <= ANSWERS_PER_USER_MAX) return
   const existing = await db
@@ -138,3 +172,6 @@ export async function assertAnswerRoom(db: Pick<Db, "select">, userId: string, l
     throw new ORPCError("BAD_REQUEST", { message: `You can save up to ${ANSWERS_PER_USER_MAX} answers.` })
   }
 }
+
+/** Same events, same hash: the key of a retried batch. */
+export const payloadHash = (payload: unknown) => createHash("sha256").update(JSON.stringify(payload)).digest("hex")

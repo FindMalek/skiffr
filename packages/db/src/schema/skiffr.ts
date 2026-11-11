@@ -161,6 +161,8 @@ export const recordBatch = pgTable(
   {
     userId: userId(),
     batchId: uuid("batch_id").notNull(),
+    /** Hash of the batch's content, so the same id with different events is refused instead of silently ignored. */
+    payloadHash: text("payload_hash").notNull(),
     createdAt: createdAt(),
   },
   (t) => [primaryKey({ columns: [t.userId, t.batchId] })],

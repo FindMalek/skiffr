@@ -20,6 +20,7 @@ CREATE TABLE "field_event" (
 CREATE TABLE "record_batch" (
 	"user_id" text NOT NULL,
 	"batch_id" uuid NOT NULL,
+	"payload_hash" text NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "record_batch_user_id_batch_id_pk" PRIMARY KEY("user_id","batch_id")
 );
