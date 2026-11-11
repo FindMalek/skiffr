@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Senior Engineer - Acme</title></head>
+<body>
+<main data-ui="application-form-page">
+  <h1>Senior Engineer</h1>
+  <form data-ui="application-form" action="/submit?ats=workable" method="post" novalidate>
+    <fieldset>
+      <legend>Personal information</legend>
+      <div data-ui="firstname"><label for="firstname">First name *</label><input id="firstname" name="firstname" type="text" required aria-required="true" autocomplete="given-name"></div>
+      <div data-ui="lastname"><label for="lastname">Last name *</label><input id="lastname" name="lastname" type="text" required aria-required="true" autocomplete="family-name"></div>
+      <div data-ui="email"><label for="email">Email *</label><input id="email" name="email" type="email" required aria-required="true" autocomplete="email"></div>
+      <div data-ui="headline"><label for="headline">Headline</label><input id="headline" name="headline" type="text"></div>
+      <div data-ui="phone"><label for="phone">Phone *</label><input id="phone" name="phone" type="tel" required aria-required="true" autocomplete="tel"></div>
+      <div data-ui="address"><label for="address">Address</label><input id="address" name="address" type="text" autocomplete="street-address"></div>
+    </fieldset>
+    <fieldset>
+      <legend>Profile</legend>
+      <div data-ui="resume"><label for="resume">Resume *</label><input id="resume" name="resume" type="file"></div>
+      <div data-ui="summary"><label for="summary">Summary</label><textarea id="summary" name="summary" rows="4"></textarea></div>
+    </fieldset>
+    <fieldset>
+      <legend>Details</legend>
+      <div data-ui="QA_1"><label for="QA_1">What is your notice period?</label><input id="QA_1" name="QA_1" type="text"></div>
+      <div data-ui="QA_2"><label for="QA_2">Are you eligible to work in the EU?</label>
+        <select id="QA_2" name="QA_2"><option value="">Select</option><option>Yes</option><option>No</option></select></div>
+      <div data-ui="QA_3"><label><input type="checkbox" name="QA_3" value="true"> I agree to the processing of my personal data</label></div>
+    </fieldset>
+    <button type="submit" data-ui="apply">Submit application</button>
+  </form>
+</main>
+</body>
+</html>

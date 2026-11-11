@@ -21,7 +21,8 @@
       "!.opencode",
       "!.pi",
       "!.claude",
-      "!skills-lock.json"
+      "!skills-lock.json",
+      "!apps/e2e/pages"
     ]
   },
   "formatter": {
