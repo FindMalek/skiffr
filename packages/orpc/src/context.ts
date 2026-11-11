@@ -2,6 +2,7 @@ import type { Auth, Session } from "@skiffr/auth"
 import type { Db } from "@skiffr/db"
 import type { Storage } from "@skiffr/storage"
 import type { LanguageModel } from "ai"
+import { bearerSecret, type TokenAuth, TokenStoreError, tokenErrorFields, verifyToken } from "./lib/tokens"
 
 /** Everything procedures need, built once by the api at startup (and by tests with their own). */
 export interface Services {
@@ -18,9 +19,30 @@ export interface Services {
   model: LanguageModel | null
 }
 
-export type Context = Services & { headers: Headers; session: Session | null }
+/**
+ * `bearer` is set whenever the request carries an `Authorization: Bearer` header: then only the token counts (`token` is
+ * null when it is not valid) and cookies are ignored. `tokenUnavailable` means the token could not be checked at all.
+ */
+export type Context = Services & {
+  headers: Headers
+  session: Session | null
+  bearer: boolean
+  token: TokenAuth | null
+  tokenUnavailable: boolean
+}
 
 export async function createContext(services: Services, headers: Headers): Promise<Context> {
+  const secret = bearerSecret(headers)
+  if (secret !== null) {
+    try {
+      const token = await verifyToken(services.db, secret, services.now())
+      return { ...services, headers, session: null, bearer: true, token, tokenUnavailable: false }
+    } catch (error) {
+      if (!(error instanceof TokenStoreError)) throw error
+      console.error("[tokens] verify failed", tokenErrorFields(error))
+      return { ...services, headers, session: null, bearer: true, token: null, tokenUnavailable: true }
+    }
+  }
   const session = await services.auth.api.getSession({ headers }).catch(() => null)
-  return { ...services, headers, session }
+  return { ...services, headers, session, bearer: false, token: null, tokenUnavailable: false }
 }

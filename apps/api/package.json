@@ -23,6 +23,8 @@
     "drizzle-orm": "catalog:"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "catalog:",
+    "@electric-sql/pglite-pgvector": "catalog:",
     "@skiffr/config": "workspace:*",
     "@types/bun": "catalog:",
     "typescript": "catalog:"

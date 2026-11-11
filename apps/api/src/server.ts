@@ -4,27 +4,32 @@ import { RPCHandler } from "@orpc/server/fetch"
 import { SimpleCsrfProtectionHandlerPlugin } from "@orpc/server/plugins"
 import { ZodToJsonSchemaConverter } from "@orpc/zod/zod4"
 import type { Auth } from "@skiffr/auth"
-import { appRouter, createContext, type Services } from "@skiffr/orpc"
+import { appRouter, bearerSecret, createContext, type Services } from "@skiffr/orpc"
 import { sql } from "drizzle-orm"
+import { type Handler, withExtensionCors } from "./cors"
 import { withSecurityHeaders } from "./headers"
 
-export type Handler = (request: Request) => Promise<Response>
+export type { Handler } from "./cors"
 
 type Interceptors = NonNullable<NonNullable<ConstructorParameters<typeof RPCHandler>[1]>["interceptors"]>
 
 /**
  * The api is the only app that touches the database, auth, storage and providers. Routes:
  *   /auth/*       better-auth (sign-in posts are rate limited per ip; the dashboard proxies /api/auth/* here, so cookies stay first-party)
- *   /rpc/*        oRPC for web + dashboard (needs `x-csrf-token: orpc`)
+ *   /rpc/*        oRPC for web + dashboard (cookie sessions need `x-csrf-token: orpc`) and the extension (bearer token, CORS for its origin)
  *   /v1/*         the same procedures as REST, docs at /v1/docs, spec at /v1/openapi.json
  *   /files/<key>  redirect to a short-lived url for an uploaded file
  *   /telegram/webhook  Telegram bot updates (secret header checked)
  *   /health       for Dokploy and uptime checks
  */
-export function createServer(services: Services & { auth: Auth }, opts: { publicUrl: string }) {
+export function createServer(
+  services: Services & { auth: Auth },
+  opts: { publicUrl: string; extensionOrigins?: string[] },
+) {
   const interceptors: Interceptors = []
   const wrappers: Array<(next: Handler) => Handler> = []
   const rpc = new RPCHandler(appRouter, { plugins: [new SimpleCsrfProtectionHandlerPlugin()], interceptors })
+  const rpcBearer = new RPCHandler(appRouter, { interceptors })
   const rest = new OpenAPIHandler(appRouter, {
     interceptors,
     plugins: [
@@ -64,7 +69,10 @@ export function createServer(services: Services & { auth: Auth }, opts: { public
     }
 
     const context = await createContext(services, request.headers)
-    const viaRpc = await rpc.handle(request, { prefix: "/rpc", context })
+    const viaRpc = await (bearerSecret(request.headers) === null ? rpc : rpcBearer).handle(request, {
+      prefix: "/rpc",
+      context,
+    })
     if (viaRpc.matched) return viaRpc.response
     const viaRest = await rest.handle(request, { prefix: "/v1", context })
     if (viaRest.matched) return viaRest.response
@@ -72,7 +80,10 @@ export function createServer(services: Services & { auth: Auth }, opts: { public
   }
 
   const https = opts.publicUrl.startsWith("https://")
-  const handler = wrappers.reduceRight<Handler>((next, wrap) => wrap(next), handle)
+  const handler = withExtensionCors(
+    wrappers.reduceRight<Handler>((next, wrap) => wrap(next), handle),
+    opts.extensionOrigins,
+  )
   return async function fetch(request: Request): Promise<Response> {
     return withSecurityHeaders(await handler(request), { https })
   }
