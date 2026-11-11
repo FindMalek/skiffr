@@ -21,6 +21,26 @@ test("entities in titles and companies are decoded without gaps", () => {
   expect(jobs.map((j) => [j.title, j.company])).toEqual([["R&D Engineer, Women's Health, C++", "AT&T é"]])
 })
 
+test("titles that start like a button word are still jobs, real buttons are not", () => {
+  const titles = [
+    "Manager, Customer Success",
+    "Open Source Engineer",
+    "Next.js Developer",
+    "Privacy Engineer",
+    "Editor",
+    "News Producer",
+    "Contact Center Agent",
+  ]
+  const html = titles
+    .map(
+      (t, i) =>
+        `<a href="https://www.linkedin.com/jobs/view/${1000000 + i}">${t}</a><p>Acme</p><a href="https://www.linkedin.com/comm/jobs/search">Manage alerts</a>`,
+    )
+    .join("")
+  const jobs = parseEmail("linkedin", { html })
+  expect(jobs.map((j) => j.title)).toEqual(titles)
+})
+
 test("only real vendor domains count as a board", () => {
   const id = "abcdef0123456789"
   for (const host of ["indeed.xyz", "evil.indeed.cc", "indeed.top"])

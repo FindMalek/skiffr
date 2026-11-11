@@ -25,13 +25,15 @@ const LINES_AFTER_TITLE = 4
 
 /** Buttons, footers and badges that sit next to a job in an alert. */
 const NOISE =
-  /^(?:view|see|apply|easy apply|quick apply|unsubscribe|manage|edit|update|get the app|download|help|privacy|terms|contact|new|promoted|sponsored|actively recruiting|actively hiring|be an early applicant|early applicant|\d+\+? (?:applicants?|connections?|school alumni)|posted|just posted|today|yesterday|\d+[dhwm] ago|\d+ (?:day|hour|week|month)s? ago|learn more|share|save|more|next|previous|sign in|log in|open|©|\$|£|€|from \$)/i
+  /^(?:(?:view|see|apply|easy apply|quick apply|unsubscribe|manage|edit|update|get the app|download|help|privacy|terms|contact|new|promoted|sponsored|actively recruiting|actively hiring|be an early applicant|early applicant|\d+\+? (?:applicants?|connections?|school alumni)|posted|just posted|today|yesterday|\d+[dhwm] ago|\d+ (?:day|hour|week|month)s? ago|learn more|share|save|more|next|previous|sign in|log in|open)(?![a-z])|©|\$|£|€|from \$)/i
 const BOARD_PHRASE =
   /\b(?:job alerts?|jobs? for you|jobs? you may|recommended jobs?|similar jobs?|jobs? like|see all|view all|new jobs?|more jobs?)\b/i
 const ROLE =
   /\b(?:engineer|developer|programmer|manager|designer|analyst|scientist|director|lead|architect|specialist|consultant|intern(?:ship)?|administrator|coordinator|officer|recruiter|writer|editor|associate|assistant|representative|technician|accountant|advisor|strategist|researcher|producer|head of|vp|cto|ceo|devops|sre|qa|tester|marketer|sales|support|operator|agent|nurse|teacher|driver|owner|partner|executive)\b/i
 
-const isNoise = (text: string) => NOISE.test(text) || BOARD_PHRASE.test(text) || /^[\d\s.,%+/-]+$/.test(text)
+const ENDS_WITH_ROLE = new RegExp(`${ROLE.source}(?:\\s*[(\\[–-].*)?$`, "i")
+const isNoise = (text: string) =>
+  (NOISE.test(text) && !ENDS_WITH_ROLE.test(text)) || BOARD_PHRASE.test(text) || /^[\d\s.,%+/-]+$/.test(text)
 const looksLikeTitle = (text: string) =>
   text.length >= 3 && text.length <= 150 && !isNoise(text) && !/^https?:\/\//i.test(text) && !text.includes("@")
 
