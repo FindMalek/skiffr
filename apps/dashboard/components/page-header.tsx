@@ -22,7 +22,7 @@ export function PageHeader({
           <h1 className="font-heading font-semibold text-3xl tracking-tight">{title}</h1>
           {description && <p className="text-muted-foreground">{description}</p>}
         </div>
-        {actions && <div className="flex gap-2">{actions}</div>}
+        {actions && <div className="flex max-w-full min-w-0 gap-2">{actions}</div>}
       </div>
     </header>
   )

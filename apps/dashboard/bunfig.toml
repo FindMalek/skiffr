@@ -1,0 +1,4 @@
+# Every *.test.ts(x) under this app runs, each file in a fresh global (`bun test --isolate`, which also fails when it
+# finds no file or a file fails). Plain `bun test` shares one process and the throwing `fetch` stub from the preload.
+[test]
+preload = ["./test/setup.ts"]
