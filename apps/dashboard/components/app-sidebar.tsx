@@ -17,6 +17,7 @@ import {
 import {
   InboxIcon,
   LayoutDashboardIcon,
+  ListChecksIcon,
   LogOutIcon,
   NotebookPenIcon,
   PuzzleIcon,
@@ -38,6 +39,7 @@ const NAV: { href: Route; label: string; icon: typeof LayoutDashboardIcon; admin
   { href: "/", label: "Overview", icon: LayoutDashboardIcon },
   { href: "/queue", label: "Queue", icon: InboxIcon },
   { href: "/notes", label: "Notes", icon: NotebookPenIcon },
+  { href: "/answers", label: "Answers", icon: ListChecksIcon },
   { href: "/extension", label: "Extension", icon: PuzzleIcon },
   { href: "/users", label: "Users", icon: UsersIcon, admin: true },
   { href: "/settings", label: "Settings", icon: SettingsIcon },
