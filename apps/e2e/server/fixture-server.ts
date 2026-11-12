@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process"
+import { spawnSync } from "node:child_process"
 import { mkdtempSync, readFileSync, rmSync } from "node:fs"
 import { readFile } from "node:fs/promises"
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http"
@@ -76,30 +76,16 @@ async function handle(req: IncomingMessage, res: ServerResponse, state: State): 
   }
 }
 
+/** Needs only the `openssl` binary: no prompt, no home directory, every file in a temp dir that is removed again. */
 function throwawayCertificate(): { key: string; cert: string } {
   const dir = mkdtempSync(join(tmpdir(), "skiffr-e2e-cert-"))
   try {
     const keyFile = join(dir, "key.pem")
     const certFile = join(dir, "cert.pem")
-    execFileSync(
-      "openssl",
-      [
-        "req",
-        "-x509",
-        "-newkey",
-        "rsa:2048",
-        "-nodes",
-        "-keyout",
-        keyFile,
-        "-out",
-        certFile,
-        "-subj",
-        "/CN=localhost",
-        "-days",
-        "1",
-      ],
-      { stdio: "ignore" },
-    )
+    const args = ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-sha256", "-days", "1"]
+    args.push("-subj", "/CN=localhost", "-keyout", keyFile, "-out", certFile)
+    const run = spawnSync("openssl", args, { stdio: ["ignore", "ignore", "pipe"], timeout: 30_000, encoding: "utf8" })
+    if (run.status !== 0) throw new Error(`openssl could not make the fixture certificate: ${run.error ?? run.stderr}`)
     return { key: readFileSync(keyFile, "utf8"), cert: readFileSync(certFile, "utf8") }
   } finally {
     rmSync(dir, { recursive: true, force: true })

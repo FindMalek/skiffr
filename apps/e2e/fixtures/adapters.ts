@@ -1,4 +1,4 @@
-import type { BrowserContext, Page } from "@playwright/test"
+import { type BrowserContext, expect, type Page } from "@playwright/test"
 import type { FieldDescriptor, FieldMapping } from "@skiffr/common/schemas"
 import type { FixtureServer } from "../server/fixture-server.ts"
 import { ToastDriver } from "./toast.ts"
@@ -36,10 +36,12 @@ export async function openAdapterPage(
   const page = await context.newPage()
   await page.goto(adapterUrl(server, name, generic))
   await page.bringToFront()
-  await page
-    .locator("[data-ui=cookie-consent-decline]")
-    .click({ timeout: 500 })
-    .catch(() => {})
+  // the page is static markup, so the banner is there at load: a person accepts or declines it before filling, and it covers the foot of the form until then
+  const decline = page.locator("[data-ui=cookie-consent-decline]")
+  if ((await decline.count()) > 0) {
+    await decline.click()
+    await expect(decline).toHaveCount(0)
+  }
   const toast = await ToastDriver.attach(context, page)
   await toast.waitFor((s) => s.buttons.some((b) => b.action === "yes"))
   return { page, toast }
