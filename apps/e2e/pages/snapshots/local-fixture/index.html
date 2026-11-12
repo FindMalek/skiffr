@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Senior Engineer at Acme - Apply</title>
+</head>
+<body>
+<form action="#" enctype="multipart/form-data" id="application-form" method="post">
+  <input name="authenticity_token" type="hidden" value="x">
+  <input name="job_id" type="hidden" value="x">
+  <input name="nonce" type="hidden" value="x">
+  <div class="field">
+    <label for="first_name">First Name *</label>
+    <input data-qa="first-name" id="first_name" name="first_name" type="text">
+  </div>
+  <div class="field">
+    <label for="last_name">Last Name *</label>
+    <input data-qa="last-name" id="last_name" name="last_name" type="text">
+  </div>
+  <div class="field">
+    <label for="email">Email *</label>
+    <input data-qa="email" id="email" name="email" placeholder="user@example.invalid" type="email">
+  </div>
+  <div class="field">
+    <label for="phone">Phone</label>
+    <input data-qa="phone" id="phone" name="phone" placeholder="000-000-0000" type="tel">
+  </div>
+  <div class="field">
+    <label for="location">Current location</label>
+    <input id="location" name="location" placeholder="Jane Doe" type="text">
+  </div>
+  <div class="field">
+    <label for="resume">Resume/CV</label>
+    <input accept=".pdf,.doc" id="resume" name="resume" type="file">
+  </div>
+  <div class="field">
+    <label for="cover">Cover letter</label>
+    <textarea id="cover" name="cover_letter"></textarea>
+  </div>
+  <div class="field">
+    <label for="country">Country</label>
+    <select id="country" name="country">
+      <option value="">Select</option>
+      <option value="US">United States</option>
+      <option value="DE">Germany</option>
+    </select>
+  </div>
+  <div class="field">
+    <label><input name="consent" type="checkbox" value="yes"> I agree to the privacy policy</label>
+  </div>
+  <div class="hp" style="height:1px;left:-9999px;overflow:hidden;position:absolute;width:1px">
+    <label for="website">Website</label>
+    <input autocomplete="off" id="website" name="website" tabindex="-1" type="text">
+  </div>
+  <div class="ghost" style="opacity:0">
+    <label for="fax">Fax</label>
+    <input id="fax" name="fax" type="text">
+  </div>
+  <div class="hidden" style="display:none">
+    <input name="hidden_text" type="text">
+  </div>
+  <div data-skiffr-placeholder="iframe" style="display:block;height:74px;width:300px" title="reCAPTCHA"></div>
+  <button formaction="#" id="submit_app" type="submit">Submit application</button>
+</form>
+</body>
+</html>

@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "e2e": "playwright test",
-    "check-types": "tsc --noEmit"
+    "test": "bun test tools",
+    "check-types": "tsc --noEmit",
+    "snapshot": "node tools/snapshot/cli.ts"
   },
   "dependencies": {
     "@skiffr/common": "workspace:*",
@@ -14,7 +16,10 @@
   "devDependencies": {
     "@playwright/test": "catalog:",
     "@skiffr/config": "workspace:*",
+    "@types/bun": "catalog:",
     "@types/node": "catalog:",
+    "esbuild": "0.25.12",
+    "happy-dom": "21.0.4",
     "typescript": "catalog:"
   }
 }

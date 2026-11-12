@@ -1,6 +1,6 @@
 {
   "extends": "@skiffr/config/base.json",
-  "compilerOptions": { "types": ["node"], "allowImportingTsExtensions": true },
+  "compilerOptions": { "types": ["node", "bun"], "allowImportingTsExtensions": true },
   "include": ["**/*.ts"],
   "exclude": ["node_modules", "playwright-report", "test-results"]
 }
