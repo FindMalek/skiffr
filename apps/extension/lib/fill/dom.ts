@@ -205,3 +205,20 @@ export function setNativeValue(el: HTMLElement, value: string): void {
   if (setter) setter.call(el, value)
   else (el as HTMLInputElement).value = value
 }
+
+export async function typeInto(el: HTMLElement, text: string): Promise<void> {
+  focusEl(el)
+  const input = el as HTMLInputElement
+  setNativeValue(el, "")
+  fireInput(el, null, "deleteContentBackward")
+  for (const char of text) {
+    fireKey(el, "keydown", char)
+    fire(el, "beforeinput", { data: char, inputType: "insertText" }, "InputEvent")
+    setNativeValue(el, input.value + char)
+    try {
+      input.setSelectionRange(input.value.length, input.value.length)
+    } catch {}
+    fireInput(el, char)
+    fireKey(el, "keyup", char)
+  }
+}

@@ -6,6 +6,15 @@ import {
   AI_REQUEST_CHARS_MAX,
 } from "@skiffr/common"
 import {
+  type Adapter,
+  adapterChoices,
+  adapterFor,
+  adapterKind,
+  adapterLabel,
+  adapterSkips,
+  isPrivateField,
+} from "../adapters"
+import {
   cleanText,
   containsControl,
   isAriaHidden,
@@ -285,6 +294,7 @@ function buildField(
   ctx: Ctx,
   filter: boolean,
 ): { field: CollectedField | null; members: HTMLElement[] } | null {
+  const adapter = adapterFor(el)
   const input = el as HTMLInputElement
   const members: HTMLElement[] = kind === "radio" || kind === "checkbox" ? groupMembers(input, kind) : [el]
   const usable = filter ? members.filter((member) => !isDisabled(member)) : members
@@ -306,7 +316,7 @@ function buildField(
       el: member,
     }))
   } else if (kind === "combobox") {
-    choices = readListOptions(el).map((option) => ({
+    choices = (adapterChoices(adapter, el) ?? readListOptions(el)).map((option) => ({
       text: cleanText(option.textContent),
       value: option.id,
       el: option,
@@ -317,7 +327,7 @@ function buildField(
   const found = kind === "radio" || grouped ? groupLabel(usable, ctx) : ownLabel(el, ctx)
   const title = cleanText(el.getAttribute("title"))
   const placeholder = cleanText(el.getAttribute("placeholder"))
-  const own = found || precedingText(el) || placeholder || title
+  const own = adapterLabel(adapter, el) || found || precedingText(el) || placeholder || title
   const section = sectionOf(el, ctx)
   const label = section && own && section.length <= SECTION_MAX && !same(own, section) ? `${section}: ${own}` : own
   const name = input.name || el.id || undefined
@@ -356,7 +366,7 @@ function buildField(
 
 /** The field a single control belongs to, without the visibility and trap filters. */
 export function resolveField(el: HTMLElement): CollectedField | null {
-  const kind = kindOf(el)
+  const kind = adapterKind(adapterFor(el), el) ?? kindOf(el)
   return kind ? (buildField(el, kind, newCtx(), false)?.field ?? null) : null
 }
 
@@ -366,15 +376,21 @@ export function collectFields(root: ParentNode = document): CollectedField[] {
   const fields: CollectedField[] = []
   const seen = new Set<Element>()
   const used = new Map<string, number>()
+  let doc: Document | null = null
+  let adapter: Adapter | null = null
   for (const el of walkElements(root)) {
     if (seen.has(el)) continue
-    const kind = kindOf(el)
-    if (!kind) continue
+    if (el.ownerDocument !== doc) {
+      doc = el.ownerDocument
+      adapter = adapterFor(doc)
+    }
+    const kind = adapterKind(adapter, el) ?? kindOf(el)
+    if (!kind || adapterSkips(adapter, el)) continue
     const built = buildField(el, kind, ctx, true)
     if (!built) continue
     for (const member of built.members) seen.add(member)
     const { field } = built
-    if (!field) continue
+    if (!field || (adapter && isPrivateField({ ...field.descriptor, autocomplete: field.info.autocomplete }))) continue
     const base = hash(
       [field.kind, field.descriptor.type, field.descriptor.name, field.descriptor.label, field.info.section].join("|"),
     )

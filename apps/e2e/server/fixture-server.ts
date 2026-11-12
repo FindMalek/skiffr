@@ -1,10 +1,18 @@
+import { execFileSync } from "node:child_process"
+import { mkdtempSync, readFileSync, rmSync } from "node:fs"
 import { readFile } from "node:fs/promises"
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http"
+import { createServer as createSecureServer } from "node:https"
 import type { AddressInfo } from "node:net"
+import { tmpdir } from "node:os"
 import { dirname, extname, join, normalize } from "node:path"
 import { fileURLToPath } from "node:url"
 
 const PAGES_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "pages")
+const TYPES: Record<string, string> = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+}
 const ALT_ORIGIN_TOKEN = "__ALT_ORIGIN__"
 
 export interface Submission {
@@ -17,6 +25,8 @@ export interface FixtureServer {
   origin: string
   /** Same server on another hostname, so an iframe can be cross-origin. */
   altOrigin: string
+  /** Same pages over https with a throwaway certificate: some board hosts are preloaded as https only, so a page on one cannot be served over http. */
+  secureOrigin: string
   /** Every request to /submit. The extension must never submit a form, so tests assert this stays empty. */
   submissions: Submission[]
   stop: () => Promise<void>
@@ -54,33 +64,71 @@ async function handle(req: IncomingMessage, res: ServerResponse, state: State): 
     return
   }
   const file = resolvePage(decoded)
-  if (!file || extname(file) !== ".html") {
+  if (!file || !TYPES[extname(file)]) {
     res.writeHead(404).end("not found")
     return
   }
   try {
     const html = (await readFile(file, "utf8")).replaceAll(ALT_ORIGIN_TOKEN, state.altOrigin)
-    res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(html)
+    res.writeHead(200, { "content-type": TYPES[extname(file)] as string }).end(html)
   } catch {
     res.writeHead(404).end("not found")
   }
 }
 
+function throwawayCertificate(): { key: string; cert: string } {
+  const dir = mkdtempSync(join(tmpdir(), "skiffr-e2e-cert-"))
+  try {
+    const keyFile = join(dir, "key.pem")
+    const certFile = join(dir, "cert.pem")
+    execFileSync(
+      "openssl",
+      [
+        "req",
+        "-x509",
+        "-newkey",
+        "rsa:2048",
+        "-nodes",
+        "-keyout",
+        keyFile,
+        "-out",
+        certFile,
+        "-subj",
+        "/CN=localhost",
+        "-days",
+        "1",
+      ],
+      { stdio: "ignore" },
+    )
+    return { key: readFileSync(keyFile, "utf8"), cert: readFileSync(certFile, "utf8") }
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+}
+
 export async function startFixtureServer(): Promise<FixtureServer> {
   const state: State = { altOrigin: "", submissions: [] }
-  const server: Server = createServer((req, res) => {
+  const onRequest = (req: IncomingMessage, res: ServerResponse): void => {
     handle(req, res, state).catch(() => {
       if (!res.headersSent) res.writeHead(500)
       res.end("server error")
     })
-  })
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+  }
+  const server: Server = createServer(onRequest)
+  const secure: Server = createSecureServer(throwawayCertificate(), onRequest)
+  await Promise.all([server, secure].map((one) => new Promise<void>((resolve) => one.listen(0, "127.0.0.1", resolve))))
   const { port } = server.address() as AddressInfo
+  const { port: securePort } = secure.address() as AddressInfo
   state.altOrigin = `http://localhost:${port}`
+  const close = (one: Server) =>
+    new Promise<void>((resolve, reject) => one.close((error) => (error ? reject(error) : resolve())))
   return {
     origin: `http://127.0.0.1:${port}`,
     altOrigin: state.altOrigin,
+    secureOrigin: `https://127.0.0.1:${securePort}`,
     submissions: state.submissions,
-    stop: () => new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve()))),
+    stop: async () => {
+      await Promise.all([close(server), close(secure)])
+    },
   }
 }

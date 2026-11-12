@@ -1,3 +1,4 @@
+import { adapterFor, adapterScope } from "./adapters"
 import { detectApplicationForm } from "./detect/score"
 import { parentOf } from "./fill/dom"
 
@@ -38,10 +39,11 @@ export type NoiseFilter = (el: HTMLElement) => boolean
  */
 export function createNoiseFilter(doc: Document): NoiseFilter {
   const found = detectApplicationForm(doc)
-  const container =
+  const detected =
     found.isForm && found.container && found.container !== doc.body && found.container !== doc.documentElement
       ? found.container
       : null
+  const container = adapterScope(adapterFor(doc), doc) ?? detected
   const verdicts = new Map<Element, boolean>()
 
   function noisy(region: Element): boolean {

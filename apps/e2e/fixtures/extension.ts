@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url"
 import { type BrowserContext, test as base, chromium, type Page, type Worker } from "@playwright/test"
 import { type MockApi, startMockApi } from "../mock-api/server.ts"
 import { type FixtureServer, startFixtureServer } from "../server/fixture-server.ts"
+import { ATS_HOSTS } from "./adapters.ts"
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 
@@ -57,10 +58,11 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
     const userDataDir = mkdtempSync(join(tmpdir(), "skiffr-e2e-"))
     const context = await chromium.launchPersistentContext(userDataDir, {
       channel: "chromium",
+      ignoreHTTPSErrors: true,
       args: [
         `--disable-extensions-except=${EXTENSION_DIR}`,
         `--load-extension=${EXTENSION_DIR}`,
-        `--host-resolver-rules=MAP ${QUEUE_HOST} 127.0.0.1`,
+        `--host-resolver-rules=${[QUEUE_HOST, ...ATS_HOSTS].map((host) => `MAP ${host} 127.0.0.1`).join(", ")}`,
       ],
     })
     await use(context)

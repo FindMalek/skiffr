@@ -1,11 +1,11 @@
 import { normalizeLabel } from "@skiffr/common"
+import { adapterFill, adapterFor } from "../adapters"
 import { labelsFor, newCtx, readListOptions, resolveField } from "./collect"
 import { AMBIGUOUS, toHintedDate, toNativeDate } from "./dates"
 import {
   blurEl,
   cleanText,
   click,
-  fire,
   fireChange,
   fireInput,
   fireKey,
@@ -15,6 +15,7 @@ import {
   isRendered,
   setNativeValue,
   settle,
+  typeInto,
   view,
   waitFor,
 } from "./dom"
@@ -38,23 +39,6 @@ const failed = (field: CollectedField | null, reason: string): FillResult => ({
   value: field ? readField(field) : undefined,
 })
 const skipped = (reason: string): FillResult => ({ status: "skipped", reason })
-
-async function typeInto(el: HTMLElement, text: string): Promise<void> {
-  focusEl(el)
-  const input = el as HTMLInputElement
-  setNativeValue(el, "")
-  fireInput(el, null, "deleteContentBackward")
-  for (const char of text) {
-    fireKey(el, "keydown", char)
-    fire(el, "beforeinput", { data: char, inputType: "insertText" }, "InputEvent")
-    setNativeValue(el, input.value + char)
-    try {
-      input.setSelectionRange(input.value.length, input.value.length)
-    } catch {}
-    fireInput(el, char)
-    fireKey(el, "keyup", char)
-  }
-}
 
 const NEVER_CUT = new Set(["email", "url", "number", "tel"])
 const DATE_INPUTS = new Set(["date", "month", "time", "datetime-local"])
@@ -278,7 +262,13 @@ function watchInserted(el: HTMLElement): { options: () => HTMLElement[]; stop: (
   }
 }
 
-async function fillCombobox(field: CollectedField, text: string): Promise<FillResult> {
+export type ComboboxOptions = { typedWaitMs?: number }
+
+export async function fillCombobox(
+  field: CollectedField,
+  text: string,
+  { typedWaitMs = 900 }: ComboboxOptions = {},
+): Promise<FillResult> {
   const el = field.el
   const isList = el.getAttribute("role") === "listbox"
   const isInput = el.localName === "input" || el.localName === "textarea"
@@ -310,7 +300,7 @@ async function fillCombobox(field: CollectedField, text: string): Promise<FillRe
     if (!option && isInput) {
       typed = true
       await typeInto(el, text)
-      await waitFor(() => pickOption() !== null, 900)
+      await waitFor(() => pickOption() !== null, typedWaitMs)
       option = pickOption()
     }
     if (!option) {
@@ -361,6 +351,8 @@ export async function fillCollected(
     const text = Array.isArray(value) ? value.join(", ") : value
     if (!text.trim()) return skipped("empty value")
     if (field.kind !== "combobox" && (field.el as HTMLInputElement).readOnly) return skipped("field is read only")
+    const custom = await adapterFill(adapterFor(field.el), field, text)
+    if (custom) return custom
     switch (field.kind) {
       case "select":
         return await fillSelect(field, text)

@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Senior Engineer - Acme</title>
+<style>
+  body { font: 15px/1.4 system-ui, sans-serif; background: #f5f7fa; color: #222; margin: 0 }
+  main { max-width: 640px; margin: 0 auto; padding: 16px }
+  section { background: #fff; border-radius: 8px; padding: 8px 16px 16px; margin: 16px 0 }
+  .field { margin: 14px 0 }
+  .field > label, .field > div { display: block }
+  .title { font-weight: 600 }
+  .req { color: #b42318; margin-right: 4px }
+  .opt { color: #777; font-weight: 400 }
+  input[type=text], input[type=email], input[type=tel], textarea { box-sizing: border-box; width: 100%; padding: 8px; border: 1px solid #bbb; border-radius: 4px; margin-top: 4px }
+  [data-input-type=select] { position: relative }
+  [role=listbox] { position: absolute; z-index: 5; left: 0; right: 0; margin: 0; padding: 4px 0; list-style: none; background: #fff; border: 1px solid #bbb; border-radius: 4px }
+  [role=option] { padding: 6px 12px; cursor: pointer }
+  [role=option]:hover { background: #eef }
+  fieldset { border: 0; padding: 0; margin: 4px 0 0; display: flex; gap: 8px }
+  [data-ui=option] { border: 1px solid #bbb; border-radius: 4px; padding: 6px 16px; cursor: pointer; background: #fff }
+  [data-ui=option][aria-checked=true] { background: #1d4ed8; color: #fff; border-color: #1d4ed8 }
+  [data-ui=option] input { position: absolute; opacity: 0; width: 1px; height: 1px }
+  [data-role=dropzone] { border: 1px dashed #aaa; padding: 12px; border-radius: 4px }
+  input[type=file] { position: absolute; opacity: 0; width: 1px; height: 1px }
+  button[data-ui=apply-button] { padding: 10px 24px }
+  .consent label { display: flex; gap: 8px; align-items: flex-start }
+  [data-ui=cookie-consent] { position: fixed; bottom: 0; left: 0; right: 0; background: #222; color: #fff; padding: 12px 16px; display: flex; gap: 12px; align-items: center }
+  [data-ui=cookie-consent] button { padding: 6px 12px }
+</style>
+</head>
+<body data-own-cookie-consent="true">
+<div id="app"><div lang="en"><div data-ui="careers-page-content">
+<header role="banner"><div data-ui="header-logo"><a data-ui="company-logo" href="/acme/">Acme</a></div><h1 data-ui="job-title">Senior Engineer</h1></header>
+<nav role="navigation"><a data-ui="role-overview-tab" href="#">Overview</a> <a data-ui="application-form-tab" aria-current="page" href="#">Application</a></nav>
+<main role="main"><form data-ui="application-form" action="/submit?ats=workable" method="post" novalidate>
+<div data-ui="autofill-button"><button aria-haspopup="true" aria-expanded="false" aria-controls="GkD4c0nIyvokraXG_dropdown" type="button"><span>Import resume from</span></button></div>
+<span><span class="req">*</span>&nbsp;<span>Required fields</span></span>
+<section data-ui="section"><div><h2 id="section-0_section_name">Personal information</h2><a role="button" data-ui="clear-section-0" aria-label="Clear Personal information" aria-disabled="true"><span>Clear</span></a></div>
+<div data-ui="section-fields">
+  <div class="field"><label><span><span class="req"><strong>*</strong></span><span><span class="title" id="firstname_label"><strong>First name</strong></span></span></span><div data-role="illustrated-input"><div><input aria-required="true" id="firstname" maxlength="127" data-ui="firstname" name="firstname" aria-labelledby="firstname_label" required type="text" dir="auto" value=""></div></div></label></div>
+  <div class="field"><label><span><span class="req"><strong>*</strong></span><span><span class="title" id="lastname_label"><strong>Last name</strong></span></span></span><div data-role="illustrated-input"><div><input aria-required="true" id="lastname" maxlength="127" data-ui="lastname" name="lastname" aria-labelledby="lastname_label" required type="text" dir="auto" value=""></div></div></label></div>
+  <div class="field"><label><span><span class="req"><strong>*</strong></span><span><span class="title" id="email_label"><strong>Email</strong></span></span></span><div data-role="illustrated-input"><div><input aria-required="true" id="email" maxlength="255" data-ui="email" name="email" aria-labelledby="email_label" required type="email" dir="auto" value=""></div></div></label></div>
+  <div class="field"><label><span><span class="req"><strong>*</strong></span><span><span class="title" id="phone_label"><strong>Phone</strong></span></span></span><div data-role="illustrated-input"><div><input aria-required="true" id="phone" maxlength="127" data-ui="phone" name="phone" aria-labelledby="phone_label" required type="tel" dir="auto" value=""></div></div></label></div>
+</div></section>
+<section data-ui="section"><div><h2 id="section-1_section_name">Profile</h2><a role="button" data-ui="clear-section-1" aria-label="Clear Profile" aria-disabled="true"><span>Clear</span></a></div>
+<div data-ui="section-fields">
+  <div class="field"><label><span><span><span class="title" id="summary_label"><strong>Summary</strong></span><span class="opt"> (Optional)</span></span></span><div data-role="illustrated-input"><div><textarea aria-required="false" id="summary" data-ui="summary" name="summary" aria-labelledby="summary_label" type="text" rows="4" dir="auto"></textarea></div></div></label></div>
+  <div><div class="field"><div><span><span class="req"><strong>*</strong></span><span><span class="title" id="KR4SjeC7r9Hrd6XS_label"><strong>Resume</strong></span></span></span><div data-role="dropzone"><div><div data-role="preview"><label for="input_files_input_KR4SjeC7r9Hrd6XS"></label></div></div><div><label role="button" for="input_files_input_KR4SjeC7r9Hrd6XS" id="description_input_KR4SjeC7r9Hrd6XS" aria-describedby="KR4SjeC7r9Hrd6XS_label">Choose file</label> <span>or drag and drop here</span></div><input data-ui="resume" id="input_files_input_KR4SjeC7r9Hrd6XS" type="file" aria-labelledby="KR4SjeC7r9Hrd6XS_label description_input_KR4SjeC7r9Hrd6XS" accept=".pdf,.doc,.docx" required></div></div></div></div>
+  <div class="field"><label><span><span class="req"><strong>*</strong></span><span><span class="title" id="CA_47143_label"><strong>Github profile</strong></span></span></span><div data-role="illustrated-input"><div><input aria-required="true" id="CA_47143" data-ui="CA_47143" name="CA_47143" aria-labelledby="CA_47143_label" required type="text" dir="auto" value=""></div></div></label></div>
+</div></section>
+<section data-ui="section"><div><h2 id="section-2_section_name">Details</h2><a role="button" data-ui="clear-section-2" aria-label="Clear Details" aria-disabled="true"><span>Clear</span></a></div>
+<div data-ui="section-fields">
+  <div class="field"><label><span><span><span class="title" id="cover_letter_label"><strong>Cover letter</strong></span><span class="opt"> (Optional)</span></span></span><div data-role="illustrated-input"><div><textarea aria-required="false" id="cover_letter" maxlength="200000" data-ui="cover_letter" name="cover_letter" aria-labelledby="cover_letter_label" type="text" rows="4" dir="auto"></textarea></div></div></label></div>
+  <div class="field"><label><span><span><span class="title" id="CA_10626_label"><strong>Expected salary</strong></span><span class="opt"> (Optional)</span></span></span><div data-role="illustrated-input"><div><input aria-required="false" id="CA_10626" maxlength="127" data-ui="CA_10626" name="CA_10626" aria-labelledby="CA_10626_label" type="text" dir="auto" value=""></div></div></label></div>
+  <div class="field"><div><span><span><span class="title" id="CA_10627_label"><strong>Notice period / availability</strong></span><span class="opt"> (Optional)</span></span></span><div data-ui="CA_10627" data-open="false" data-input-type="select"><label><div data-role="illustrated-input"><div><input id="input_CA_10627_input" role="combobox" aria-haspopup="listbox" aria-expanded="false" aria-owns="input_CA_10627_listbox" aria-controls="input_CA_10627_listbox" aria-autocomplete="list" autocomplete="off" aria-labelledby="CA_10627_label" placeholder="Select an option…" type="text" dir="auto" value="" readonly></div></div></label><input name="CA_10627" aria-hidden="true" value="" type="hidden"></div></div></div>
+  <div class="field"><div><span><span><span class="title" id="GU9REem48up4UUas_label"><strong>Are you eligible to work in the country you are applying?</strong></span><span class="opt"> (Optional)</span></span></span><div><fieldset role="radiogroup" data-ui="CA_10628" aria-labelledby="GU9REem48up4UUas_label">
+    <div data-ui="option" aria-labelledby="GU9REem48up4UUas_label radio_label_m74ZhVJHLkaayzr8" id="wrapper_m74ZhVJHLkaayzr8" role="radio" aria-checked="false" aria-required="false"><label><input aria-required="false" id="m74ZhVJHLkaayzr8" aria-hidden="true" type="radio" name="CA_10628" dir="auto" value="true"><div><div><span id="radio_label_m74ZhVJHLkaayzr8">YES</span></div></div></label></div>
+    <div data-ui="option" aria-labelledby="GU9REem48up4UUas_label radio_label_ICyS65mLIwvBT7kB" id="wrapper_ICyS65mLIwvBT7kB" role="radio" aria-checked="false" aria-required="false"><label><input aria-required="false" id="ICyS65mLIwvBT7kB" aria-hidden="true" type="radio" name="CA_10628" dir="auto" value="false"><div><div><span id="radio_label_ICyS65mLIwvBT7kB">NO</span></div></div></label></div>
+  </fieldset></div></div></div>
+  <div class="field"><label><span><span><span class="title" id="CA_10629_label"><strong>How did you hear about us?</strong></span><span class="opt"> (Optional)</span></span></span><div data-role="illustrated-input"><div><input aria-required="false" id="CA_10629" maxlength="127" data-ui="CA_10629" name="CA_10629" aria-labelledby="CA_10629_label" type="text" dir="auto" value=""></div></div></label></div>
+  <div class="field"><div><span><span class="req"><strong>*</strong></span><span><span class="title" id="Pr991emg3tEeRK3k_label"><strong>Can you confirm that everything in this application is true and your own?</strong></span></span></span><div><fieldset role="radiogroup" data-ui="QA_12487756" aria-labelledby="Pr991emg3tEeRK3k_label">
+    <div data-ui="option" aria-labelledby="Pr991emg3tEeRK3k_label radio_label_l1ZK6o4KqoX0DPuC" id="wrapper_l1ZK6o4KqoX0DPuC" role="radio" aria-checked="false" aria-required="true"><label><input aria-required="true" required id="l1ZK6o4KqoX0DPuC" aria-hidden="true" type="radio" name="QA_12487756" dir="auto" value="true"><div><div><span id="radio_label_l1ZK6o4KqoX0DPuC">YES</span></div></div></label></div>
+    <div data-ui="option" aria-labelledby="Pr991emg3tEeRK3k_label radio_label_VKHyW4iyFcBzN2qt" id="wrapper_VKHyW4iyFcBzN2qt" role="radio" aria-checked="false" aria-required="true"><label><input aria-required="true" required id="VKHyW4iyFcBzN2qt" aria-hidden="true" type="radio" name="QA_12487756" dir="auto" value="false"><div><div><span id="radio_label_VKHyW4iyFcBzN2qt">NO</span></div></div></label></div>
+  </fieldset></div></div></div>
+  <div class="field consent"><label><input type="checkbox" name="QA_12487770" data-ui="QA_12487770" required> <span>I agree to the processing of my personal data for this application</span></label></div>
+</div></section>
+<section data-ui="section"><div><h2 id="section-3_section_name">Diversity survey</h2><a role="button" data-ui="clear-section-3" aria-label="Clear Diversity survey" aria-disabled="true"><span>Clear</span></a></div>
+<div data-ui="section-fields">
+  <div class="field"><div><span><span><span class="title" id="EEO_1_label"><strong>Gender</strong></span><span class="opt"> (Optional)</span></span></span><div><fieldset role="radiogroup" data-ui="EEO_1" aria-labelledby="EEO_1_label">
+    <div data-ui="option" aria-labelledby="EEO_1_label radio_label_eeo1a" id="wrapper_eeo1a" role="radio" aria-checked="false" aria-required="false"><label><input aria-required="false" id="eeo1a" aria-hidden="true" type="radio" name="EEO_1" dir="auto" value="male"><div><div><span id="radio_label_eeo1a">Male</span></div></div></label></div>
+    <div data-ui="option" aria-labelledby="EEO_1_label radio_label_eeo1b" id="wrapper_eeo1b" role="radio" aria-checked="false" aria-required="false"><label><input aria-required="false" id="eeo1b" aria-hidden="true" type="radio" name="EEO_1" dir="auto" value="female"><div><div><span id="radio_label_eeo1b">Female</span></div></div></label></div>
+  </fieldset></div></div></div>
+  <div class="field"><label><span><span><span class="title" id="EEO_2_label"><strong>Veteran status</strong></span><span class="opt"> (Optional)</span></span></span><div data-role="illustrated-input"><div><input aria-required="false" id="EEO_2" maxlength="127" data-ui="EEO_2" name="EEO_2" aria-labelledby="EEO_2_label" type="text" dir="auto" value=""></div></div></label></div>
+</div></section>
+<div id="turnstile-container-538368" hidden></div>
+<button data-ui="apply-button" type="submit">Submit application</button>
+</form></main></div>
+<div><div data-ui="backdrop"></div><div data-ui="cookie-consent" role="dialog" aria-modal="true" aria-label="Cookie Consent"><span>This website uses cookies to improve user's experience. To learn more, view our <a data-ui="cookie-consent-cookies-policy" href="#cookies">cookies policy</a>.</span><div><button data-ui="cookie-consent-settings" type="button">Cookies settings</button><button data-ui="cookie-consent-accept" type="button">Accept all</button><button data-ui="cookie-consent-decline" type="button">Decline all</button></div></div></div>
+</div></div>
+<script src="/shared/widgets.js"></script>
+<script>
+  const { bind, h } = Fixture
+  for (const el of document.querySelectorAll("form input[type=text], form input[type=email], form input[type=tel], form textarea")) {
+    if (!el.readOnly) bind(el)
+  }
+
+  // radios: the label is the click target, the wrapper keeps aria-checked in step with the hidden input
+  for (const group of document.querySelectorAll("fieldset[role=radiogroup]")) {
+    group.addEventListener("change", (event) => {
+      for (const option of group.querySelectorAll("[role=radio]")) option.setAttribute("aria-checked", String(option.querySelector("input").checked))
+    })
+  }
+
+  // the select: a readonly combobox, the list is a sibling of the input and is gone when closed
+  const host = document.querySelector("[data-ui=CA_10627]")
+  const field = host.querySelector("input[role=combobox]")
+  const mirror = host.querySelector("input[name=CA_10627]")
+  const CHOICES = ["Immediately", "2 weeks", "1 month", "3 months"]
+  let list = null
+  const close = () => {
+    list?.remove()
+    list = null
+    host.dataset.open = "false"
+    field.setAttribute("aria-expanded", "false")
+  }
+  const open = () => {
+    if (list) return
+    list = h("ul", { role: "listbox", id: "input_CA_10627_listbox" })
+    for (const [i, text] of CHOICES.entries()) list.append(h("li", { role: "option", id: `input_CA_10627_option_${i}`, "aria-selected": String(field.value === text), text }))
+    list.addEventListener("click", (event) => {
+      const option = event.target.closest("[role=option]")
+      if (!option) return
+      field.value = option.textContent
+      mirror.value = option.textContent
+      close()
+    })
+    host.append(list)
+    host.dataset.open = "true"
+    field.setAttribute("aria-expanded", "true")
+  }
+  field.addEventListener("click", open)
+  field.addEventListener("keydown", (event) => { if (event.key === "ArrowDown") open(); if (event.key === "Escape") close() })
+  field.addEventListener("blur", () => setTimeout(close, 150))
+
+  for (const button of document.querySelectorAll("[data-ui^=cookie-consent-]:not([data-ui=cookie-consent-cookies-policy])")) {
+    button.addEventListener("click", () => document.querySelector("[data-ui=cookie-consent]").remove())
+  }
+</script>
+</body>
+</html>
