@@ -63,7 +63,10 @@ export interface TestTransport extends Transport {
  * Dns and the connection stood in for. Names resolve to `hosts[name]` (a public address by default for any `.test` name,
  * so the real checks run on it), and every connection, whatever address it was vetted for, goes to the mock site.
  */
-export function testTransport(site: MockSite, hosts: Record<string, string[] | (() => string[])> = {}): TestTransport {
+export function testTransport(
+  site: Pick<MockSite, "port">,
+  hosts: Record<string, string[] | (() => string[])> = {},
+): TestTransport {
   const resolved: string[] = []
   const dialed: Target[] = []
   return {

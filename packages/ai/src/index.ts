@@ -36,3 +36,4 @@ export { EMBEDDING_MODEL_ID, embedTexts, resolveEmbeddingModel } from "./embeddi
 export { AiInputError, AiModelError } from "./errors"
 export { type ControlKind, controlKind, isLearnableField, isSensitiveValue } from "./learnable"
 export { mapFields } from "./map-fields"
+export { profileFacts, type RawOperation, tailorResume } from "./tailor"

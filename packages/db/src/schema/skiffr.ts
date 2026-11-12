@@ -350,3 +350,19 @@ export const gmailOauthState = pgTable(
   },
   (t) => [index("gmail_oauth_state_user_idx").on(t.userId)],
 )
+
+/**
+ * The user's Reactive Resume instance, one per user. `api_key_enc` is the api key sealed with AES-256-GCM (see
+ * `lib/gmail/crypto.ts`, key from `CV_ENCRYPTION_KEY`): it is never selected into a response and never logged.
+ */
+export const cvConnection = pgTable("cv_connection", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: userId().unique(),
+  baseUrl: text("base_url").notNull(),
+  apiKeyEnc: text("api_key_enc").notNull(),
+  keyLast4: text("key_last4").notNull(),
+  baseResumeId: text("base_resume_id"),
+  baseResumeName: text("base_resume_name"),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+})

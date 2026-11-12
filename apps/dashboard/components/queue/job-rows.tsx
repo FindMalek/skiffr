@@ -12,12 +12,21 @@ import {
   TableHeader,
   TableRow,
 } from "@skiffr/ui/components/table"
-import { BanIcon, CheckCheckIcon, CheckIcon, ClockIcon, RotateCcwIcon, SkipForwardIcon, Trash2Icon } from "lucide-react"
+import {
+  BanIcon,
+  CheckCheckIcon,
+  CheckIcon,
+  ClockIcon,
+  FileUserIcon,
+  RotateCcwIcon,
+  SkipForwardIcon,
+  Trash2Icon,
+} from "lucide-react"
 import { memo } from "react"
 import { type JobStatus, jobName, STATUS_LABEL, sourceLabel } from "@/lib/queue"
 import { JobHost, JobLink, SafeText } from "./job-text"
 
-export type RowAction = "skip" | "restore" | "applied" | "remove"
+export type RowAction = "skip" | "restore" | "applied" | "remove" | "tailor"
 export type OnAction = (action: RowAction, job: Job) => void
 
 const STATUS_ICON: Record<JobStatus, typeof ClockIcon> = {
@@ -73,6 +82,16 @@ function RowActions({ job, busy, onAction }: { job: Job; busy: boolean; onAction
         disabled={busy}
         className={buttonVariants({ variant: "outline", size: "sm" })}
       />
+      <Button
+        {...ICON_BUTTON}
+        disabled={busy}
+        focusableWhenDisabled
+        aria-label={`Tailor CV: ${name}`}
+        title="Tailor CV"
+        onClick={() => onAction("tailor", job)}
+      >
+        <FileUserIcon />
+      </Button>
       {job.status !== "applied" && (
         <Button
           {...ICON_BUTTON}
