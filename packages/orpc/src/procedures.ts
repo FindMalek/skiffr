@@ -1,5 +1,6 @@
 import { ORPCError, os } from "@orpc/server"
 import type { Session } from "@skiffr/auth"
+import { getObservability } from "@skiffr/observability"
 import type { Context } from "./context"
 import { budgetExhausted, budgetedModels, isBudgetSpent } from "./lib/ai-usage"
 import { safeErrorFields } from "./lib/errors"
@@ -15,8 +16,10 @@ const logErrors = o.middleware(async (options) => {
     return await options.next()
   } catch (error) {
     const requestId = (options.context as { requestId?: string }).requestId
-    if (!(error instanceof ORPCError)) console.error(`[${route}]`, { route, requestId, ...safeErrorFields(error) })
-    else if (error.status >= 500)
+    if (!(error instanceof ORPCError)) {
+      console.error(`[${route}]`, { route, requestId, ...safeErrorFields(error) })
+      getObservability().captureError(error, { route, request_id: requestId })
+    } else if (error.status >= 500)
       console.error(`[${route}]`, { route, requestId, code: error.code, status: error.status })
     throw error
   }
@@ -107,6 +110,9 @@ const limitRate = o.middleware(async ({ context, path, procedure, next }) => {
   if (user && context.limits) {
     const verdict = context.limits.take(user.id, limitClassOf(path.join("."), procedure["~orpc"].route.method))
     if (!verdict.ok) {
+      getObservability().count("skiffr.rate_limit.rejected", 1, {
+        limit_class: limitClassOf(path.join("."), procedure["~orpc"].route.method),
+      })
       const seconds = verdict.retryAfterSeconds
       throw new ORPCError("TOO_MANY_REQUESTS", {
         message: `Too many requests. Try again in ${seconds} ${seconds === 1 ? "second" : "seconds"}.`,
@@ -128,7 +134,10 @@ const meterAi = o.middleware(async ({ context, next }) => {
   try {
     return await next({ context: models })
   } catch (error) {
-    if (isBudgetSpent(error)) throw budgetExhausted(context.now())
+    if (isBudgetSpent(error)) {
+      getObservability().track("ai_budget_exhausted", { limit: "daily" })
+      throw budgetExhausted(context.now())
+    }
     throw error
   }
 })
