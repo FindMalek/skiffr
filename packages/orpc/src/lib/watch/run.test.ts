@@ -155,8 +155,32 @@ test("a source that is not due yet, or is being fetched, is left alone", async (
 test("two runs at once fetch a source once", async () => {
   serveFeed(() => ["Engineer"])
   const source = await addSource("ana")
-  const results = await Promise.all([runSource(deps(), source.id), runSource(deps(), source.id)])
-  expect(results.map((r) => r.state).sort()).toEqual(["busy", "done"])
+  let release: () => void = () => {}
+  const held = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  let entered: () => void = () => {}
+  const inside = new Promise<void>((resolve) => {
+    entered = resolve
+  })
+  const base = testTransport(site)
+  const slow: WatchDeps = {
+    ...deps(),
+    runtime: testRuntime({
+      ...base,
+      resolve: async (hostname) => {
+        entered()
+        await held
+        return base.resolve(hostname)
+      },
+      dial: (target) => base.dial(target),
+    }),
+  }
+  const first = runSource(slow, source.id)
+  await inside
+  const second = await runSource(deps(), source.id)
+  release()
+  expect([second.state, (await first).state]).toEqual(["busy", "done"])
   expect(site.hits).toHaveLength(1)
 })
 
