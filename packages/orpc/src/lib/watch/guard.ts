@@ -34,6 +34,9 @@ const MEDIA_TYPES: ReadonlySet<string> = new Set([
   "application/feed+json",
   "application/ld+json",
 ])
+/** The one thing a call may delete: a single resume by id. */
+const DELETE_PATH = /^\/api\/openapi\/resumes\/[A-Za-z0-9_-]{1,100}$/
+const NO_BYTES = Buffer.alloc(0)
 const REDIRECTS: ReadonlySet<number> = new Set([301, 302, 303, 307, 308])
 const RETRY_AFTER_MAX_MS = 24 * 60 * 60 * 1000
 
@@ -75,10 +78,25 @@ export interface PageRequest {
   accept: string
   etag?: string | null
   lastModified?: string | null
+  /** An api call instead of a page read: only these methods and headers, and no redirect is followed, so a key never leaves the host it was meant for. */
+  call?: {
+    method: "GET" | "POST" | "PATCH" | "DELETE"
+    headers: { "x-api-key": string }
+    json?: unknown
+    media?: readonly string[]
+  }
 }
 
 export type Page =
-  | { status: "ok"; url: string; contentType: string; body: string; etag: string | null; lastModified: string | null }
+  | {
+      status: "ok"
+      url: string
+      contentType: string
+      body: string
+      raw: Buffer
+      etag: string | null
+      lastModified: string | null
+    }
   | { status: "not_modified" }
 
 type Hop = { redirect: URL } | Page
@@ -140,7 +158,8 @@ function exchange(
   const secure = url.protocol === "https:"
   const hostname = url.hostname.replace(/^\[|\]$/g, "")
   const port = url.port ? Number(url.port) : secure ? 443 : 80
-  const conditional = request.url === url.href
+  const conditional = request.url === url.href && !request.call
+  const payload = request.call?.json === undefined ? null : Buffer.from(JSON.stringify(request.call.json))
   return new Promise<Hop>((resolve, reject) => {
     let settled = false
     let timer: ReturnType<typeof setTimeout> | undefined
@@ -159,7 +178,7 @@ function exchange(
       {
         host: hostname,
         port,
-        method: "GET",
+        method: request.call?.method ?? "GET",
         path: `${url.pathname}${url.search}`,
         // No agent: with a connection factory and no agent, node and bun use the factory and nothing else. The lookup
         // only exists so a runtime that ignored the factory would fail here instead of resolving the name a second time.
@@ -170,6 +189,8 @@ function exchange(
           accept: request.accept,
           "accept-encoding": "gzip",
           connection: "close",
+          ...request.call?.headers,
+          ...(payload ? { "content-type": "application/json", "content-length": String(payload.length) } : {}),
           ...(conditional && request.etag ? { "if-none-match": request.etag } : {}),
           ...(conditional && request.lastModified ? { "if-modified-since": request.lastModified } : {}),
         },
@@ -183,6 +204,10 @@ function exchange(
           fail(error)
         }
         if (REDIRECTS.has(status)) {
+          if (request.call) {
+            res.destroy()
+            return fail(new FetchError("upstream", status))
+          }
           const location = header(res.headers.location)
           res.destroy()
           try {
@@ -205,7 +230,8 @@ function exchange(
         }
         const contentType = header(res.headers["content-type"]) ?? ""
         const media = contentType.split(";")[0]?.trim().toLowerCase() ?? ""
-        if (!MEDIA_TYPES.has(media)) return abort(new FetchError("content_type", status))
+        if (!MEDIA_TYPES.has(media) && !request.call?.media?.includes(media))
+          return abort(new FetchError("content_type", status))
         const encoding = header(res.headers["content-encoding"])?.trim().toLowerCase()
         if (encoding && encoding !== "identity" && encoding !== "gzip")
           return abort(new FetchError("content_type", status))
@@ -230,11 +256,13 @@ function exchange(
           chunks.push(chunk)
         })
         body.on("end", () => {
+          const raw = Buffer.concat(chunks)
           ok({
             status: "ok",
             url: url.href,
             contentType: media,
-            body: decode(Buffer.concat(chunks), contentType),
+            body: decode(raw, contentType),
+            raw: request.call ? raw : NO_BYTES,
             etag: validators(header(res.headers.etag)),
             lastModified: validators(header(res.headers["last-modified"])),
           })
@@ -260,7 +288,7 @@ function exchange(
       fail(new FetchError("timeout"))
     })
     req.on("error", () => fail(new FetchError("network")))
-    req.end()
+    req.end(payload)
   })
 }
 
@@ -298,6 +326,9 @@ export async function fetchPage(deps: GuardDeps, request: PageRequest): Promise<
   const limits = { ...FETCH_LIMITS, ...deps.limits }
   const deadline = (deps.now ?? Date.now)() + limits.totalMs
   let url = checkUrl(request.url)
+  if (request.call?.method === "DELETE" && (!DELETE_PATH.test(url.pathname) || url.search || url.hash)) {
+    throw new FetchError("blocked")
+  }
   for (let redirects = 0; ; redirects++) {
     const outcome = await hop(deps, url, request, limits, deadline)
     if (!("redirect" in outcome)) return outcome

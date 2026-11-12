@@ -9,11 +9,11 @@ export class CryptoError extends Error {
   }
 }
 
-/** The 32 byte key from `GMAIL_ENCRYPTION_KEY`: strict base64 (as `openssl rand -base64 32` prints it), and not an obviously constant or typed one. */
-export function parseKey(base64: string): Buffer {
+/** The 32 byte key from `GMAIL_ENCRYPTION_KEY` (or `CV_ENCRYPTION_KEY`): strict base64 (as `openssl rand -base64 32` prints it), and not an obviously constant or typed one. */
+export function parseKey(base64: string, name = "GMAIL_ENCRYPTION_KEY"): Buffer {
   const key = Buffer.from(base64, "base64")
   if (!/^[A-Za-z0-9+/]{43}=$/.test(base64) || key.length !== 32 || new Set(key).size < 8)
-    throw new Error("GMAIL_ENCRYPTION_KEY must be 32 random bytes, base64 encoded (openssl rand -base64 32).")
+    throw new Error(`${name} must be 32 random bytes, base64 encoded (openssl rand -base64 32).`)
   return key
 }
 

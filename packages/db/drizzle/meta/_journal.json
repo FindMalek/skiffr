@@ -64,6 +64,13 @@
       "when": 1794479808577,
       "tag": "0008_vengeful_thanos",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1794485383535,
+      "tag": "0009_hot_jackpot",
+      "breakpoints": true
     }
   ]
 }

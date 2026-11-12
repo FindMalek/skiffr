@@ -113,3 +113,23 @@ export const WATCH_SOURCE_ERRORS = [
 /** Sources one user can watch. */
 export const WATCH_SOURCES_MAX = 20
 export const WATCH_LABEL_MAX = 60
+export const CV_DEFAULT_URL = "https://rxresu.me"
+export const CV_API_KEY_MAX = 256
+export const CV_DESCRIPTION_MIN = 40
+export const CV_DESCRIPTION_MAX = 12_000
+export const CV_RESUMES_MAX = 100
+/** A patch bigger than this is refused whole: operations, then bytes of the serialized patch. */
+export const CV_PATCH_OPS_MAX = 40
+export const CV_PATCH_BYTES_MAX = 24_000
+/** Why a single operation of a proposed patch was dropped. Fixed codes, safe to show and to log. */
+export const CV_REJECTIONS = [
+  "op_not_allowed",
+  "path_not_allowed",
+  "bad_index",
+  "invalid_value",
+  "hide_only",
+  "unicode",
+  "too_long",
+  "invented_fact",
+  "invented_skill",
+] as const

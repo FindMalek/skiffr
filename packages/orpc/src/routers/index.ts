@@ -3,6 +3,7 @@ import { adminRouter, meRouter } from "./account"
 import { aiRouter } from "./ai"
 import { answersRouter } from "./answers"
 import { applicationsRouter } from "./applications"
+import { cvRouter } from "./cv"
 import { gmailRouter } from "./gmail"
 import { jobSourcesRouter } from "./job-sources"
 import { jobsRouter } from "./jobs"
@@ -27,6 +28,7 @@ export const appRouter = {
   ai: aiRouter,
   learning: learningRouter,
   gmail: gmailRouter,
+  cv: cvRouter,
   jobs: jobsRouter,
   applications: applicationsRouter,
   jobSources: jobSourcesRouter,

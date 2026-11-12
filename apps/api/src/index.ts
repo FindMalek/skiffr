@@ -4,6 +4,7 @@ import { createDb } from "@skiffr/db"
 import { runMigrations } from "@skiffr/db/migrate"
 import { seedDemo } from "@skiffr/db/seed"
 import { loadApiEnv } from "@skiffr/env/api"
+import { createCvRuntime } from "@skiffr/orpc/cv"
 import { advisoryLeader, createScheduler, LOCKS } from "@skiffr/orpc/gmail"
 import { createWatchRuntime, createWatchScheduler } from "@skiffr/orpc/watch"
 import { createStorage } from "@skiffr/storage"
@@ -41,6 +42,7 @@ if (env.NODE_ENV === "production" && !extensionOrigins?.length) {
 
 const gmail = gmailFromEnv(env)
 const watch = createWatchRuntime({ refreshMinutes: env.WATCH_REFRESH_MINUTES })
+const cv = env.CV_ENCRYPTION_KEY ? createCvRuntime({ encryptionKey: env.CV_ENCRYPTION_KEY }) : null
 
 const fetch = createServer(
   {
@@ -65,6 +67,7 @@ const fetch = createServer(
     embeddingModel: resolveEmbeddingModel(env),
     gmail,
     watch,
+    cv,
   },
   {
     publicUrl: env.API_PUBLIC_URL,
