@@ -162,6 +162,15 @@ const onDomain = (host: string, domain: string) => host === domain || host.endsW
 const onAny = (host: string, base: string, countries: readonly string[]) =>
   onDomain(host, `${base}.com`) || countries.some((country) => onDomain(host, `${base}.${country}`))
 
+/** Whether a host belongs to a job board's own domains (the same lists that give its ids), so a lookalike such as `indeed.xyz` is not one. */
+export function isBoardHost(board: "linkedin" | "indeed" | "glassdoor" | "wellfound", hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/\.$/, "")
+  if (board === "linkedin") return onDomain(host, "linkedin.com")
+  if (board === "indeed") return onAny(host, "indeed", INDEED_COUNTRIES)
+  if (board === "glassdoor") return onAny(host, "glassdoor", GLASSDOOR_COUNTRIES)
+  return onDomain(host, "wellfound.com") || onDomain(host, "angel.co")
+}
+
 const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
 const SEGMENT = "[a-z0-9][a-z0-9._-]{0,99}"
 const LEVER_PATH = new RegExp(`^/(${SEGMENT})/(${UUID})(?:/|$)`, "i")
@@ -183,21 +192,21 @@ function known(url: URL, host: string): CanonicalJob | null {
   const path = url.pathname
   const param = (...names: string[]) => names.map((name) => url.searchParams.get(name)).find((value) => value) ?? null
 
-  if (onDomain(host, "linkedin.com")) {
+  if (isBoardHost("linkedin", host)) {
     const view = /^\/(?:comm\/)?jobs\/view\/(?:[^/]*-)?(\d{5,20})(?:\/|$)/.exec(path)?.[1]
     const current = /^\/(?:comm\/)?jobs\//.test(path) ? /^\d{5,20}$/.exec(param("currentJobId") ?? "")?.[0] : undefined
     const id = view ?? current
     return id ? vendor("linkedin", id, `https://www.linkedin.com/jobs/view/${id}`) : null
   }
-  if (onAny(host, "indeed", INDEED_COUNTRIES)) {
+  if (isBoardHost("indeed", host)) {
     const jk = (param("jk", "vjk") ?? "").toLowerCase()
     return /^[0-9a-f]{16}$/.test(jk) ? vendor("indeed", jk, `https://www.indeed.com/viewjob?jk=${jk}`) : null
   }
-  if (onAny(host, "glassdoor", GLASSDOOR_COUNTRIES)) {
+  if (isBoardHost("glassdoor", host)) {
     const id = param("jl", "jobListingId") ?? ""
     return /^\d{5,20}$/.test(id) ? vendor("glassdoor", id, `https://www.glassdoor.com/job-listing/j?jl=${id}`) : null
   }
-  if (onDomain(host, "wellfound.com") || onDomain(host, "angel.co")) {
+  if (isBoardHost("wellfound", host)) {
     const id = /^\/(?:company\/[^/]+\/)?jobs\/(\d{4,20})(?:[-/]|$)/.exec(path)?.[1]
     return id ? vendor("wellfound", id, `https://wellfound.com/jobs/${id}`) : null
   }

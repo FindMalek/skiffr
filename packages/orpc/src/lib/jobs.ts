@@ -11,7 +11,7 @@ export type QueuedJob = { url: string; title: string; company: string; source: s
  * id. A supported vendor's link is stored as the vendor's clean link, never as the caller wrote it, so a hostile link
  * can't take over a real job's id and keep its own url.
  */
-export async function queueJob(db: Db, userId: string, input: QueuedJob, now: Date) {
+export async function queueJob(db: Pick<Db, "insert" | "select">, userId: string, input: QueuedJob, now: Date) {
   const { canonicalId, url } = canonicalizeJob(input.url)
   // The row can be deleted between the conflict and the read: insert again instead of failing.
   for (let attempt = 0; attempt < 3; attempt++) {
