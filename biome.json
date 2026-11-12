@@ -22,7 +22,8 @@
       "!.pi",
       "!.claude",
       "!skills-lock.json",
-      "!apps/e2e/pages"
+      "!apps/e2e/pages",
+      "!apps/e2e/tools/snapshot/fixtures"
     ]
   },
   "formatter": {

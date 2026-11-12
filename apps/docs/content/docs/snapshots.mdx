@@ -1,0 +1,86 @@
+---
+title: Form snapshots
+description: Turn a real application page into a sanitized test fixture with one command.
+---
+
+A snapshot is a copy of one application form from a public page, stripped of everything that is not the form. It lives in `apps/e2e/pages/snapshots/<slug>/` and the e2e suite runs detection and a fill against every folder there, so a new site becomes a test case by running one command.
+
+## Take one
+
+```bash
+pnpm snapshot https://job-boards.greenhouse.io/acme/jobs/123
+pnpm snapshot https://jobs.lever.co/acme/<id>/apply --slug lever-acme
+pnpm snapshot https://jobs.lever.co/acme/<id>/apply --force
+pnpm snapshot https://example.com/careers/123 --click "text=Apply now"
+```
+
+The tool opens the page in headless chromium, waits for the network to go idle plus a settle delay, optionally clicks an apply button, takes the application area, sanitizes it, and writes two files:
+
+- `index.html`: the sanitized form, one self contained page
+- `meta.json`: the source host (no path), the date, the tool version, the root as a plain tag path (`body > main > div > form`, never an id or a class from the page) and the number of fields by type
+
+| Flag | Meaning |
+| --- | --- |
+| `--click <selector>` | click this (any playwright selector) before taking the form, for pages that open it behind an apply button |
+| `--root <selector>` | take this element. Without it the extension's own application detection picks the form or dialog, and falls back to the form or dialog with the most fields |
+| `--slug <name>` | folder name, default is the host name (`jobs-lever-co`), never words from the path |
+| `--force` | replace an existing folder, otherwise the tool refuses to overwrite one. The new folder is written and checked on the side first, so a failed run keeps the old one |
+| `--out <dir>` | where the folders go, default `apps/e2e/pages/snapshots` |
+| `--timeout <ms>` | per page load and click, default 30000 |
+| `--settle <ms>` | wait after the network is idle, default 1500 |
+| `--delay <ms>` | pause between pages when you pass several urls, default 2000 |
+| `--allow-local` | allow a loopback or private host, for the tool's own tests only |
+
+Then read `index.html` once, check the site's terms, and commit the folder. The tool prints this reminder every time.
+
+## Check
+
+```bash
+pnpm snapshot --check
+```
+
+Refuses a snapshot folder that:
+
+- holds anything but a regular `index.html` and `meta.json` (an extra file, a nested folder, a loose file next to the folders and every symlink are refused), or is not strict utf-8
+- has a script, a frame, a style element, an event handler, a remote url, an email, a phone number, a hidden input with a value, a uuid, a jwt, a long hex string or an identifier that holds a long number, read with a tokenizer that knows a `>` can sit inside a quoted attribute
+- is not exactly what the sanitizer would write for itself, so a hand edited page is refused
+- has a `meta.json` with other keys than the five known ones, or a value of the wrong shape (the root must be a plain tag path)
+
+An unreadable or missing snapshots folder is an error, not a pass. The same check runs in the e2e suite and in the lint job of CI.
+
+## Respecting the site
+
+- Public pages only. The tool refuses a start url on a loopback, private, link local, ipv6 mapped, NAT64, 6to4 or other non public address or name unless `--allow-local`. Every spelling is judged after the url parser has normalized it, and every address a name resolves to is judged too
+- Every request the page makes (page load, sub resource, fetch, xhr) is made by the tool from node, not by chromium: the tool checks the url, follows redirects itself and checks every `Location` before it requests it (at most 10 hops, a loop is an error, only http and https), and only then hands the final response to the page. Chromium therefore never follows a redirect, and the page sees the url it first asked for, not the final one
+- The name is resolved by node when it connects, and every address it returns must be public, so a name that changes its answer between the check and the connection (dns rebinding) is refused too. With `--allow-local` only the page's own host and port is let through, no other private address is
+- Websockets are refused outright, webrtc and quic are switched off, service workers are blocked, and a response is cut at 15 MB (100 MB per page) so a page that never stops cannot fill memory
+- Not covered: this makes the page load from node's tls stack, not chromium's, so a site that fingerprints clients can answer differently.
+- It identifies itself as `skiffr-snapshot/<version>` with the repo link and nothing personal, and it starts from a fresh browser profile with no cookies
+- It only reads: any request that is not GET or HEAD is aborted, nothing is typed into the page, and the only click is the one you ask for with `--click`. If that selector is a submit button it is on you
+- It does not read robots.txt and does not crawl. One url, one load, `--delay` between several
+
+## What the sanitizer guarantees
+
+The output is rebuilt from the parsed page, not patched:
+
+- no `<script>`, `<noscript>`, `<style>`, `<link>`, `<meta>`, `<base>`, `<template>`, `<object>`, `<embed>`, audio, canvas or comments
+- no `<iframe>`, `<img>`, `<video>`, `<picture>` or `<svg>`: each becomes an empty `span` or `div` with `data-skiffr-placeholder`, keeping its size and its `id`, `class`, `name`, `title` and `aria-*`. Images of 2px or less (tracking pixels) are dropped
+- no inline event handler, `srcdoc`, `src`, `srcset`, `nonce`, `integrity` or `ping`
+- every `style` attribute is rebuilt from an allowlist of the properties the fill checks read (display, visibility, opacity, position, offsets, size, overflow, clip, clip-path, content-visibility, pointer-events), and the capture bakes those from the live page, so hidden and honeypot fields stay hidden without any stylesheet
+- every `href` is `#`, a path shape on `https://example.invalid`, or kept as a short `#anchor`. Query strings, fragments, `javascript:`, `data:`, `mailto:` and `tel:` are gone. Every form `action` and `formaction` is `#`
+- every hidden input has the value `x` and keeps its name. Typed or prefilled values are removed from inputs and textareas, `checked` and `selected` are reset
+- emails become `user@example.invalid`, phone numbers `000-000-0000`, uuids, jwts, long hex and base64 looking words in text become `x`. A uuid, jwt, hex string or number of six digits or more inside an `id`, `name`, `class`, `for`, option `value` or an aria reference becomes `x1`, `x2` and so on, the same one everywhere it repeats, so labels and radio groups still line up. Tokens and long ids in `data-*` are dropped, as are `ng-reflect-*` and `data-*` attributes named after a user, candidate, applicant, email or phone. A link path segment after `in`, `u`, `user`, `profile`, `candidate` and similar, or starting with `@`, becomes `x`. `data-qa`, `data-testid`, `data-automation-id`, `data-field` and a few more structural ones stay. Analytics and token named `data-*` attributes are dropped
+- the output is deterministic: sorted attributes, normalized whitespace, one element per line. Sanitizing it again gives the same text for what a browser serializes (malformed table markup is the known exception)
+
+Before it writes anything the tool loads the result in chromium with the network off and refuses it if the page makes a request or logs a console error, and refuses it if the sanitizer changed the number of fields, and runs the check above on the written folder. A page that never finishes is abandoned after a deadline of three times `--timeout` plus the settle time.
+
+## What it does not guarantee
+
+- Names inside identifiers (`id="user-jane-smith"`, `name="jane.smith"`, `class="jane-smith"`), numbers of five digits or fewer in an identifier (`candidate-12345`), a greeting like "Welcome, Jane Smith", ipv4 addresses and card numbers in text stay. Read the file
+- Visible text is kept, apart from emails, urls and long token looking strings. A name or an address written in a label or a job description stays, and so does a name in `alt`, `title` or `aria-label`, or an `@handle`. `--check` passing does not mean there is no personal data: read the file
+- A placeholder that is a two or three word capitalized name becomes `Jane Doe`, other personal looking placeholders are not detected
+- Shadow DOM content and cross origin frames are not captured, and a frame becomes an empty placeholder
+- Layout that comes from stylesheets is gone: the page is unstyled apart from the baked properties. Hiding done with a transform is not baked
+- The ats adapters match on the host, so a snapshot served from the fixture server is detected by the generic rules, not the adapter of the site it came from
+- A page that needs a login, a captcha or a bot challenge cannot be taken
+- Copying a form is not permission to publish it. Check the site's terms before committing a snapshot
