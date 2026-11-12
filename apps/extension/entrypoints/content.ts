@@ -5,6 +5,7 @@ import { createRateLimiter } from "@/lib/detect/rate-limit"
 import { createFormWatcher } from "@/lib/detect/watch"
 import { noteFill } from "@/lib/dev-hook"
 import { createWorkerProvider } from "@/lib/fill-client"
+import { NEXT_OFFER_MAX_MS } from "@/lib/fill-config"
 import { type FillOutcome, handleFill, setFillObserver, setMappingProvider } from "@/lib/fill-handler"
 import { createLearningSession } from "@/lib/learning-session"
 import {
@@ -108,7 +109,7 @@ export default defineContentScript({
     })
 
     // the next job offer of the worker: what is left to choose, and nothing the page could turn into an address
-    let offer: (NextOffer & { id: string }) | null = null
+    let offer: (NextOffer & { id: string; until: number }) | null = null
 
     function answerOffer(action: NextDecisionMessage["action"]): Promise<boolean> {
       if (!offer) return Promise.resolve(false)
@@ -123,12 +124,14 @@ export default defineContentScript({
     }
 
     function showOffer(note?: OfferNote): void {
-      const message = offer ? offerMessage(offer, note) : null
+      const message = offer && Date.now() < offer.until ? offerMessage(offer, note) : null
       if (!offer || !message) {
         offer = null
         return
       }
-      view.showMessage({ ...message, onClose: () => void answerOffer("dismiss") })
+      // once the person chose something the rest stays until they answer it or the offer runs out: they may be in the opened tab
+      const dismissMs = note && (offer.matched || offer.next) ? offer.until - Date.now() : message.dismissMs
+      view.showMessage({ ...message, dismissMs, onClose: () => void answerOffer("dismiss") })
       if (!offer.matched && !offer.next) offer = null
     }
 
@@ -142,7 +145,14 @@ export default defineContentScript({
     }
 
     function onNextOffer(message: NextOfferMessage): void {
-      offer = { id: message.offerId, matched: message.matched, next: message.next }
+      // the offer was made for the page that was submitted: a page on another site never shows it
+      if (message.siteKey !== siteKey(location.href)) return
+      offer = {
+        id: message.offerId,
+        matched: message.matched,
+        next: message.next,
+        until: Date.now() + NEXT_OFFER_MAX_MS,
+      }
       showOffer()
     }
 

@@ -66,11 +66,14 @@ async function fillChildFrames(tabId: number): Promise<void> {
 }
 
 async function hideStorageFromContentScripts(): Promise<void> {
-  if (typeof browser.storage.local.setAccessLevel !== "function") return
-  try {
-    await browser.storage.local.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" })
-  } catch (error) {
-    console.error("[skiffr] could not restrict storage access", error)
+  // local holds the token, session holds the frame records and the pending next job offers
+  for (const area of [browser.storage.local, browser.storage.session]) {
+    if (typeof area.setAccessLevel !== "function") continue
+    try {
+      await area.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" })
+    } catch (error) {
+      console.error("[skiffr] could not restrict storage access", error)
+    }
   }
 }
 
@@ -173,10 +176,11 @@ export default defineBackground(() => {
     call: (run) => apiFetch(run),
     isTrustedFrame,
     topUrl: (tabId) => frames().topUrl(tabId),
+    storage: browser.storage.session,
     isMuted: async (site) => (await getNoNextJobSites()).includes(site),
     mute: disableNextJobOffers,
-    open: async (url) => {
-      await browser.tabs.create({ url, active: true })
+    open: async (url, windowId) => {
+      await browser.tabs.create({ url, active: true, ...(windowId === undefined ? {} : { windowId }) })
     },
     offer: (tabId, message) => toTab(tabId, message, { frameId: 0 }),
   })
@@ -205,7 +209,7 @@ export default defineBackground(() => {
   browser.tabs.onRemoved.addListener((tabId) => {
     fillRequests.forgetTab(tabId)
     learningRecords.forgetTab(tabId)
-    nextJobs.forgetTab(tabId)
+    void nextJobs.forgetTab(tabId)
     void frames().reset(tabId)
   })
   browser.commands.onCommand.addListener((command) => {

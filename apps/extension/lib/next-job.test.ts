@@ -5,6 +5,20 @@ import type { FillSender } from "./fill-request"
 import type { NextOfferMessage } from "./messages"
 import { createNextJobHandler } from "./next-job"
 
+type Memory = {
+  get: (key: string) => Promise<Record<string, unknown>>
+  set: (items: Record<string, unknown>) => Promise<void>
+}
+const memory = (): Memory => {
+  const data: Record<string, unknown> = {}
+  return {
+    get: async (key) => ({ [key]: structuredClone(data[key]) }),
+    set: async (items) => {
+      Object.assign(data, structuredClone(items))
+    },
+  }
+}
+
 const PAGE = "https://job-boards.greenhouse.io/acme/jobs/111"
 const OFFER_ID = "0b5c7a62-3f0e-4c0e-9a39-0d2e8a3f2f11"
 
@@ -39,33 +53,46 @@ function setup(
     markFail?: unknown
     muted?: boolean
     trusted?: boolean
-    top?: string
+    /** The url the tab shows when the worker asks, after the list came back. */
+    top?: () => string
+    storage?: Memory
+    hold?: Promise<void>
+    time?: { now: number }
   } = {},
 ) {
-  const calls: { list: unknown[]; create: unknown[]; opened: string[]; muted: string[]; offers: NextOfferMessage[] } = {
+  const calls: {
+    list: unknown[]
+    create: unknown[]
+    opened: { url: string; windowId: number | undefined }[]
+    muted: string[]
+    offers: NextOfferMessage[]
+  } = {
     list: [],
     create: [],
     opened: [],
     muted: [],
     offers: [],
   }
-  let time = 0
+  const clock = options.time ?? { now: 0 }
+  const storage = options.storage ?? memory()
   const handler = createNextJobHandler({
     extensionId: "ext",
     extensionUrl: "chrome-extension://ext/",
     isTrustedFrame: async () => options.trusted ?? true,
-    topUrl: async () => options.top ?? PAGE,
+    topUrl: async () => options.top?.() ?? PAGE,
+    storage,
     isMuted: async () => options.muted ?? false,
     mute: async (site) => void calls.muted.push(site),
-    open: async (url) => void calls.opened.push(url),
+    open: async (url, windowId) => void calls.opened.push({ url, windowId }),
     offer: (_tab, message) => void calls.offers.push(message),
     newId: () => OFFER_ID,
-    now: () => time,
+    now: () => clock.now,
     call: async (run) =>
       run({
         jobs: {
           list: async (input: unknown) => {
             calls.list.push(input)
+            await options.hold
             if (options.fail) throw options.fail
             return options.jobs ?? []
           },
@@ -82,8 +109,9 @@ function setup(
   return {
     handler,
     calls,
+    storage,
     advance: (ms: number) => {
-      time += ms
+      clock.now += ms
     },
   }
 }
@@ -102,6 +130,7 @@ test("a submit offers the next job and the one just submitted, found by its cano
     {
       type: "next-offer",
       offerId: OFFER_ID,
+      siteKey: "job-boards.greenhouse.io/acme",
       matched: { title: "Engineer 1", company: "Co 1" },
       next: { title: "Engineer 2", company: "Co 2" },
     },
@@ -113,6 +142,7 @@ test("a submit offers the next job and the one just submitted, found by its cano
 test("a tracking-param copy of the job link still matches", async () => {
   const { handler, calls } = setup({
     jobs: [job(1, "https://example.com/careers/1"), job(2, "https://example.com/careers/2")],
+    top: () => "https://www.example.com/careers/1/?utm_source=x",
   })
   await handler.handle(
     submitted({ siteKey: "www.example.com" }),
@@ -245,7 +275,9 @@ async function offered(options: Parameters<typeof setup>[0] = {}) {
 test("open opens the validated link of the offered job once, and marks nothing", async () => {
   const { handler, calls } = await offered()
   expect(await handler.handle(decision("open"), sender())).toEqual({ ok: true })
-  expect(calls.opened).toEqual(["https://jobs.lever.co/acme/2b1c5f57-0a6d-4c8e-9f1d-3a7e5d9c1b11"])
+  expect(calls.opened).toEqual([
+    { url: "https://jobs.lever.co/acme/2b1c5f57-0a6d-4c8e-9f1d-3a7e5d9c1b11", windowId: undefined },
+  ])
   expect(await handler.handle(decision("open"), sender())).toEqual({ ok: false, code: "invalid" })
   expect(calls.opened).toHaveLength(1)
   expect(calls.create).toEqual([])
@@ -310,32 +342,104 @@ test("not now does nothing and ends the offer, don't ask on this site mutes the 
   expect(never.calls.opened).toEqual([])
 })
 
+const probe = async (handler: ReturnType<typeof setup>["handler"], from: FillSender = sender()) => {
+  expect(handler.handle({ type: "probe-frames" }, from)).toBeUndefined()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+}
+
 test("an unanswered offer is shown once more on the next top document of the tab, within two minutes", async () => {
   const { handler, calls } = await offered()
-  expect(handler.handle({ type: "probe-frames" }, sender({ frameId: 3 }))).toBeUndefined()
+  await probe(handler, sender({ frameId: 3 }))
   expect(calls.offers).toHaveLength(1)
-  expect(handler.handle({ type: "probe-frames" }, sender())).toBeUndefined()
+  await probe(handler)
   expect(calls.offers).toHaveLength(2)
-  handler.handle({ type: "probe-frames" }, sender())
+  await probe(handler)
   expect(calls.offers).toHaveLength(2)
 
   const late = await offered()
   late.advance(121_000)
-  late.handler.handle({ type: "probe-frames" }, sender())
+  await probe(late.handler)
   expect(late.calls.offers).toHaveLength(1)
+})
+
+test("a page on another site never gets the offer, and the offer is over", async () => {
+  const { handler, calls } = await offered()
+  await probe(handler, sender({ url: "https://careers.other.example/thanks" }))
+  expect(calls.offers).toHaveLength(1)
+  await probe(handler)
+  expect(calls.offers).toHaveLength(1)
+  expect(await handler.handle(decision("mark"), sender())).toEqual({ ok: false, code: "invalid" })
+  expect(calls.create).toEqual([])
+})
+
+test("a decision made on another site than the offer's is refused", async () => {
+  const { handler, calls } = await offered()
+  const other = sender({ url: "https://careers.other.example/thanks" })
+  expect(await handler.handle(decision("mark"), other)).toEqual({ ok: false, code: "invalid" })
+  expect(await handler.handle(decision("open"), sender())).toEqual({ ok: false, code: "invalid" })
+  expect(calls.create).toEqual([])
+  expect(calls.opened).toEqual([])
+})
+
+test("a list that comes back after the tab went to another site makes no offer", async () => {
+  let release: () => void = () => {}
+  const hold = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  let top = PAGE
+  const { handler, calls } = setup({ jobs: queue, hold, top: () => top })
+  const pending = handler.handle(submitted(), sender())
+  top = "https://careers.other.example/thanks"
+  release()
+  expect(await pending).toEqual({ ok: true })
+  expect(calls.offers).toEqual([])
 })
 
 test("a dismissed offer is not shown again", async () => {
   const { handler, calls } = await offered()
   await handler.handle(decision("dismiss"), sender())
-  handler.handle({ type: "probe-frames" }, sender())
+  await probe(handler)
   expect(calls.offers).toHaveLength(1)
 })
 
 test("closing the tab forgets its offer", async () => {
   const { handler, calls } = await offered()
-  handler.forgetTab(1)
-  handler.handle({ type: "probe-frames" }, sender())
+  await handler.forgetTab(1)
+  await probe(handler)
   expect(await handler.handle(decision("open"), sender())).toEqual({ ok: false, code: "invalid" })
   expect(calls.offers).toHaveLength(1)
+})
+
+test("the job opens in the window of the tab that showed the offer", async () => {
+  const { handler, calls } = await offered()
+  await handler.handle(decision("open"), sender({ tab: { id: 1, active: true, windowId: 7 } }))
+  expect(calls.opened.map((entry) => entry.windowId)).toEqual([7])
+})
+
+test("an offer outlives a worker that was stopped: a new worker answers from session storage", async () => {
+  const first = await offered()
+  const second = setup({ jobs: queue, storage: first.storage })
+  expect(await second.handler.handle(decision("mark"), sender())).toEqual({ ok: true })
+  expect(second.calls.create).toEqual([{ jobId: queue[0]?.id, ats: "greenhouse" }])
+  expect(await second.handler.handle(decision("open"), sender())).toEqual({ ok: true })
+  expect(second.calls.opened).toHaveLength(1)
+})
+
+test("a page already asked about is not asked again after a worker restart", async () => {
+  const first = await offered()
+  const second = setup({ jobs: queue, storage: first.storage })
+  await second.handler.handle(submitted(), sender())
+  expect(second.calls.list).toEqual([])
+})
+
+test("an offer nobody answered for ten minutes is gone, even for a new worker", async () => {
+  const time = { now: 0 }
+  const first = await offered({ time })
+  time.now = 601_000
+  const second = setup({ jobs: queue, storage: first.storage, time })
+  expect(await second.handler.handle(decision("mark"), sender())).toEqual({ ok: false, code: "invalid" })
+  expect(second.calls.create).toEqual([])
+  const same = await offered({ time })
+  time.now += 601_000
+  expect(await same.handler.handle(decision("open"), sender())).toEqual({ ok: false, code: "invalid" })
 })

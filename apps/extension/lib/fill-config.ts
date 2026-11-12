@@ -23,8 +23,10 @@ export const NEXT_LIMIT = { max: 12, windowMs: 60_000 } as const
 export const NEXT_TIMEOUT_MS = 10_000
 /** How many of the oldest queued jobs are read to find the submitted one and the next one. */
 export const NEXT_JOBS_MAX = 100
-/** An offer that was not answered is shown once more on the page the submit led to, if it comes this soon. */
-export const NEXT_OFFER_TTL_MS = 120_000
+/** An offer that was not answered is shown once more on the page the submit led to, if it comes this soon and is on the same site. */
+export const NEXT_REPLAY_MS = 120_000
+/** The longest an offer can be answered, however long the person was away: after this the choices are gone. */
+export const NEXT_OFFER_MAX_MS = 600_000
 export const NEXT_TOAST_MS = 30_000
 /** A fill session with no edit for this long is sent as it stands. */
 export const LEARNING_IDLE_MS = 300_000

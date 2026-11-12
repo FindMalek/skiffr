@@ -184,3 +184,18 @@ test("a message replacing the next job toast does not report it closed", async (
   expect(closed).toEqual([])
   expect(hosts(doc)).toHaveLength(0)
 })
+
+test("the host box is the same whatever the toast says, and only the toast takes clicks", () => {
+  const { doc, view } = setup()
+  const styleOf = (text: string) => {
+    view.showMessage({ text })
+    const host = hosts(doc)[0] as HTMLElement
+    const style = host.getAttribute("style") ?? ""
+    view.hide()
+    return style
+  }
+  const short = styleOf("Nothing to fill")
+  expect(styleOf("a long job title ".repeat(20))).toBe(short)
+  expect(short).toContain("height: 360px")
+  expect(short).toContain("pointer-events: none")
+})

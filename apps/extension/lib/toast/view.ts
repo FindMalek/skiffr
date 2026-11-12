@@ -39,11 +39,21 @@ const LINK_ACTIONS: ReadonlySet<ToastAction> = new Set(["stop-next"])
 
 const AUTO_DISMISS_MS = 20_000
 const MAX_REMOUNTS = 20
+/** The host box never depends on what the toast says: a page can measure its host element, not what is inside the closed root. */
 const HOST_STYLE: Record<string, string> = {
   all: "initial",
   position: "fixed",
   right: "16px",
   bottom: "16px",
+  display: "flex",
+  "flex-direction": "column",
+  "justify-content": "flex-end",
+  width: "320px",
+  "max-width": "calc(100vw - 32px)",
+  height: "360px",
+  "max-height": "calc(100vh - 32px)",
+  // the host is only a frame: clicks outside the toast reach the page
+  "pointer-events": "none",
   "z-index": "2147483647",
   contain: "layout style",
   // `all: initial` leaves direction alone, so a right to left page would mirror the toast

@@ -5,7 +5,9 @@ import type { ToastAction, ToastMessage } from "./view"
 export type NextOffer = { matched: JobBrief | null; next: JobBrief | null }
 export type OfferNote = "open-failed" | "mark-failed" | "opened" | "marked"
 
-const label = (job: JobBrief): string => `${job.title} at ${job.company}`
+/** First strong isolate to pop directional isolate: a title in another script keeps its own order inside the sentence. The worker already turned any such character in a title into a visible code. */
+const isolate = (text: string): string => `\u2068${text}\u2069`
+const label = (job: JobBrief): string => `${isolate(job.title)} at ${isolate(job.company)}`
 
 /** What the next job toast says for the parts of the offer that are still open. `note` is how the last choice went. */
 export function offerMessage({ matched, next }: NextOffer, note?: OfferNote): ToastMessage | null {

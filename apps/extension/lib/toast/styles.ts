@@ -3,7 +3,7 @@ export const TOAST_CSS = `
 *, *::before, *::after { box-sizing: border-box; }
 .toast {
   --bg: #ffffff; --fg: #18181b; --muted: #52525b; --border: #e4e4e7; --accent: #18181b; --accent-fg: #fafafa; --hover: #f4f4f5;
-  width: 320px; max-width: calc(100vw - 32px); padding: 14px 16px;
+  width: 320px; max-width: calc(100vw - 32px); max-height: 100%; overflow: hidden; pointer-events: auto; padding: 14px 16px;
   background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 12px;
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
   font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;

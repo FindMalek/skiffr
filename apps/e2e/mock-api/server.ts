@@ -67,6 +67,8 @@ export interface MockApi {
   setQueue: (jobs: MockJob[]) => void
   /** Make `jobs.list` fail with this status until reset, whatever else is asked. */
   failQueue: (status: number) => void
+  /** Make `jobs.list` answer this many milliseconds late, until reset. */
+  delayQueue: (ms: number) => void
   /** Applications `applications.create` accepted, in order. Each one takes its job out of the queue. */
   applications: RecordedApplication[]
   /** Replace the canned `ai.mapFields` answer. */
@@ -171,6 +173,7 @@ export async function startMockApi(): Promise<MockApi> {
   let failure: { status: number; code: string } | null = null
   let queue: MockJob[] = []
   let queueStatus: number | null = null
+  let queueDelayMs = 0
   const applications: RecordedApplication[] = []
 
   // oRPC's wire format: POST /rpc/<router>/<procedure> with `{ json: input }`, answered with `{ json: output }`
@@ -237,6 +240,7 @@ export async function startMockApi(): Promise<MockApi> {
         const body = ((await readJson(req)) as { json?: unknown } | undefined)?.json
         const authorization = req.headers.authorization
         requests.push({ method, path, authorization, body })
+        if (path === "/rpc/jobs/list" && queueDelayMs > 0) await new Promise((r) => setTimeout(r, queueDelayMs))
         if (failure) {
           const { status, code } = failure
           failure = null
@@ -267,6 +271,9 @@ export async function startMockApi(): Promise<MockApi> {
     failQueue: (status) => {
       queueStatus = status
     },
+    delayQueue: (ms) => {
+      queueDelayMs = ms
+    },
     onMapFields: (handler) => {
       mapFields = handler
     },
@@ -284,6 +291,7 @@ export async function startMockApi(): Promise<MockApi> {
       applications.length = 0
       queue = []
       queueStatus = null
+      queueDelayMs = 0
       batches.clear()
       learned.clear()
       failure = null

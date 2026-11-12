@@ -54,7 +54,9 @@ test("next job messages are strict", () => {
     applicationSubmittedMessageSchema.safeParse({ type: "application-submitted", siteKey: "a.example", url: "x" })
       .success,
   ).toBe(false)
-  expect(isNextOfferMessage({ type: "next-offer", offerId: id, matched: null, next: brief })).toBe(true)
+  expect(
+    isNextOfferMessage({ type: "next-offer", offerId: id, siteKey: "a.example", matched: null, next: brief }),
+  ).toBe(true)
   expect(
     isNextOfferMessage({
       type: "next-offer",

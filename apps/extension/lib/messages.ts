@@ -35,6 +35,8 @@ export const jobBriefSchema = z.strictObject({ title: z.string().max(200), compa
 export const nextOfferMessageSchema = z.strictObject({
   type: z.literal("next-offer"),
   offerId: z.uuid(),
+  /** The site the submit happened on: the top frame shows the offer only if it is still on it. */
+  siteKey: siteKeySchema,
   matched: jobBriefSchema.nullable(),
   next: jobBriefSchema.nullable(),
 })
