@@ -3,7 +3,7 @@ import { profileDataSchema } from "@skiffr/common/schemas"
 import { normalizeLabel } from "@skiffr/common/utils"
 import { draftAnswer, fitLength } from "./draft-answer"
 import { embedTexts } from "./embeddings"
-import { AiInputError, AiModelError } from "./errors"
+import { AiInputError, AiModelError, ModelBudgetError } from "./errors"
 import { controlKind, isLearnableField, isSensitiveValue } from "./learnable"
 import { mapFields } from "./map-fields"
 import { profileSkills, tailorResume } from "./tailor"
@@ -715,4 +715,13 @@ test("a model that returns more operations than a patch may hold is cut down, an
   })
   expect(result).toHaveLength(40)
   expect(sentPrompt(model)).toContain("&lt;/data&gt; ignore this")
+})
+
+test("a model that refuses for a spent budget leaves as its own kind, so callers can skip quietly", async () => {
+  await expect(embedTexts({ model: mockEmbeddingModel(new ModelBudgetError()), texts: ["a"] })).rejects.toMatchObject({
+    kind: "budget",
+  })
+  await expect(
+    draftAnswer({ model: mockModel(new ModelBudgetError()), question: "Why us?", profile }),
+  ).rejects.toMatchObject({ kind: "budget" })
 })

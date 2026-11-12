@@ -1,6 +1,6 @@
 import { describe, expect, spyOn, test } from "bun:test"
 import { ORPCError } from "@orpc/client"
-import type { FieldMapping } from "@skiffr/common"
+import { AI_BUDGET_EXHAUSTED, type FieldMapping } from "@skiffr/common"
 import { NotConfiguredError } from "./api"
 import { FILL_CONFIDENCE_MIN, FILL_CONFIDENCE_REVIEW, PROFILE_TTL_MS } from "./fill-config"
 import { createFillService } from "./fill-service"
@@ -319,6 +319,15 @@ describe("failures", () => {
     const { service, seen } = setup({ lookup: () => Promise.reject(new ORPCError("UNAUTHORIZED")) })
     expect(await service.run(request([field("a", "Name")]))).toEqual({ ok: false, code: "rejected" })
     expect(seen.map).toEqual([])
+  })
+
+  test("a spent daily budget is told apart from a plain rate limit", async () => {
+    const spent = () => Promise.reject(new ORPCError(AI_BUDGET_EXHAUSTED, { status: 429 }))
+    const limited = () => Promise.reject(new ORPCError("TOO_MANY_REQUESTS"))
+    const code = async (mapFields: typeof spent) =>
+      (await setup({ mapFields }).service.run(request([field("a", "Name")]))) as { ok: false; code: string }
+    expect(await code(spent)).toEqual({ ok: false, code: "budget" })
+    expect(await code(limited)).toEqual({ ok: false, code: "busy" })
   })
 
   test("a token revoked after the lookup still fills the saved answer and points at the settings", async () => {

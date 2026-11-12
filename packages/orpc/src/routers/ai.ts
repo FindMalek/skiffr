@@ -25,7 +25,7 @@ export async function guarded<T>(route: string, run: () => Promise<T>): Promise<
     return await run()
   } catch (error) {
     if (error instanceof AiInputError) throw new ORPCError("BAD_REQUEST", { message: error.message })
-    if (!(error instanceof AiModelError)) throw error
+    if (!(error instanceof AiModelError) || error.kind === "budget") throw error
     const { name, kind, status, modelId, requestId } = error
     console.error(`[${route}]`, { name, kind, status, modelId, requestId })
     throw new ORPCError("SERVICE_UNAVAILABLE", { message: "The AI is unavailable, try again." })

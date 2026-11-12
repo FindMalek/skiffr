@@ -1,6 +1,6 @@
 import { APICallError, NoObjectGeneratedError, RetryError } from "ai"
 
-export type AiErrorKind = "timeout" | "invalid_output" | "provider"
+export type AiErrorKind = "timeout" | "invalid_output" | "provider" | "budget"
 
 /** The only error that leaves this package. The SDK's own errors carry the whole request body (the applicant's data), so nothing from them is kept except these fields. */
 export class AiModelError extends Error {
@@ -12,6 +12,14 @@ export class AiModelError extends Error {
     readonly requestId?: string,
   ) {
     super("The AI model call failed.")
+  }
+}
+
+/** Thrown by whoever wraps a model when the user's budget is spent, before the provider is called. */
+export class ModelBudgetError extends Error {
+  override name = "ModelBudgetError"
+  constructor() {
+    super("The model budget is spent.")
   }
 }
 
@@ -32,6 +40,7 @@ export function modelIdOf(model: unknown): string {
 export function toAiError(error: unknown, model: unknown): AiModelError {
   const modelId = modelIdOf(model)
   const cause = RetryError.isInstance(error) ? error.lastError : error
+  if (cause instanceof ModelBudgetError) return new AiModelError("budget", modelId)
   if (APICallError.isInstance(cause)) {
     return new AiModelError("provider", modelId, cause.statusCode, cause.responseHeaders?.["x-request-id"])
   }

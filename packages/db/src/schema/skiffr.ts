@@ -12,6 +12,7 @@ import type { ProfileData, ProfileFields, RecordOutput, SiteFieldMap } from "@sk
 import { getTableColumns } from "drizzle-orm"
 import {
   boolean,
+  date,
   index,
   integer,
   jsonb,
@@ -365,4 +366,23 @@ export const cvConnection = pgTable("cv_connection", {
   baseResumeName: text("base_resume_name"),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
+})
+
+/** What a user spent on model calls on one UTC day. Counted with atomic upserts, so replicas and parallel calls agree. */
+export const aiUsage = pgTable(
+  "ai_usage",
+  {
+    userId: userId(),
+    day: date("day", { mode: "string" }).notNull(),
+    calls: integer("calls").notNull().default(0),
+    inputTokens: integer("input_tokens").notNull().default(0),
+    outputTokens: integer("output_tokens").notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.day] })],
+)
+
+/** All users' model calls on one UTC day, for the server's own daily cap. */
+export const aiUsageGlobal = pgTable("ai_usage_global", {
+  day: date("day", { mode: "string" }).primaryKey(),
+  calls: integer("calls").notNull().default(0),
 })

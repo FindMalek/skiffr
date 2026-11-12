@@ -34,6 +34,10 @@ There is one `.env` at the repo root. Every app loads it, and `packages/env` val
 | `GROQ_API_KEY` | needed for the default model. Without any matching key the ai endpoints answer "No AI provider key is configured" and the rest keeps working |
 | `OPENAI_API_KEY` | optional. Embeddings (`text-embedding-3-small`) for similar-question suggestions, see [how skiffr learns](/docs/learning) |
 | `ANTHROPIC_API_KEY` | only if `AI_MODEL` points at an `anthropic:` model |
+| `AI_DAILY_CALLS` | model requests one user may make per UTC day, default `600`. Chat and embedding requests both count. `0` means no limit. Counted in the database, so it holds across restarts and replicas. Digits only, at most `2147483647` |
+| `AI_DAILY_TOKENS` | input plus output tokens one user may spend per UTC day, default `1000000`. `0` means no limit. Checked before each call and added after it, so a few calls in flight at the limit can overshoot it slightly |
+| `AI_GLOBAL_DAILY_CALLS` | model requests the whole server may make per UTC day, all users together, default `0` (no limit). Set it on a public instance: it caps the spend of many free accounts together |
+| `CLIENT_IP_HEADER`, `TRUSTED_PROXY_COUNT` | where the api reads the client address for the sign-in and sign-up limits. Defaults `x-forwarded-for` and `1`: the api sits behind one proxy that appends the address it saw (Traefik on Dokploy does). Use `0` when the api is reached directly, so the header is ignored and the connection's address is used, or the number of proxies when there are more |
 | `EXTENSION_ORIGINS` | optional, comma separated `chrome-extension://<id>` origins allowed to call the api. Unset allows any extension holding a valid token |
 
 Gmail job emails (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GMAIL_ENCRYPTION_KEY` and friends) are optional and described in [Gmail job emails](/docs/gmail).
@@ -41,6 +45,8 @@ Gmail job emails (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GMAIL_ENCRYPTION_
 Tailoring your CV through Reactive Resume (`CV_ENCRYPTION_KEY`) is optional and described in [CV tailoring](/docs/cv-tailoring).
 
 Watching careers pages and feeds (`WATCH_SCHEDULER`, `WATCH_REFRESH_MINUTES`) needs no keys and is described in [Job sources](/docs/sources).
+
+Every signed-in call is also rate limited per user in the api's memory (reads, writes, writes that call the embedding provider, model calls, uploads and anything that fetches the network each have their own bucket). With several replicas each one counts on its own, so the daily budget above is the real cost control. Sign-in and sign-up are limited per client address by better-auth in production, counted in the database (old rows are pruned hourly). They are not limited per account, so one email tried from many addresses is not slowed. Requests to made-up `/auth/*` paths each write a row until it is pruned: cap them at the proxy if that matters to you.
 
 What each provider receives is listed in [privacy and data flow](/docs/privacy).
 

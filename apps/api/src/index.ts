@@ -4,12 +4,14 @@ import { createDb } from "@skiffr/db"
 import { runMigrations } from "@skiffr/db/migrate"
 import { seedDemo } from "@skiffr/db/seed"
 import { loadApiEnv } from "@skiffr/env/api"
+import { RateLimiter } from "@skiffr/orpc"
 import { createCvRuntime } from "@skiffr/orpc/cv"
 import { advisoryLeader, createScheduler, LOCKS } from "@skiffr/orpc/gmail"
 import { createWatchRuntime, createWatchScheduler } from "@skiffr/orpc/watch"
 import { createStorage } from "@skiffr/storage"
 import { ensureAdmin } from "./admin"
 import { gmailFromEnv } from "./gmail-runtime"
+import { pruneRateLimits } from "./prune"
 import { createServer } from "./server"
 
 const WATCH_TICK_MS = 5 * 60_000
@@ -68,15 +70,26 @@ const fetch = createServer(
     gmail,
     watch,
     cv,
+    limits: new RateLimiter(),
+    aiBudget: {
+      dailyCalls: env.AI_DAILY_CALLS,
+      dailyTokens: env.AI_DAILY_TOKENS,
+      globalDailyCalls: env.AI_GLOBAL_DAILY_CALLS,
+    },
   },
   {
     publicUrl: env.API_PUBLIC_URL,
     dashboardUrl: env.DASHBOARD_URL,
     extensionOrigins,
+    clientIp: { header: env.CLIENT_IP_HEADER.toLowerCase(), trustedProxies: env.TRUSTED_PROXY_COUNT },
   },
 )
 
-const server = Bun.serve({ port: env.PORT, hostname: "0.0.0.0", fetch })
+const server = Bun.serve({
+  port: env.PORT,
+  hostname: "0.0.0.0",
+  fetch: (request, bun) => fetch(request, bun.requestIP(request)?.address),
+})
 console.info(`api on :${server.port} (${env.DEPLOY_ENV})`)
 
 // Mail is read in this process, by one replica at a time (an advisory lock picks it). Without the Google client nothing runs.
@@ -103,6 +116,11 @@ const watcher =
     : null
 watcher?.start()
 console.info(`job source watcher ${watcher ? `every ${env.WATCH_REFRESH_MINUTES} min per source` : "is off"}`)
+
+const PRUNE_MS = 60 * 60_000
+const prune = () => pruneRateLimits(db, new Date()).catch(() => console.error("[auth] could not prune rate limit rows"))
+await prune()
+setInterval(prune, PRUNE_MS).unref()
 
 let stopping = false
 for (const signal of ["SIGTERM", "SIGINT"] as const) {

@@ -3,7 +3,7 @@ import { call } from "@orpc/server"
 import { mockModel } from "@skiffr/ai/testing"
 import type { Session } from "@skiffr/auth"
 import type { CvOperation } from "@skiffr/common/schemas"
-import { cvConnection, type Db, job, profile } from "@skiffr/db"
+import { aiUsage, cvConnection, type Db, job, profile } from "@skiffr/db"
 import { eq } from "drizzle-orm"
 import type { Context } from "../context"
 import type { CvRuntime } from "../lib/cv"
@@ -301,6 +301,17 @@ test("a key that can only read fails the copy cleanly and leaves everything as i
   ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" })
   expect(rr.resumes.get("base-1")).toEqual(base)
   expect(rr.resumes.size).toBe(1)
+})
+
+test("a spent daily ai budget stops a preview before the model is called", async () => {
+  await db.delete(aiUsage)
+  const jobId = await ready("ana")
+  const model = reply()
+  const budgeted = { context: { ...as("ana", { model }).context, aiBudget: { dailyCalls: 1, dailyTokens: 0 } } }
+  const run = () => call(appRouter.cv.preview, { jobId, description: POSTING }, budgeted)
+  await run()
+  await expect(run()).rejects.toMatchObject({ code: "AI_BUDGET_EXHAUSTED", status: 429 })
+  expect(model.doGenerateCalls).toHaveLength(1)
 })
 
 test("tailoring runs are limited per user", async () => {

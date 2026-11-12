@@ -12,11 +12,27 @@ export interface AuthConfig {
   trustedOrigins: string[]
   github?: { clientId: string; clientSecret: string }
   secureCookies: boolean
+  /** Leave unset for better-auth's default: on in production only. */
+  rateLimit?: boolean
   /** Called with the link to email; unset means those flows stay off. */
   sendVerification?: (user: { email: string; name: string }, url: string) => Promise<unknown>
   sendResetPassword?: (user: { email: string; name: string }, url: string) => Promise<unknown>
   sendMagicLink?: (email: string, url: string) => Promise<unknown>
 }
+
+/** Set by the api from the connection and its trusted proxies, never taken from a client: it is the only header better-auth reads the client ip from. */
+export const CLIENT_IP_HEADER = "x-skiffr-client-ip"
+/** Stands in for a client whose address could not be told (a documentation address, never a real one): they share one bucket that is looser than a real address's. */
+export const UNKNOWN_CLIENT_IP = "192.0.2.1"
+const UNKNOWN_CLIENT_FACTOR = 10
+
+/** The same limit for everyone, and a looser one for the shared bucket of clients with no address, so they can't lock each other out. */
+const perClient =
+  (window: number, max: number) =>
+  (request: Request): { window: number; max: number } => ({
+    window,
+    max: request.headers.get(CLIENT_IP_HEADER) === UNKNOWN_CLIENT_IP ? max * UNKNOWN_CLIENT_FACTOR : max,
+  })
 
 const quiet = (task: Promise<unknown>) => task.catch((error) => console.error("[auth] email failed", error))
 
@@ -45,8 +61,17 @@ export function createAuth(config: AuthConfig) {
         : []),
     ],
     advanced: {
+      ipAddress: { ipAddressHeaders: [CLIENT_IP_HEADER] },
       useSecureCookies: config.secureCookies,
       defaultCookieAttributes: { httpOnly: true, sameSite: "lax" },
+    },
+    rateLimit: {
+      enabled: config.rateLimit,
+      storage: "database",
+      customRules: {
+        "/sign-in/email": perClient(60, 10),
+        "/sign-up/email": perClient(60, 5),
+      },
     },
     session: { cookieCache: { enabled: true, maxAge: 5 * 60 } },
   })

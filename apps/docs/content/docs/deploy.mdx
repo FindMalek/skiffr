@@ -34,6 +34,10 @@ Do not swap the image of an existing database in place. The pgvector image uses 
 
 `vector` is not a trusted extension, so `CREATE EXTENSION vector` needs a superuser. If the app's database user is not one, run it once as superuser, the migration's `IF NOT EXISTS` is then a no-op.
 
+### Client address behind Traefik
+
+The sign-in limits are per client address. Traefik replaces any `X-Forwarded-For` a client sends with the address it saw (unless you set `forwardedHeaders.trustedIPs` or `insecure` on the entrypoint, which you should not), so the api gets one value and the default `TRUSTED_PROXY_COUNT=1` is right. The dashboard passes the header on untouched. If a proxy of your own sits in front of Traefik and appends to the header, raise the count by one for each. If the api is reachable without any proxy, set `TRUSTED_PROXY_COUNT=0`, or a client could pick its own address. A request with no usable address shares one looser bucket and the api logs a warning once: check that with `select key from rate_limit` after a few sign-ins, you should see real addresses and not `192.0.2.1`.
+
 ## Self-hosting with GitHub Actions
 
 `.github/workflows/deploy.yml` builds the four images on every green push to `main`, pushes them to `ghcr.io/<owner>/skiffr-<app>` (tags `main` and `sha-<commit>`), redeploys the Dokploy applications and then checks `/health` on the api and the other three sites. The api migrates the database when it starts. Nothing runs until the repo variable `DEPLOY_ENABLED` is `true`.
