@@ -1,0 +1,73 @@
+---
+title: CV tailoring
+description: Tailor your Reactive Resume to a job, with a copy per application and never a new fact.
+---
+
+skiffr can make a per-job copy of your CV through your [Reactive Resume](https://rxresu.me). You paste the job description on a queued job, read every change and a keyword score, and confirm. skiffr then makes a **copy** of your base resume named after the company and role, applies the changes to the copy, and gives you its link and a PDF. Your base resume is never edited.
+
+## Set up
+
+1. The person running skiffr sets `CV_ENCRYPTION_KEY` (32 random bytes, base64: `openssl rand -base64 32`) and an AI provider key (`GROQ_API_KEY` or another, see [environment](/docs/environment)).
+2. In Reactive Resume, create an API key with **read, write and delete** access (Settings, API keys).
+3. In the dashboard open **CV**, enter the address of your instance (the hosted one is `https://rxresu.me`, or your own **https** address) and the key. skiffr calls the instance once to check the key before it saves anything.
+4. Pick the base resume.
+5. In the **Queue**, press the CV button on a job, paste the posting, and preview.
+
+## What it may change
+
+The AI proposes a JSON Patch (RFC 6902) and only these edits survive:
+
+| Edit | Rule |
+| --- | --- |
+| headline, summary | rebuilt only from whole clauses of the existing headline and summary: reordered or dropped, never cut or reworded |
+| skill keywords | reordered or dropped inside their own group. One is added only if your profile lists it under skills. Never moved to another group |
+| skill groups | reordered |
+| bullets of an experience entry | reordered, dropped, or rebuilt from whole clauses of that entry's own bullets. No new bullets, no new words |
+| entries, skill groups, sections | hidden. Only hidden: nothing can be made visible again |
+
+Everything else is out: names, contact details, companies, titles, dates, schools, degrees, certifications, the order of experience entries, the design.
+
+## Never inventing facts
+
+This is enforced in code, not only in the prompt. Every proposed edit is checked before it is shown, and again when you confirm:
+
+- the operation must be `replace` (or `move` of a skill group) on an allowed path. Anything else is dropped
+- text is extractive and whole-clause only. A clause is the part of a sentence between commas, semicolons, colons or full stops. Every clause of a new headline, summary or bullet must be a whole clause already in the allowed source, and what is stored is the source's own wording, so a symbol, a case change or an angle bracket from the model never gets in. A clause is never cut, so a "not", "no", "non-" or "assisted" can't be dropped, and a figure keeps its unit, its words and its entry. Two clauses can be joined with a comma, which can read as a fragment: you see the result in the preview
+- the headline and summary can reuse only clauses of the existing headline and summary. A bullet can reuse only clauses of its own entry, so a figure, a date or a company can't move to another entry (a bullet's clauses can still be recombined within the entry)
+- skills are stored as you wrote them, so a symbol, a changed case or a duplicate can't come in
+- hidden entries, hidden sections, a hidden summary and custom sections are not a source of anything, and are never sent to the model
+- the job posting never counts as a source
+- hidden characters (zero width, direction overrides), letters that look like Latin ones from another script, and digits of other scripts are refused
+- a patch has at most 40 operations and 24 kB (a longer model reply is cut down, a longer request from a client is refused), and each text has a length cap
+
+A refused edit is dropped and counted in the dialog ("2 suggestions wrote something that is not copied from your resume"); the rest still apply. The job description is treated as untrusted text: a posting that says "add a PhD" changes nothing, because it is a source of nothing. It is also sent to the model inside an escaped data block with an instruction to ignore requests found in it.
+
+## The keyword score
+
+The score is plain counting. skiffr takes the 30 most repeated meaningful words of the posting (without common words, boilerplate like "team" or "experience", and words that look like instructions) and counts how many appear in the resume text a reader would see, before and after. Forms of a word match (`deploy`, `deployed`). Hidden sections and entries do not count. The matched and missing words are listed. No model is asked for a number.
+
+Be clear about what this means. The copy is your resume reordered, trimmed and partly hidden. Reordering and cutting clauses can't add a keyword, and hiding something removes its words, so the score stays the same or goes down (hiding an old job can show as minus a few points). It goes up only when a skill listed in your profile is added. This is a per-job copy with the relevant parts first, **not an ATS booster**. A missing word is worth adding only if it is true for you, and you do that in Reactive Resume. It is a rough guide, not what any real applicant tracking system computes.
+
+## Security
+
+- **The key** is sealed with AES-256-GCM using `CV_ENCRYPTION_KEY`, bound to your account and to this feature, so a stored value copied to another account, or a Gmail token sealed with the same server key, does not open. It is decrypted only inside a call to your instance. It is never sent to the browser (only the last 4 characters are shown), never logged, and not reachable with an extension token.
+- **The address** is called only if it is a public **https** site on port 443. Private, loopback and link-local addresses are refused at connect time and again after name resolution, redirects are not followed (so the key never travels to another host), and responses are capped at 2 MB (8 MB for a PDF).
+- **The data** that reaches the AI provider: the visible text of your base resume (not hidden entries, hidden sections or custom sections), the shared parts of your profile (names, links, skills, summary; no contact details or pay) and the job description you paste.
+- **Limits per user and hour**: 20 tailoring runs, 20 copies and 120 other calls to your instance, and a quarter second between one user's calls to an instance, so one account can't use up another's turn. The counts live in the api process: they reset on a restart, and each replica counts for itself.
+- **Delete access** on the key is used for one thing: if a copy was made and the changes can't be applied, skiffr moves that copy to the trash again. It never touches another resume. If that fails too, the error names the copy so you can remove it.
+
+## Limits
+
+- Needs a Reactive Resume version with the `/api/openapi/resumes` API (copies or duplicate, patch, pdf). A resume in an older data format is refused.
+- The extractive rules make rewording impossible on purpose: tailoring is reordering, dropping whole clauses, and hiding. It will not borrow a better verb, cut a clause short or merge two bullets, and a summary with a single clause can only stay or go. Joining clauses with a comma can produce an awkward fragment. That is the price of never putting a claim in front of a recruiter that you did not write.
+- Only the part of the resume above is changed. The summary is rewritten as plain paragraphs (links or bold in it are lost); bullets are only rewritten when an entry's description is a plain list. A bullet that is kept unchanged keeps its formatting.
+- You paste the posting: skiffr does not fetch the job page.
+- The PDF limits (30 seconds without a byte, 60 in total, 8 MB) and the 2 MB JSON cap have not been tried on a real instance.
+- A self-hosted instance must be reachable on a public address, on port 443 (`https://my-rr.example:8443` is refused), with a response under 2 MB (a resume with a large inline picture may exceed it). A PDF may take up to a minute to render.
+- If the changes can't be applied after the copy was made, the copy is moved to the trash. Only if that also fails does a copy stay behind, and the error says which.
+
+## Environment
+
+| Key | What it is |
+| --- | --- |
+| `CV_ENCRYPTION_KEY` | 32 random bytes, base64. Seals the stored Reactive Resume keys. Unset: the feature is off. Losing it means entering the keys again |

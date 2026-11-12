@@ -54,6 +54,9 @@ const schema = z.object({
   /** How long a source waits between fetches when all goes well. */
   WATCH_REFRESH_MINUTES: z.coerce.number().int().min(15).max(1440).default(60),
 
+  /** Reactive Resume tailoring. Off until this is set: it seals the stored api keys (32 random bytes, base64, `openssl rand -base64 32`). */
+  CV_ENCRYPTION_KEY: optional,
+
   AI_MODEL: z.string().default("groq:openai/gpt-oss-120b"),
   GROQ_API_KEY: optional,
   OPENAI_API_KEY: optional,
@@ -71,12 +74,14 @@ const apiSchema = schema.superRefine((env, ctx) => {
     for (const key of GMAIL_KEYS.filter((key) => !env[key]))
       ctx.addIssue({ code: "custom", path: [key], message: `required once ${set.join(" or ")} is set (gmail import)` })
   }
-  if (env.GMAIL_ENCRYPTION_KEY && !isRandomKey(env.GMAIL_ENCRYPTION_KEY)) {
-    ctx.addIssue({
-      code: "custom",
-      path: ["GMAIL_ENCRYPTION_KEY"],
-      message: "must be 32 random bytes, base64 encoded (openssl rand -base64 32)",
-    })
+  for (const key of ["GMAIL_ENCRYPTION_KEY", "CV_ENCRYPTION_KEY"] as const) {
+    if (env[key] && !isRandomKey(env[key])) {
+      ctx.addIssue({
+        code: "custom",
+        path: [key],
+        message: "must be 32 random bytes, base64 encoded (openssl rand -base64 32)",
+      })
+    }
   }
 })
 

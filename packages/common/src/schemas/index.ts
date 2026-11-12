@@ -1,6 +1,7 @@
 export * from "./account"
 export * from "./ai"
 export * from "./answers"
+export * from "./cv"
 export * from "./extension"
 export * from "./gmail"
 export * from "./jobs"

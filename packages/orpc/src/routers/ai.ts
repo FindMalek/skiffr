@@ -20,7 +20,7 @@ async function loadAi(context: Context & { user: { id: string } }) {
 }
 
 /** Model errors are logged as name, kind, status, model id and request id only: the SDK's own errors carry the whole prompt, which is the applicant's data. */
-async function guarded<T>(route: string, run: () => Promise<T>): Promise<T> {
+export async function guarded<T>(route: string, run: () => Promise<T>): Promise<T> {
   try {
     return await run()
   } catch (error) {

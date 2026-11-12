@@ -14,7 +14,9 @@
     "./gmail": "./src/lib/gmail/index.ts",
     "./gmail-test": "./src/lib/gmail/test-support.ts",
     "./gmail-mock": "./src/lib/gmail/mock-google.ts",
-    "./watch": "./src/lib/watch/index.ts"
+    "./watch": "./src/lib/watch/index.ts",
+    "./cv": "./src/lib/cv/index.ts",
+    "./cv-test": "./src/lib/cv/test-support.ts"
   },
   "scripts": {
     "check-types": "tsc --noEmit",

@@ -37,6 +37,7 @@ import { AddJobForm } from "./add-job-form"
 import { JobList, type OnAction } from "./job-rows"
 import { SafeText } from "./job-text"
 import { useQueueApi } from "./queue-api"
+import { TailorDialog } from "./tailor-dialog"
 import { useQueueActions } from "./use-queue-actions"
 
 const STATUS_TABS: StatusFilter[] = ["queued", "applied", "skipped", "all"]
@@ -108,6 +109,7 @@ export function QueueBoard() {
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set())
   const [confirm, setConfirm] = useState<Confirm>(null)
   const [addOpen, setAddOpen] = useState(false)
+  const [tailoring, setTailoring] = useState<Job | null>(null)
   const [message, setMessage] = useState({ text: "", n: 0 })
   const announce = useCallback((text: string) => setMessage((m) => ({ text, n: m.n + 1 })), [])
   const results = useRef<HTMLHeadingElement>(null)
@@ -154,6 +156,7 @@ export function QueueBoard() {
 
   const onAction: OnAction = useCallback(
     (action, job) => {
+      if (action === "tailor") return setTailoring(job)
       parkFocus.current = true
       if (action === "skip") void actions.skip([job.id])
       else if (action === "restore") void actions.restore([job.id])
@@ -379,6 +382,8 @@ export function QueueBoard() {
           </div>
         </section>
       </div>
+
+      <TailorDialog job={tailoring} onClose={() => setTailoring(null)} />
 
       <AlertDialog open={confirm !== null} onOpenChange={(open) => !open && setConfirm(null)}>
         <AlertDialogContent finalFocus={finalFocus}>
