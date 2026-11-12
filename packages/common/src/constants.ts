@@ -135,3 +135,7 @@ export const CV_REJECTIONS = [
   "invented_fact",
   "invented_skill",
 ] as const
+/** The activity feed looks back this many days at most, so one request never scans a whole history. */
+export const ACTIVITY_WINDOW_DAYS = 30
+export const ACTIVITY_LIMIT_DEFAULT = 30
+export const ACTIVITY_LIMIT_MAX = 100
