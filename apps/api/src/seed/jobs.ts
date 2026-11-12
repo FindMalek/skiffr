@@ -55,7 +55,7 @@ const COMPANIES = [
   "Fernhill Systems",
   "Mosaic Grid",
   "Paperplane Labs",
-  "Tidepool Data",
+  "Tidemark Data",
   "Ironleaf",
   "Northvale Robotics",
   "Saltmarsh Cloud",
