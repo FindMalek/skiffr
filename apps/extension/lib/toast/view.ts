@@ -1,8 +1,16 @@
 import { TOAST_CSS } from "./styles"
 
-export type ToastAction = "settings" | "retry"
+export type ToastAction = "settings" | "retry" | "open-next" | "mark-applied" | "not-now" | "stop-next"
 /** What the toast says after the person said yes: working on it, or how it went. */
-export type ToastMessage = { text: string; actions?: readonly ToastAction[]; busy?: boolean }
+export type ToastMessage = {
+  text: string
+  actions?: readonly ToastAction[]
+  busy?: boolean
+  /** Close after this long instead of the usual spell. */
+  dismissMs?: number
+  /** The person closed it, or it timed out. Not called when another message replaces it or the page hides it. */
+  onClose?: () => void
+}
 export type ToastView = { show: () => void; showMessage: (message: ToastMessage) => void; hide: () => void }
 
 type ToastHandlers = {
@@ -12,11 +20,22 @@ type ToastHandlers = {
   onTimeout: () => void
   onSettings?: () => void
   onRetry?: () => void
+  onOpenNext?: () => void
+  onMarkApplied?: () => void
+  onStopNext?: () => void
 }
 
 const ASK_TITLE = "Autofill this application?"
 const MESSAGE_DISMISS_MS = 12_000
-const ACTION_LABEL: Record<ToastAction, string> = { settings: "Open settings", retry: "Retry" }
+const ACTION_LABEL: Record<ToastAction, string> = {
+  settings: "Open settings",
+  retry: "Retry",
+  "open-next": "Open next job",
+  "mark-applied": "Mark applied",
+  "not-now": "Not now",
+  "stop-next": "Don't ask on this site",
+}
+const LINK_ACTIONS: ReadonlySet<ToastAction> = new Set(["stop-next"])
 
 const AUTO_DISMISS_MS = 20_000
 const MAX_REMOUNTS = 20
@@ -68,6 +87,7 @@ export function createToastView(doc: Document, handlers: ToastHandlers): ToastVi
   let rowEl: HTMLElement | null = null
   let primary: (() => void) | null = handlers.onYes
   let onEscape: () => void = handlers.onNo
+  let onClose: (() => void) | undefined
 
   function arm(): void {
     clearTimeout(timer)
@@ -110,6 +130,10 @@ export function createToastView(doc: Document, handlers: ToastHandlers): ToastVi
       close: () => dismiss(),
       settings: () => handlers.onSettings?.(),
       retry: () => handlers.onRetry?.(),
+      "open-next": () => handlers.onOpenNext?.(),
+      "mark-applied": () => handlers.onMarkApplied?.(),
+      "not-now": () => dismiss(),
+      "stop-next": () => handlers.onStopNext?.(),
     }
     toast.addEventListener("click", (event) => {
       if (!event.isTrusted) return
@@ -187,7 +211,9 @@ export function createToastView(doc: Document, handlers: ToastHandlers): ToastVi
 
   function dismiss(): void {
     fromKeyboard = false
+    const closed = onClose
     view.hide()
+    closed?.()
   }
 
   const view: ToastView = {
@@ -200,8 +226,9 @@ export function createToastView(doc: Document, handlers: ToastHandlers): ToastVi
       mount()
       arm()
     },
-    showMessage({ text, actions = [], busy = false }) {
-      dismissMs = busy ? 0 : MESSAGE_DISMISS_MS
+    showMessage({ text, actions = [], busy = false, dismissMs: spell = MESSAGE_DISMISS_MS, onClose: closeHook }) {
+      dismissMs = busy ? 0 : spell
+      onClose = closeHook
       onDismiss = () => dismiss()
       primary = null
       onEscape = () => dismiss()
@@ -213,8 +240,10 @@ export function createToastView(doc: Document, handlers: ToastHandlers): ToastVi
       // a new toast fills its title on the next frame, so the live region announces it; an open one changes in place
       if (!fresh) titleEl.textContent = text
       titleEl.style.marginBottom = busy || actions.length === 0 ? "0" : ""
-      const buttons = actions.map((action, i) => button(doc, ACTION_LABEL[action], action, i === 0 ? "primary" : ""))
-      if (!busy) buttons.push(button(doc, "Close", "close", "link"))
+      const buttons = actions.map((action, i) =>
+        button(doc, ACTION_LABEL[action], action, LINK_ACTIONS.has(action) ? "link" : i === 0 ? "primary" : ""),
+      )
+      if (!busy && !actions.includes("not-now")) buttons.push(button(doc, "Close", "close", "link"))
       rowEl.replaceChildren(...buttons)
       if (fromKeyboard) {
         // a node that was only just attached cannot always take focus before its first frame, so try again then
@@ -225,6 +254,7 @@ export function createToastView(doc: Document, handlers: ToastHandlers): ToastVi
     },
     hide() {
       clearTimeout(timer)
+      onClose = undefined
       currentTitle = ASK_TITLE
       dismissMs = AUTO_DISMISS_MS
       onDismiss = handlers.onTimeout

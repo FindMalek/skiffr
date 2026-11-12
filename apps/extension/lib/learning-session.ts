@@ -20,6 +20,8 @@ export type LearningSessionDeps = {
   newBatchId?: () => string
   idleMs?: number
   retryDelaysMs?: readonly number[]
+  /** The person submitted the main form of the application (a submit the page scripted does not count). */
+  onSubmitted?: () => void
 }
 
 export type LearningSession = {
@@ -78,6 +80,7 @@ export function createLearningSession({
   newBatchId = () => crypto.randomUUID(),
   idleMs = LEARNING_IDLE_MS,
   retryDelaysMs = LEARNING_RETRY_DELAYS_MS,
+  onSubmitted,
 }: LearningSessionDeps): LearningSession {
   let current: Active | null = null
 
@@ -236,7 +239,9 @@ export function createLearningSession({
       const entries = liveFields(active.roots, active.fields)
       const main = mainForm(entries)
       const holds = entries.some((entry) => !entry.gone && (entry.field.el as HTMLInputElement).form === event.target)
-      if (main ? event.target === main : holds) flush(active)
+      if (!(main ? event.target === main : holds)) return
+      flush(active)
+      if (event.isTrusted) onSubmitted?.()
     }
     const onHide = () => {
       if (doc.visibilityState === "hidden") flush(active)

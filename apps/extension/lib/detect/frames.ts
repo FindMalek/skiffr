@@ -21,6 +21,8 @@ export type FrameStorage = {
 
 export type FrameTracker = {
   setTop: (tabId: number, url: string) => Promise<void>
+  /** The url the top frame last reported for the tab. */
+  topUrl: (tabId: number) => Promise<string | null>
   /**
    * The top frame's content script started or its url changed. A different top documentId (or none known) means a
    * new top document, so everything reported so far belongs to a page that is gone and is dropped.
@@ -101,6 +103,9 @@ export function createFrameTracker(storage: FrameStorage): FrameTracker {
       const reports = await load()
       tabOf(reports, tabId).top = capUrl(url)
       await persist(reports)
+    },
+    async topUrl(tabId) {
+      return (await load())[tabId]?.top ?? null
     },
     async startTop(tabId, url, documentId) {
       const reports = await load()

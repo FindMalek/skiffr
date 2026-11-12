@@ -19,6 +19,13 @@ export const RETRY_BACKOFF_MS = 600
 export const REQUEST_LIMIT = { max: 10, windowMs: 60_000 } as const
 export const RECORD_LIMIT = { max: 12, windowMs: 60_000 } as const
 export const RECORD_TIMEOUT_MS = 15_000
+export const NEXT_LIMIT = { max: 12, windowMs: 60_000 } as const
+export const NEXT_TIMEOUT_MS = 10_000
+/** How many of the oldest queued jobs are read to find the submitted one and the next one. */
+export const NEXT_JOBS_MAX = 100
+/** An offer that was not answered is shown once more on the page the submit led to, if it comes this soon. */
+export const NEXT_OFFER_TTL_MS = 120_000
+export const NEXT_TOAST_MS = 30_000
 /** A fill session with no edit for this long is sent as it stands. */
 export const LEARNING_IDLE_MS = 300_000
 /** A session sends at most this many batches: a first one, then follow-ups for edits made since. */

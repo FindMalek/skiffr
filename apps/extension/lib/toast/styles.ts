@@ -16,7 +16,7 @@ export const TOAST_CSS = `
 }
 .toast:focus { outline: none; }
 .title { margin: 0 0 12px; font-weight: 600; }
-.row { display: flex; gap: 8px; align-items: center; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 button { font: inherit; cursor: pointer; border-radius: 8px; padding: 6px 14px; border: 1px solid var(--border); background: transparent; color: var(--fg); }
 button:hover { background: var(--hover); }
 button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

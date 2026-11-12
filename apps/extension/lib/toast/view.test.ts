@@ -20,6 +20,9 @@ function setup() {
     onTimeout: () => calls.push("timeout"),
     onSettings: () => calls.push("settings"),
     onRetry: () => calls.push("retry"),
+    onOpenNext: () => calls.push("open-next"),
+    onMarkApplied: () => calls.push("mark-applied"),
+    onStopNext: () => calls.push("stop-next"),
   })
   return { window, doc, view, calls }
 }
@@ -136,4 +139,48 @@ test("after a keyboard answer the result takes the focus the question had, a mou
   view.showMessage({ text: "Filling…", busy: true })
   expect(hosts(doc)[0]?.shadowRoot?.activeElement ?? null).toBeNull()
   view.hide()
+})
+
+const clickTrusted = (window: Window, root: ShadowRoot | null | undefined, action: string) => {
+  const event = new window.MouseEvent("click", { bubbles: true, detail: 1 })
+  Object.defineProperty(event, "isTrusted", { value: true })
+  root?.querySelector(`[data-action="${action}"]`)?.dispatchEvent(event as unknown as Event)
+}
+
+test("the next job toast shows job text as text and routes its buttons", async () => {
+  const { window, doc, view, calls } = setup()
+  const closed: string[] = []
+  view.showMessage({
+    text: "Next in your queue: <img src=x onerror=alert(1)> at Acme.",
+    actions: ["open-next", "mark-applied", "not-now", "stop-next"],
+    onClose: () => closed.push("closed"),
+  })
+  await tick()
+  const root = hosts(doc)[0]?.shadowRoot
+  expect(root?.querySelector(".title")?.textContent).toContain("<img")
+  expect(root?.querySelector("img")).toBeNull()
+  expect([...(root?.querySelectorAll("button") ?? [])].map((b) => b.textContent)).toEqual([
+    "Open next job",
+    "Mark applied",
+    "Not now",
+    "Don't ask on this site",
+  ])
+  clickTrusted(window as unknown as Window, root, "open-next")
+  clickTrusted(window as unknown as Window, root, "mark-applied")
+  clickTrusted(window as unknown as Window, root, "stop-next")
+  expect(calls).toEqual(["open-next", "mark-applied", "stop-next"])
+  expect(closed).toEqual([])
+  clickTrusted(window as unknown as Window, root, "not-now")
+  expect(closed).toEqual(["closed"])
+  expect(hosts(doc)).toHaveLength(0)
+})
+
+test("a message replacing the next job toast does not report it closed", async () => {
+  const { doc, view } = setup()
+  const closed: string[] = []
+  view.showMessage({ text: "Offer", actions: ["not-now"], onClose: () => closed.push("offer") })
+  view.showMessage({ text: "Done" })
+  view.hide()
+  expect(closed).toEqual([])
+  expect(hosts(doc)).toHaveLength(0)
 })

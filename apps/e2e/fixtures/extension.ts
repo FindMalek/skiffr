@@ -13,6 +13,9 @@ export const EXTENSION_DIR = resolve(
   process.env.E2E_EXTENSION_DIR ?? join(HERE, "..", "..", "extension", ".output", "chrome-mv3"),
 )
 
+/** Job links are public web addresses, so a queued job cannot be on 127.0.0.1: this domain resolves to the fixture server. */
+export const QUEUE_HOST = "jobs.skiffr.test"
+
 interface WorkerFixtures {
   fixtureServer: FixtureServer
   mockApi: MockApi
@@ -54,7 +57,11 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
     const userDataDir = mkdtempSync(join(tmpdir(), "skiffr-e2e-"))
     const context = await chromium.launchPersistentContext(userDataDir, {
       channel: "chromium",
-      args: [`--disable-extensions-except=${EXTENSION_DIR}`, `--load-extension=${EXTENSION_DIR}`],
+      args: [
+        `--disable-extensions-except=${EXTENSION_DIR}`,
+        `--load-extension=${EXTENSION_DIR}`,
+        `--host-resolver-rules=MAP ${QUEUE_HOST} 127.0.0.1`,
+      ],
     })
     await use(context)
     await context.close()

@@ -1,13 +1,16 @@
 import { expect, test } from "bun:test"
 import {
+  applicationSubmittedMessageSchema,
   isChildFormsGoneMessage,
   isFillMessage,
   isFillReportMessage,
   isFormDetectedMessage,
   isFrameNavigatedMessage,
+  isNextOfferMessage,
   isOpenOptionsMessage,
   isReportAgainMessage,
   isTestConnectionMessage,
+  nextDecisionMessageSchema,
 } from "./messages"
 
 test("messages with unknown shapes are rejected", () => {
@@ -39,4 +42,33 @@ test("fill report and open-options messages are strict", () => {
   expect(isFillReportMessage({ type: "fill-report", filled: 1, review: 0, suggested: 0, label: "Salary" })).toBe(false)
   expect(isOpenOptionsMessage({ type: "open-options" })).toBe(true)
   expect(isOpenOptionsMessage({ type: "open-options", url: "https://evil.example" })).toBe(false)
+})
+
+test("next job messages are strict", () => {
+  const id = "0b5c7a62-3f0e-4c0e-9a39-0d2e8a3f2f11"
+  const brief = { title: "Engineer", company: "Acme" }
+  expect(
+    applicationSubmittedMessageSchema.safeParse({ type: "application-submitted", siteKey: "a.example" }).success,
+  ).toBe(true)
+  expect(
+    applicationSubmittedMessageSchema.safeParse({ type: "application-submitted", siteKey: "a.example", url: "x" })
+      .success,
+  ).toBe(false)
+  expect(isNextOfferMessage({ type: "next-offer", offerId: id, matched: null, next: brief })).toBe(true)
+  expect(
+    isNextOfferMessage({
+      type: "next-offer",
+      offerId: id,
+      matched: null,
+      next: { ...brief, url: "https://x.example" },
+    }),
+  ).toBe(false)
+  expect(isNextOfferMessage({ type: "next-offer", offerId: "nope", matched: null, next: brief })).toBe(false)
+  expect(nextDecisionMessageSchema.safeParse({ type: "next-decision", offerId: id, action: "open" }).success).toBe(true)
+  expect(nextDecisionMessageSchema.safeParse({ type: "next-decision", offerId: id, action: "open-url" }).success).toBe(
+    false,
+  )
+  expect(
+    nextDecisionMessageSchema.safeParse({ type: "next-decision", offerId: id, action: "mark", jobId: id }).success,
+  ).toBe(false)
 })

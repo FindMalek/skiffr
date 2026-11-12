@@ -22,6 +22,32 @@ export const disableSiteMessageSchema = z.strictObject({ type: z.literal("disabl
 export const testConnectionMessageSchema = z.strictObject({ type: z.literal("test-connection") })
 export const openOptionsMessageSchema = z.strictObject({ type: z.literal("open-options") })
 
+/** A submit the person did in a form skiffr filled. */
+export const applicationSubmittedMessageSchema = z.strictObject({
+  type: z.literal("application-submitted"),
+  siteKey: siteKeySchema,
+})
+
+/** What the toast may show of a job: text only, already shortened by the worker. */
+export const jobBriefSchema = z.strictObject({ title: z.string().max(200), company: z.string().max(200) })
+
+/** The worker offers the next queued job to the top frame. It carries no url: opening one is the worker's job. */
+export const nextOfferMessageSchema = z.strictObject({
+  type: z.literal("next-offer"),
+  offerId: z.uuid(),
+  matched: jobBriefSchema.nullable(),
+  next: jobBriefSchema.nullable(),
+})
+
+export const NEXT_DECISIONS = ["open", "mark", "dismiss", "never"] as const
+
+/** What the person chose in the next job toast. `open` and `mark` act only on the offer the worker made. */
+export const nextDecisionMessageSchema = z.strictObject({
+  type: z.literal("next-decision"),
+  offerId: z.uuid(),
+  action: z.enum(NEXT_DECISIONS),
+})
+
 const fieldText = z.string().max(AI_FIELD_TEXT_MAX).optional()
 
 /** What a content script reads off one form control. Page text, so every length is capped. */
@@ -101,8 +127,15 @@ export const learningRecordResponseSchema = z.discriminatedUnion("ok", [
   z.strictObject({ ok: z.literal(false), code: errorCode }),
 ])
 
+export const nextJobResponseSchema = learningRecordResponseSchema
+
 export const siteDisabledResponseSchema = z.strictObject({ disabled: z.boolean() })
 
+export type ApplicationSubmittedMessage = z.infer<typeof applicationSubmittedMessageSchema>
+export type JobBrief = z.infer<typeof jobBriefSchema>
+export type NextOfferMessage = z.infer<typeof nextOfferMessageSchema>
+export type NextDecisionMessage = z.infer<typeof nextDecisionMessageSchema>
+export type NextJobResponse = z.infer<typeof nextJobResponseSchema>
 export type OpenOptionsMessage = z.infer<typeof openOptionsMessageSchema>
 export type LearningRecordMessage = z.infer<typeof learningRecordMessageSchema>
 export type LearningRecordResponse = z.infer<typeof learningRecordResponseSchema>
@@ -139,3 +172,4 @@ export const isDisableSiteMessage = guard(disableSiteMessageSchema)
 export const isTestConnectionMessage = guard(testConnectionMessageSchema)
 export const isOpenOptionsMessage = guard(openOptionsMessageSchema)
 export const isFillReportMessage = guard(fillReportMessageSchema)
+export const isNextOfferMessage = guard(nextOfferMessageSchema)

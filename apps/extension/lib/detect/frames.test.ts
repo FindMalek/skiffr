@@ -186,3 +186,10 @@ test("coming back to a page from the back/forward cache is a new start for that 
   await tracker.report(1, 7, { url: GH, documentId: "embed" })
   expect(await ids(tracker)).toEqual([7])
 })
+
+test("the top url is what the top frame last reported", async () => {
+  const tracker = createFrameTracker(memory())
+  expect(await tracker.topUrl(1)).toBeNull()
+  await tracker.setTop(1, TOP)
+  expect(await tracker.topUrl(1)).toBe(TOP)
+})
