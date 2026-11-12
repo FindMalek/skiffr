@@ -10,6 +10,8 @@ import {
   MousePointerClickIcon,
   RadarIcon,
   RefreshCwIcon,
+  ServerIcon,
+  ShieldCheckIcon,
   UserRoundIcon,
   ZapIcon,
 } from "lucide-react"
@@ -50,7 +52,7 @@ const TODAY: Feature[] = [
   {
     icon: MailIcon,
     title: "Gmail job alerts",
-    text: "Optional. LinkedIn, Indeed and Glassdoor alert emails become queued jobs. Needs your own Google OAuth client.",
+    text: "Optional. LinkedIn, Indeed and Glassdoor alert emails become queued jobs. Processed mail is marked read, archived and labelled, never deleted. Needs your own Google OAuth client.",
   },
   {
     icon: RadarIcon,
@@ -61,6 +63,16 @@ const TODAY: Feature[] = [
     icon: ChartNoAxesColumnIcon,
     title: "Funnel stats",
     text: "Applications over time, queue funnel, replies, by source, ATS and role, and how well autofill knows you.",
+  },
+  {
+    icon: ShieldCheckIcon,
+    title: "Never submits",
+    text: "It does not submit a form, click submit, next or apply, or touch password and hidden fields. You review and press the button.",
+  },
+  {
+    icon: ServerIcon,
+    title: "Self-hosted",
+    text: "One Dockerfile per app, a Postgres with pgvector, and a Dokploy deploy workflow. No hosted service, no account with us.",
   },
   {
     icon: KeyRoundIcon,

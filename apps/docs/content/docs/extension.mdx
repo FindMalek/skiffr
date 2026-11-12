@@ -35,7 +35,7 @@ On an application form (Greenhouse, Lever, Ashby, Workable, Workday and other co
 
 `Ctrl+Shift+F` (`Cmd+Shift+F` on macOS) fills the current page without the toast. Remap it at `chrome://extensions/shortcuts`.
 
-For each field the extension takes the first answer it has: what you filled on this very form before, then a saved answer for the same question, then a language model that maps the field to a key of your profile (needs a provider key, see [environment](/docs/environment)). Fields the model is unsure about are filled and outlined in amber. An answer from a similar question is never filled by itself, the empty field is outlined as a suggestion. When it is done the toast says how many fields were filled and how many are outlined.
+For each field the extension takes the first answer it has: a saved answer for the same question, then a language model that maps the field to a key of your profile (needs a provider key, see [environment](/docs/environment)). Once your edits are recorded ([#58](https://github.com/FindMalek/skiffr/issues/58)), what you filled on this very form before comes first. Fields the model is unsure about are filled and outlined in amber. An answer from a similar question is never filled by itself, the empty field is outlined as a suggestion. When it is done the toast says how many fields were filled and how many are outlined.
 
 It never submits a form, never clicks submit, next or apply buttons, and never touches password or hidden inputs. You review the form and press the button.
 
