@@ -3,7 +3,8 @@ import { esc } from "../html.ts"
 import { control, star } from "./controls.ts"
 import { jobDescription, shell } from "./shell.ts"
 
-const FORM_CSS = ".row { margin: 12px 0 } .check { display: block; margin: 14px 0; font-weight: 400 }"
+const FORM_CSS =
+  ".row, #root form > div, #app form > div { margin: 12px 0 } .check, #root form > label, #app form > label { display: block; margin: 14px 0; font-weight: 400 } #root label > span { color: #b42318 }"
 
 export function react(): string {
   return shell({

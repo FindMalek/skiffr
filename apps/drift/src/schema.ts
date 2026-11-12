@@ -3,6 +3,19 @@ import { z } from "zod"
 /** What the real-site smoke run writes to `summary.json`. Extra keys are ignored: the smoke job may grow without breaking this. */
 export const STATUSES = ["ok", "drift", "gone", "blocked", "error", "skipped"] as const
 
+/** Ids and board names become file names, table cells and issue text: plain lowercase words only. */
+const ID = z
+  .string()
+  .regex(/^[a-z0-9-]+$/)
+  .max(64)
+const ATS = z
+  .string()
+  .regex(/^[a-z0-9-]+$/)
+  .max(32)
+/** Page derived sentences are cut here, so one hostile row cannot make a body that github refuses. */
+const SENTENCE = z.string().max(500)
+const SENTENCES = z.array(SENTENCE).max(20)
+
 const observationSchema = z.looseObject({
   toast: z.boolean(),
   collected: z.number(),
@@ -16,15 +29,15 @@ const observationSchema = z.looseObject({
 })
 
 export const resultSchema = z.looseObject({
-  id: z.string(),
-  ats: z.string(),
+  id: ID,
+  ats: ATS,
   status: z.enum(STATUSES),
-  reasons: z.array(z.string()).default([]),
-  notes: z.array(z.string()).default([]),
+  reasons: SENTENCES.default([]),
+  notes: SENTENCES.default([]),
   observation: observationSchema.nullable().default(null),
   ms: z.number().default(0),
 })
-export const summarySchema = z.array(resultSchema)
+export const summarySchema = z.array(resultSchema).max(200)
 export type SmokeResult = z.output<typeof resultSchema>
 
 /** `baselines/<id>.json` of the smoke job: counts and one hash, never page text. */
@@ -40,8 +53,8 @@ export type Baseline = z.output<typeof baselineSchema>
 /** The entries of `targets.json` this tool reads. */
 export const targetsSchema = z.array(
   z.looseObject({
-    id: z.string(),
-    ats: z.string().optional(),
+    id: ID,
+    ats: ATS.optional(),
     url: z.string(),
     click: z.string().optional(),
     enabled: z.boolean().default(true),
@@ -53,12 +66,12 @@ export const SEVERITIES = ["critical", "high", "medium", "low", "none"] as const
 export type Severity = (typeof SEVERITIES)[number]
 
 export const targetReportSchema = z.object({
-  id: z.string(),
-  ats: z.string(),
+  id: ID,
+  ats: ATS,
   status: z.enum(STATUSES),
   severity: z.enum(SEVERITIES),
-  reasons: z.array(z.string()),
-  notes: z.array(z.string()),
+  reasons: SENTENCES,
+  notes: SENTENCES,
   filled: z.number().nullable(),
   collected: z.number().nullable(),
   deltas: z.object({ filled: z.number(), collected: z.number() }).nullable(),
@@ -89,6 +102,6 @@ export const reportSchema = z.object({
   }),
   targets: z.array(targetReportSchema),
   /** ids that drifted in the previous report and no longer do */
-  resolved: z.array(z.string()),
+  resolved: z.array(ID),
 })
 export type DriftReport = z.output<typeof reportSchema>

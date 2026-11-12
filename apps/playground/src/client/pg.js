@@ -259,20 +259,8 @@
     document.body.append(box)
   }
 
-  function ribbon() {
-    if (window.top !== window || cfg.bare) return
-    const link = document.createElement("a")
-    link.href = "/inspect"
-    link.setAttribute("data-pg-ignore", "")
-    link.textContent = `playground: ${cfg.site}${cfg.variant ? ` / ${cfg.variant}` : ""}`
-    link.style.cssText =
-      "position:fixed;top:0;right:0;z-index:2147483000;font:11px system-ui,sans-serif;background:#111;color:#fff;padding:2px 8px;border-bottom-left-radius:6px;text-decoration:none;opacity:.8"
-    document.body.append(link)
-  }
-
   function start() {
     cookieBanner()
-    ribbon()
     apply()
     // frameworks draw after the document is ready: apply again as soon as the form shows up
     let tries = 0

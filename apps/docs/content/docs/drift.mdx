@@ -60,17 +60,17 @@ Exit code 0 is clean, 1 means at least one target drifted, 2 is a usage or input
 
 | Severity | When |
 | --- | --- |
-| `critical` | a sensitive field (gender, race, consent, signature and the like) was filled or asked about |
+| `critical` | a sensitive field (gender, race, consent, signature and the like) was filled or asked about. This counts as drift even when the smoke status is `ok`: the run exits non zero, the issue title says so and the issue is never closed while it is there |
 | `high` | detection stopped: no fill offer, or the apply button selector matched nothing |
 | `medium` | the run drifted for another reason, usually `filled` or `collected` fell |
 | `low` | only the field signature changed. Not drift, but it gets a snapshot |
 | `none` | nothing to see. `gone`, `blocked`, `skipped` and `error` are always `none`: they say nothing about the extension |
 
-`drift-report.md` is the issue body: one line, one table, plain words.
+`drift-report.md` is the issue body: one line, one table, plain words. Every string that came from a page is escaped before it is written (no mention, link, image, heading, html or table break survives), each cell is cut to 200 characters and the body stays under 60000 characters with an "and N more rows" line. Target ids and board names must be plain lowercase words (`^[a-z0-9-]+$`) or the summary is refused, and the summary schema caps the length of every string and list.
 
 ## Where it goes
 
-1. The tracking issue. One issue with the label `drift`. Drift edits its body in place, or opens it (and creates the label if it is missing) when none is open. A clean run comments and closes it. Nothing else is posted to GitHub
+1. The tracking issue. One open issue with the label `drift`, the exact title `drift: real ats pages changed`, the marker the report ends with and an author in `github-actions`, `app/github-actions`, `github-actions[bot]` or `DRIFT_ISSUE_AUTHORS` (comma separated logins, for a run with a personal token). Drift edits that issue in place, or opens a new one (and creates the label if it is missing) when none matches. An issue that only carries the label is never touched. A clean run comments and closes it. Nothing else is posted to GitHub
 2. OpenObserve. One record per target and one per run in the stream `skiffr_drift`, plus gauge metrics (`skiffr.drift.targets`, `skiffr.drift.drifted`, `skiffr.drift.severity`) over OTLP/HTTP
 3. Umami gets a `drift-detected` or `drift-clean` event. GlitchTip gets one error message when something is `critical`
 
@@ -109,3 +109,16 @@ Read from the keep (`the-keep`), no secrets:
 | GlitchTip | 6.2.6 | `errors.findmalek.engineer` | public |
 
 The tailnet only routes sit behind a traefik `ipAllowList` of `100.64.0.0/10` (and the tailnet ipv6 range). A GitHub hosted runner is not on the tailnet, so it cannot send to OpenObserve or read Infisical. Set `OPENOBSERVE_URL` only on a runner that joined the tailnet, or put a public ingest proxy in front of it. Umami and GlitchTip work from any runner.
+
+## Who may start it
+
+`drift.yml` reads the artifact of a `smoke` run with `issues: write`, so it only trusts a run that was started by the schedule or by hand, from this repository, on the default branch and from `.github/workflows/smoke.yml`. A pull request can add a workflow named `smoke`, and its artifact is never read. A manual dispatch names a run by id and gets the same checks through the api before anything is downloaded.
+
+## Order of merging
+
+Drift is inert until the smoke job is merged: `drift.yml` reacts to the workflow `smoke` and reads `apps/e2e/smoke/baselines` and `targets.json`, which only exist on that branch. Merge smoke first. The repository variable `DRIFT_ENABLED` stays off until then.
+
+## The exporters are temporary
+
+`packages/telemetry` is a stop gap with the same variable names as `@skiffr/observability` (`GLITCHTIP_DSN`, `UMAMI_URL`, `UMAMI_WEBSITE_ID`). It does not follow redirects, never throws (an object that cannot be serialized resolves as an error result), sends the error class and scalar extras only (never a message or a stack), and drops Umami events past 20 a minute. When `@skiffr/observability` lands, this package is deleted and the playground and drift switch to it.
+

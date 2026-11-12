@@ -235,7 +235,7 @@ test("the index lists every page with its address, and the job urls api agrees",
   await shoot(page, "index")
 })
 
-test("the account wall of a Workday style site is not a form: no offer, nothing typed into the sign in fields", async ({
+test("the account wall of a Workday style site is not a form: no offer, then the page after it is offered", async ({
   context,
   serviceWorker,
   mockApi,
@@ -248,10 +248,22 @@ test("the account wall of a Workday style site is not a form: no offer, nothing 
     { site: "workday", real: true, query: "wall=1" },
     runId("wall"),
   )
-  await page.waitForTimeout(2500)
+  const email = page.locator('[data-automation-id="email"]')
+  await expect(email).toBeVisible()
+  // a person does the account step by hand, which takes the extension all the time it needs to look at the page
+  await email.fill("ana.silva@example.com")
+  await page.locator('[data-automation-id="password"]').fill("test-only-password")
+  await page.locator('[data-automation-id="verifyPassword"]').fill("test-only-password")
+  await page.locator('[data-automation-id="createAccountCheckbox"]').check()
   expect((await toast.snapshot()).buttons).toEqual([])
-  expect((await controls(page)).filter((control) => control.value)).toEqual([])
   expect(mockApi.requests.filter((request) => request.path === "/rpc/ai/mapFields")).toEqual([])
+
+  // the positive control: the extension is awake and offers the first real step as soon as the wall is gone
+  await page.locator("#wd-next").click()
+  await expect(page.locator("#wd-step-title")).toHaveText("My Information")
+  await fill(toast)
+  expect(valueFor(await controls(page), /^email/i)).toBe("ana.silva@example.com")
+  expect(valueFor(await controls(page), /password/i)).toBeUndefined()
 })
 
 test("a cross origin iframe on a company page is filled inside the frame", async ({
@@ -461,13 +473,13 @@ test.describe("drift", () => {
     const admin = await context.newPage()
     await admin.goto(`${playground.origin}/admin`)
     await admin.locator('button[data-site="generic"][data-variant="new-required-field"]').click()
-    expect(playground.variants.get("generic")).toBe("new-required-field")
+    await expect.poll(() => playground.variants.get("generic")).toBe("new-required-field")
     const page = await context.newPage()
     await page.goto(playground.url("generic"))
     await expect(page.locator("#clearance_v2")).toHaveCount(1)
     await page.goto(playground.url("generic", "variant=none"))
     await expect(page.locator("#clearance_v2")).toHaveCount(0)
     await admin.locator('button[data-site="generic"][data-variant="none"]').click()
-    expect(playground.variants.get("generic")).toBeNull()
+    await expect.poll(() => playground.variants.get("generic")).toBeNull()
   })
 })

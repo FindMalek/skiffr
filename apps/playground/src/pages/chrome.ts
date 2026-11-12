@@ -20,13 +20,11 @@ export const CSS = `
 `
 
 export interface PageOptions {
-  token?: string
   umami?: { scriptUrl: string; websiteId: string } | null
 }
 
-export function page(title: string, body: string, { token = "", umami = null }: PageOptions = {}): string {
-  const q = token ? `?token=${encodeURIComponent(token)}` : ""
+export function page(title: string, body: string, { umami = null }: PageOptions = {}): string {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${esc(title)}</title><style>${CSS}</style>${umami ? `<script defer src="${esc(umami.scriptUrl)}" data-website-id="${esc(umami.websiteId)}"></script>` : ""}</head><body>
-<header class="top"><strong>skiffr playground</strong><a href="/">pages</a><a href="/inspect${q}">inspect</a><a href="/admin${q}">break it</a><a href="/api/jobs">job urls</a></header>
+<header class="top"><strong>skiffr playground</strong><a href="/">pages</a><a href="/inspect">inspect</a><a href="/admin">break it</a><a href="/api/jobs">job urls</a></header>
 <main>${body}</main></body></html>`
 }

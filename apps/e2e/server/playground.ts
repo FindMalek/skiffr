@@ -22,8 +22,17 @@ export interface Playground {
 }
 
 export async function startPlayground(): Promise<Playground> {
-  const config = readConfig({ PORT: "0", PLAYGROUND_URL: "http://playground.localhost:3004" })
-  const { handle, store, variants } = createApp({ config })
+  const config = readConfig({
+    PORT: "0",
+    PLAYGROUND_URL: "http://playground.localhost:3004",
+    PLAYGROUND_RATE_BURST: "0",
+  })
+  // never the exporters of a developer's environment: a test run must not send events to a real Umami or GlitchTip
+  const quiet = {
+    sendUmamiEvent: async () => ({ sent: false as const, reason: "disabled" as const }),
+    captureException: async () => ({ sent: false as const, reason: "disabled" as const }),
+  }
+  const { handle, store, variants } = createApp({ config, telemetry: quiet })
   const http = await listen(handle, { port: 0 })
   const https = await listen(handle, { port: 0, tls: throwawayCertificate() })
   config.publicUrl = new URL(`http://playground.localhost:${http.port}`)

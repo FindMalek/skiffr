@@ -36,10 +36,10 @@ function Form() {
       }))
     }
   const text = (key: keyof Values, label: string, extra: { required?: boolean; type?: string; auto?: string } = {}) => (
-    <div className="row">
+    <div>
       <label htmlFor={key}>
         {label}
-        {extra.required ? <span className="req"> *</span> : null}
+        {extra.required ? <span> *</span> : null}
       </label>
       <input
         id={key}
@@ -53,19 +53,19 @@ function Form() {
     </div>
   )
   return (
-    <form method="post" action="/api/submissions" className="react-form" noValidate>
+    <form method="post" action="/api/submissions" noValidate>
       <h2>Apply</h2>
       {text("first_name", "First name", { required: true, auto: "given-name" })}
       {text("last_name", "Last name", { required: true, auto: "family-name" })}
       {text("email", "Email", { required: true, type: "email", auto: "email" })}
       {text("phone", "Phone", { type: "tel", auto: "tel" })}
       {text("linkedin", "LinkedIn profile")}
-      <div className="row">
+      <div>
         <label htmlFor="why">Why do you want to work at Acme?</label>
         <textarea id="why" name="why" rows={4} value={values.why} onChange={set("why")} />
         <small>{values.why.length} characters</small>
       </div>
-      <div className="row">
+      <div>
         <label htmlFor="source">How did you hear about this job?</label>
         <select id="source" name="source" value={values.source} onChange={set("source")}>
           <option value="">Select...</option>
@@ -74,7 +74,7 @@ function Form() {
           <option value="Other">Other</option>
         </select>
       </div>
-      <div className="row">
+      <div>
         <label htmlFor="gender">Gender (voluntary)</label>
         <select id="gender" name="gender" value={values.gender} onChange={set("gender")}>
           <option value="">Select...</option>
@@ -83,13 +83,11 @@ function Form() {
           <option value="Decline to self-identify">Decline to self-identify</option>
         </select>
       </div>
-      <label className="check">
+      <label>
         <input type="checkbox" name="privacy" checked={values.privacy} onChange={set("privacy")} /> I agree to the Acme
         privacy policy
       </label>
-      <button type="submit" className="btn">
-        Submit application
-      </button>
+      <button type="submit">Submit application</button>
     </form>
   )
 }

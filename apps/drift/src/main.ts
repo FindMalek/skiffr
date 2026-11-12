@@ -63,6 +63,11 @@ export async function run(argv: string[], deps: Deps = {}): Promise<number> {
     log(USAGE)
     return 2
   }
+  const delayMs = Number(values.delay)
+  if (!Number.isFinite(delayMs) || delayMs < 0) {
+    log("--delay must be a number of milliseconds")
+    return 2
+  }
   const out = resolve(values.out)
   let results: ReturnType<typeof summarySchema.parse>
   try {
@@ -101,7 +106,7 @@ export async function run(argv: string[], deps: Deps = {}): Promise<number> {
       report,
       out,
       cli: resolve(values["snapshot-cli"] ?? DEFAULT_SNAPSHOT_CLI),
-      delayMs: Number(values.delay),
+      delayMs,
       run: deps.node,
       sleep: deps.sleep,
     })

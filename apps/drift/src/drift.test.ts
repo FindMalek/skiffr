@@ -4,7 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { GhRunner } from "./github.ts"
 import { run } from "./main.ts"
-import { buildReport, renderMarkdown, severityOf } from "./report.ts"
+import { BODY_MAX, buildReport, escapeMd, MARKER, renderMarkdown, severityOf } from "./report.ts"
 import { reportSchema, type SmokeResult, summarySchema } from "./schema.ts"
 import type { NodeRunner } from "./snapshots.ts"
 
@@ -109,9 +109,22 @@ describe("report", () => {
     })
     expect(text).not.toMatch(/—|–/)
     expect(text).not.toMatch(/claude|openai|generated/i)
-    expect(text.startsWith("drift report 2026-11-12: drift on 3 of 6")).toBe(true)
+    expect(
+      text.startsWith(
+        "drift report 2026-11-12: critical: a sensitive field was touched on 1 real page. drift on 3 of 6",
+      ),
+    ).toBe(true)
   })
 })
+
+const OWN = JSON.stringify([
+  {
+    number: 42,
+    title: "drift: real ats pages changed",
+    body: `old\n${MARKER}\n`,
+    author: { login: "github-actions" },
+  },
+])
 
 describe("cli", () => {
   async function setup() {
@@ -162,17 +175,17 @@ describe("cli", () => {
         calls.push(call)
         return { code: 0, stdout: call[1] === "list" ? open : "" }
       }
-    await run(args(dir, ["--github", "--repo", "o/r"]), { gh: make(""), log: () => undefined })
+    await run(args(dir, ["--github", "--repo", "o/r"]), { gh: make("[]"), log: () => undefined })
     expect(calls.map((call) => call.slice(0, 2).join(" "))).toEqual(["issue list", "label create", "issue create"])
     expect(calls[2]).toContain("drift")
     calls.length = 0
-    await run(args(dir, ["--github"]), { gh: make("42\n"), log: () => undefined })
+    await run(args(dir, ["--github"]), { gh: make(OWN), log: () => undefined })
     expect(calls.map((call) => call.slice(0, 3).join(" "))).toEqual(["issue list --label", "issue edit 42"])
     calls.length = 0
     await writeFile(join(dir, "clean.json"), JSON.stringify(SUMMARY.slice(0, 1)))
     await run(
       ["report", "--summary", join(dir, "clean.json"), "--baselines", dir, "--out", join(dir, "o3"), "--github"],
-      { gh: make("42\n"), log: () => undefined },
+      { gh: make(OWN), log: () => undefined },
     )
     expect(calls.map((call) => call.slice(0, 3).join(" "))).toEqual([
       "issue list --label",
@@ -232,5 +245,120 @@ describe("cli", () => {
     expect(paths.sort()).toEqual(["/api/3/envelope/", "/api/default/skiffr_drift/_json", "/api/default/v1/metrics"])
     expect(logs).toContain("export umami: disabled")
     expect(logs.join("\n")).not.toContain("eA==")
+  })
+})
+
+describe("a privacy regression is never quiet", () => {
+  const sensitive = summarySchema.parse([
+    { ...base, id: "lever-acme", status: "ok", observation: { ...seen, sensitiveFilled: 3 } },
+  ])
+
+  test("ok with a sensitive field filled counts as drift: exit 1, loud title, issue stays open", async () => {
+    const dir = await workspace({ "summary.json": sensitive })
+    const calls: string[][] = []
+    const gh: GhRunner = async (call) => {
+      calls.push(call)
+      return { code: 0, stdout: call[1] === "list" ? OWN : "" }
+    }
+    const code = await run(
+      ["report", "--summary", join(dir, "summary.json"), "--baselines", dir, "--out", join(dir, "out"), "--github"],
+      { gh, log: () => undefined },
+    )
+    expect(code).toBe(1)
+    expect(calls.map((call) => call.slice(0, 2).join(" "))).toEqual(["issue list", "issue edit"])
+    const body = await readFile(join(dir, "out", "drift-report.md"), "utf8")
+    expect(body).toMatch(/^drift report \S+: critical: a sensitive field was touched on 1 real page/)
+  })
+
+  test("an issue with the label but not our title, marker and author is never edited", async () => {
+    const dir = await workspace({ "summary.json": sensitive })
+    const foreign = JSON.stringify([
+      { number: 7, title: "drift: real ats pages changed", body: "mine", author: { login: "someone" } },
+      { number: 8, title: "other", body: MARKER, author: { login: "github-actions" } },
+      { number: 9, title: "drift: real ats pages changed", body: MARKER, author: { login: "someone" } },
+    ])
+    const calls: string[][] = []
+    const gh: GhRunner = async (call) => {
+      calls.push(call)
+      return { code: 0, stdout: call[1] === "list" ? foreign : "" }
+    }
+    await run(
+      ["report", "--summary", join(dir, "summary.json"), "--baselines", dir, "--out", join(dir, "o"), "--github"],
+      {
+        gh,
+        log: () => undefined,
+      },
+    )
+    expect(calls.some((call) => call[1] === "edit")).toBe(false)
+    expect(calls.at(-1)?.slice(0, 2)).toEqual(["issue", "create"])
+  })
+})
+
+describe("hostile summary", () => {
+  test("page derived text cannot mention, link, embed or break the table", () => {
+    const text = escapeMd(
+      "@FindMalek ![x](http://evil.example/p.png) <img src=x> [a](http://b.test) #12 www.evil.test\n# h1 | cell",
+    )
+    expect(text).not.toMatch(/@(?!\u200b)/)
+    expect(text).not.toMatch(/(?<!\\)[[<]/)
+    expect(text).not.toContain("://")
+    expect(text).not.toContain("\n")
+    expect(text).not.toMatch(/(?<!\\)\|/)
+  })
+
+  test("ids and board names that are not plain words are refused before anything is written", async () => {
+    const bad = (extra: object) => [{ ...base, id: "lever-acme", status: "ok", observation: null, ...extra }]
+    for (const extra of [{ id: "../../x" }, { ats: "gh|@FindMalek" }, { id: "a b" }]) {
+      const dir = await workspace({ "summary.json": bad(extra) })
+      const code = await run(
+        ["report", "--summary", join(dir, "summary.json"), "--baselines", dir, "--out", join(dir, "o")],
+        {
+          log: () => undefined,
+        },
+      )
+      expect(code).toBe(2)
+    }
+  })
+
+  test("the body stays under what github accepts and says how many rows were cut", () => {
+    const many = Array.from({ length: 400 }, (_, index) => ({
+      ...base,
+      id: `t${index}`,
+      status: "drift" as const,
+      reasons: Array.from({ length: 20 }, () => "x".repeat(500)),
+      notes: [],
+      observation: seen,
+    }))
+    const body = renderMarkdown(
+      buildReport({
+        results: many,
+        baselines: new Map(),
+        targets: new Map(),
+        previous: null,
+        now: new Date("2026-11-12T00:00:00Z"),
+      }),
+    )
+    expect(body.length).toBeLessThan(BODY_MAX)
+    expect(body).toMatch(/and \d+ more rows/)
+  })
+
+  test("a delay that is not a number is a usage error, not a removed pause", async () => {
+    const dir = await workspace({ "summary.json": SUMMARY })
+    const code = await run(
+      [
+        "report",
+        "--summary",
+        join(dir, "summary.json"),
+        "--baselines",
+        dir,
+        "--out",
+        join(dir, "o"),
+        "--snapshots",
+        "--delay",
+        "x",
+      ],
+      { log: () => undefined },
+    )
+    expect(code).toBe(2)
   })
 })

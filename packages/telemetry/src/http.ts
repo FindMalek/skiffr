@@ -34,6 +34,8 @@ export async function post(
       headers: { "content-type": "application/json", "user-agent": USER_AGENT, ...headers },
       body: typeof body === "string" ? body : JSON.stringify(body),
       signal: AbortSignal.timeout(options.timeoutMs ?? 5000),
+      // a sink that answers with a redirect must not receive the credentials on another hop
+      redirect: "error",
     })
     if (!response.ok) return { sent: false, error: `http ${response.status}` }
     return { sent: true, status: response.status }
@@ -51,5 +53,26 @@ export function isHttpUrl(raw: string | undefined): raw is string {
     return url.protocol === "https:" || url.protocol === "http:"
   } catch {
     return false
+  }
+}
+
+export interface Throttle {
+  allow: () => boolean
+}
+
+/** At most `max` calls per `windowMs`, counted in this process: a burst of requests cannot become a burst of outbound events. */
+export function createThrottle(max: number, windowMs: number, now: () => number = Date.now): Throttle {
+  let start = now()
+  let used = 0
+  return {
+    allow: () => {
+      const at = now()
+      if (at - start >= windowMs) {
+        start = at
+        used = 0
+      }
+      used += 1
+      return used <= max
+    },
   }
 }

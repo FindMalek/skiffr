@@ -80,7 +80,32 @@ Add them to any page url.
 
 A red submission turns the page red with `data-guard="failed"`. If you typed the value yourself, that is expected; if you did not, the guard failed. The playground keeps its own list of sensitive words, apart from the extension's, so a regression there is seen here.
 
-Values are cut to plain bounded text and escaped, password fields are never kept, files are kept as a name and a size, and no header, cookie or address is recorded. The inspect page is open unless `PLAYGROUND_TOKEN` is set: then `/inspect`, `/admin` and `GET /api/submissions` need it as `?token=` or an `x-playground-token` header. Set it on a public server and never type real personal data into a hosted playground.
+Values are cut to plain bounded text and escaped, control and bidi characters are removed, password fields (by type, name or label) are never kept, and files are kept as a name and a size. What is stored of the request is the `Host` header (up to 100 characters), the page, the switches and the fields. No cookie, other header or client address is stored.
+
+### Who can read what
+
+| Route | Without a token | With the token |
+| --- | --- | --- |
+| pages, `/`, `/api/jobs`, `/health`, `/robots.txt`, `POST /api/submissions` | open | open |
+| `/inspect?run=<id>`, `GET` and `DELETE /api/submissions?run=<id>` | open when the run id is at least 16 characters: the id is the key to that run alone | open |
+| `/inspect`, `GET` and `DELETE /api/submissions` without a run id, `/admin` | refused | open |
+
+A page opened without `?run=` gets a random 32 character run id, and the confirmation page links to `/inspect` for that run only, so a person reads back what they filled and nobody else does. A test run picks its own long id.
+
+The private routes **fail closed**. With `NODE_ENV=production` (the Dockerfile sets it) or a `PLAYGROUND_URL` that is not localhost, and no `PLAYGROUND_TOKEN`, they answer 403 and the log line at startup says so. Locally, with neither, they are open for convenience. Set the token on every public server.
+
+The token goes in the `x-playground-token` header or the `pg_token` cookie. A visit to `/inspect?token=...` or `/admin?token=...` is answered with a redirect that drops the token from the address and sets the cookie (`HttpOnly`, `SameSite=Strict`, eight hours), so it does not stay in history or in a referrer (`Referrer-Policy: no-referrer` is set everywhere). The token in a url still reaches the access log of the proxy once: use the header for scripts.
+
+The admin actions also need a same origin request (`Sec-Fetch-Site: same-origin`, or an `Origin` that matches the host), so another website cannot flip a page with a form post.
+
+### Limits
+
+- Bodies are counted while they stream and cut at 1 MB (`PLAYGROUND_MAX_BODY`): a declared length over it gets 413 at once, a chunked body gets 413 and its connection is dropped
+- node's own timeouts are tightened (headers 10 s, whole request 15 s, keep alive 5 s, at most 50 headers, 200 connections)
+- writes and private reads are limited per address with a token bucket in memory: a burst of 20, then 30 a minute (`PLAYGROUND_RATE_BURST`, `PLAYGROUND_RATE_PER_MINUTE`, 0 for no limit). Behind a proxy set `TRUSTED_PROXY_COUNT` to the number of proxies that append to `x-forwarded-for` (1 behind Traefik), otherwise the proxy's address is the one limited. A shared proxy in front should add its own rate limit as well
+- a run keeps its last 10 submissions and the server the last 100 (`PLAYGROUND_MAX_SUBMISSIONS`), so one noisy run does not push out another. Anyone can still post under any run id, only the per address limit stands in the way: do not rely on a hosted playground to keep a run for long
+- a stray error inside the process is logged as one fixed line and the server keeps serving. More than 20 in a minute exits the process so the platform restarts it clean
+- only `GET`, `HEAD`, `POST` and `DELETE` are answered, a malformed `Host` gets 400
 
 `GET /api/submissions?run=abc` returns the same records as JSON, `DELETE /api/submissions?run=abc` forgets them.
 
@@ -106,10 +131,12 @@ The variants are applied in the browser after the page is drawn, to the form of 
 
 ## Safety
 
-- Pages carry `Content-Security-Policy: form-action 'self'; base-uri 'self'`, so the browser itself refuses a form that posts anywhere else. The submit capture also rewrites every form to `/api/submissions`
+- Every response carries `X-Robots-Tag: noindex, nofollow, noarchive`, `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer`, and `/robots.txt` disallows everything. Pages also carry `<meta name="robots">` and a fixed banner saying this is a skiffr test page with a fake company and that no real data or password should be entered. The pages that borrow the layout of LinkedIn and Workday say they are not those and keep the banner with `?bare=1`. No real logos or brand assets are used, and their page titles end in "(test)"
+- Pages carry `Content-Security-Policy: form-action 'self'; base-uri 'self'; frame-ancestors 'self'`, so the browser itself refuses a form that posts anywhere else and a page cannot be framed by another site. The embed frame also allows its company page (`www.acme.test`, `embed.<index host>`) and nothing else. The index, inspect, admin and confirmation pages have `default-src 'none'` and no script of ours
+- The pages answer on real board host names (`jobs.lever.co`, `www.linkedin.com`, ...) when the `Host` header says so. That only happens when a visitor maps those names to this server on their own machine, as the e2e does
 - The job text is neutral and made up (Acme). No third party text is copied: the faithful pages are the repository's own fixtures
 - The index, inspect and admin pages may load Umami when `UMAMI_URL` and `UMAMI_WEBSITE_ID` are set. The board replicas never load a tracker
-- The server keeps nothing on disk. Errors go to GlitchTip when `GLITCHTIP_DSN` is set, and a submission sends an Umami event with only the page name and whether the guard failed
+- The server keeps nothing on disk. Errors go to GlitchTip when `GLITCHTIP_DSN` is set (the error class and a path, never a message or a stack), and a submission sends an Umami event with only the page name and whether the guard failed, at most 20 a minute. The exporters in `@skiffr/telemetry` are temporary: they are replaced by `@skiffr/observability` once that package lands
 
 ## Environment
 
@@ -119,7 +146,10 @@ The variants are applied in the browser after the page is drawn, to the form of 
 | `HOST` | bind address, default `0.0.0.0` (the Dockerfile sets it) |
 | `PLAYGROUND_URL` | public address of the index host, default `http://playground.localhost:3004` |
 | `PLAYGROUND_SUBDOMAINS` | `true` for `<page>.<host>` names, `false` for `/s/<page>` |
-| `PLAYGROUND_TOKEN` | optional, protects inspect, admin and the submissions api |
+| `PLAYGROUND_TOKEN` | required on a public or production server: without it inspect, admin and the listing stay shut |
+| `PLAYGROUND_MAX_BODY` | bytes a request body may have, default 1000000 |
+| `PLAYGROUND_RATE_BURST`, `PLAYGROUND_RATE_PER_MINUTE` | per address write limit, default 20 and 30, 0 burst turns it off |
+| `TRUSTED_PROXY_COUNT` | proxies in front that append to `x-forwarded-for`, default 0 (header ignored) |
 | `PLAYGROUND_MAX_SUBMISSIONS` | default 100 |
 | `PLAYGROUND_FIXTURES_DIR` | the e2e pages folder, default `apps/e2e/pages` |
 | `UMAMI_URL`, `UMAMI_WEBSITE_ID`, `GLITCHTIP_DSN` | optional exporters, no-ops when unset |
@@ -131,7 +161,7 @@ One image, `apps/playground/Dockerfile` (build context is the repo root, port 30
 - `playground.skiffr.findmalek.engineer` to port 3004
 - `*.playground.skiffr.findmalek.engineer` to the same port, which needs a wildcard DNS record and a wildcard certificate for that name (the existing `*.findmalek.engineer` certificate does not cover a name two levels down)
 
-Set `PLAYGROUND_URL=https://playground.skiffr.findmalek.engineer`, `PLAYGROUND_SUBDOMAINS=true` and `PLAYGROUND_TOKEN`. Previews use `PLAYGROUND_SUBDOMAINS=false`. Without a wildcard name the pages still work through `/s/<page>`, but the extension only runs its generic path there.
+Set `PLAYGROUND_URL=https://playground.skiffr.findmalek.engineer`, `PLAYGROUND_SUBDOMAINS=true`, `TRUSTED_PROXY_COUNT=1` and a `PLAYGROUND_TOKEN` (required: without it the private routes answer 403). Put no shared cache in front: the embed page reflects the `Host` header into the frame address, and every response is `no-store`. Previews use `PLAYGROUND_SUBDOMAINS=false`. Without a wildcard name the pages still work through `/s/<page>`, but the extension only runs its generic path there.
 
 ## Tests
 

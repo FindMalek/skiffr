@@ -49,6 +49,7 @@ export interface SubmissionMeta {
 }
 
 const MAX_FIELDS = 300
+const MAX_SUMMARY_CHARS = 300_000
 const MAX_POSTED = 300
 
 function asSummary(raw: unknown): Summary | null {
@@ -56,11 +57,13 @@ function asSummary(raw: unknown): Summary | null {
   const item = raw as Record<string, unknown>
   const type = clean(item.type, 30)
   const name = clean(item.name, 120)
-  const value = isSecret(name, type) && item.value ? "[hidden]" : clean(item.value, 300)
+  const label = clean(item.label, 200)
+  const value =
+    (isSecret(name, type) || /pass(word|code)/i.test(label)) && item.value ? "[hidden]" : clean(item.value, 300)
   return {
     id: clean(item.id, 120),
     name,
-    label: clean(item.label, 200),
+    label,
     type,
     required: item.required === true,
     disabled: item.disabled === true,
@@ -72,7 +75,7 @@ function asSummary(raw: unknown): Summary | null {
 
 /** Everything a page reports is data from a visitor: it is cut down to plain bounded text before it is kept. */
 export function parseSummaries(json: string | null): Summary[] {
-  if (!json) return []
+  if (!json || json.length > MAX_SUMMARY_CHARS) return []
   try {
     const list: unknown = JSON.parse(json)
     if (!Array.isArray(list)) return []
@@ -133,16 +136,21 @@ export function buildSubmission(meta: SubmissionMeta, summaries: Summary[], post
   }
 }
 
+/** Newest first. A run keeps a few, the whole store keeps more, so one noisy run cannot push out everybody else's. */
 export class SubmissionStore {
   #items: Submission[] = []
   readonly max: number
+  readonly perRun: number
 
-  constructor(max = 100) {
+  constructor(max = 100, perRun = 10) {
     this.max = max
+    this.perRun = perRun
   }
 
   add(submission: Submission): void {
     this.#items.unshift(submission)
+    let seen = 0
+    this.#items = this.#items.filter((item) => item.run !== submission.run || ++seen <= this.perRun)
     if (this.#items.length > this.max) this.#items.length = this.max
   }
 

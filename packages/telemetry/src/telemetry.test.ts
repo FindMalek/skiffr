@@ -1,5 +1,13 @@
 import { afterAll, describe, expect, test } from "bun:test"
-import { captureException, captureMessage, fromEnv, pushMetrics, sendRecords, sendUmamiEvent } from "./index.ts"
+import {
+  captureException,
+  captureMessage,
+  createThrottle,
+  fromEnv,
+  pushMetrics,
+  sendRecords,
+  sendUmamiEvent,
+} from "./index.ts"
 
 interface Seen {
   path: string
@@ -12,6 +20,9 @@ let status = 200
 const server = Bun.serve({
   port: 0,
   async fetch(request) {
+    if (new URL(request.url).pathname.startsWith("/hop")) {
+      return new Response(null, { status: 302, headers: { location: new URL("/elsewhere", request.url).href } })
+    }
     seen.push({ path: new URL(request.url).pathname, headers: request.headers, body: await request.text() })
     return new Response("{}", { status })
   },
@@ -113,4 +124,55 @@ test("fromEnv binds the env once", async () => {
   const bound = fromEnv({ UMAMI_URL: base, UMAMI_WEBSITE_ID: "s" })
   expect(await bound.sendUmamiEvent({ name: "x" })).toEqual({ sent: true, status: 200 })
   expect(await bound.sendRecords([{ a: 1 }])).toEqual({ sent: false, reason: "disabled" })
+})
+
+describe("safety", () => {
+  test("a redirect is not followed, so credentials never reach another hop", async () => {
+    seen.length = 0
+    const result = await sendRecords([{ a: 1 }], {
+      env: { OPENOBSERVE_URL: `${base}/hop`, OPENOBSERVE_AUTH: "Basic c2VjcmV0" },
+    })
+    expect(result.sent).toBe(false)
+    expect(seen).toEqual([])
+  })
+
+  test("a payload that cannot be serialized resolves, it never rejects", async () => {
+    const env = { GLITCHTIP_DSN: `http://k@127.0.0.1:${server.port}/7` }
+    const loop: Record<string, unknown> = {}
+    loop.self = loop
+    expect((await captureMessage("error", "x", { loop, big: 10n }, { env })).sent).toBe(true)
+    expect(
+      (
+        await sendRecords([{ big: 10n as unknown as number }], {
+          env: { OPENOBSERVE_URL: base, OPENOBSERVE_AUTH: "a" },
+        })
+      ).sent,
+    ).toBe(false)
+  })
+
+  test("an exception ships its class only: no message, no stack, no object extras", async () => {
+    seen.length = 0
+    const env = { GLITCHTIP_DSN: `http://k@127.0.0.1:${server.port}/7` }
+    await captureException(
+      new TypeError("ana.silva@example.com is wrong"),
+      { pathname: "/x", payload: { name: "Ana" } },
+      { env },
+    )
+    const body = seen[0]?.body ?? ""
+    expect(body).toContain('"type":"TypeError"')
+    expect(body).not.toContain("ana.silva")
+    expect(body).not.toContain("telemetry.test")
+    expect(body).not.toContain("Ana")
+    expect(body).toContain('"pathname":"/x"')
+  })
+
+  test("umami events past the budget are dropped, not queued", async () => {
+    seen.length = 0
+    const env = { UMAMI_URL: base, UMAMI_WEBSITE_ID: "s" }
+    const throttle = createThrottle(2, 60_000)
+    const results = await Promise.all([1, 2, 3, 4].map(() => sendUmamiEvent({ name: "x" }, { env, throttle })))
+    expect(results.filter((one) => one.sent)).toHaveLength(2)
+    expect(results.filter((one) => !one.sent && "error" in one && one.error === "throttled")).toHaveLength(2)
+    expect(seen).toHaveLength(2)
+  })
 })

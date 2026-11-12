@@ -25,23 +25,41 @@ function randomId(): string {
   return crypto.randomUUID().replaceAll("-", "")
 }
 
+const MAX_TEXT = 300
+
+type Scalar = string | number | boolean
+
+/** Only short scalars leave the process: an object or a page derived list is dropped, so a caller cannot leak a payload by accident. */
+function scalars(extra: Record<string, unknown>): Record<string, Scalar> {
+  const out: Record<string, Scalar> = {}
+  for (const [key, value] of Object.entries(extra).slice(0, 20)) {
+    if (typeof value === "string") out[key.slice(0, 40)] = value.slice(0, MAX_TEXT)
+    else if (typeof value === "number" || typeof value === "boolean") out[key.slice(0, 40)] = value
+  }
+  return out
+}
+
 async function sendEvent(event: Record<string, unknown>, options: ExporterOptions, env: Env): Promise<SendResult> {
-  const dsn = parseDsn(env.GLITCHTIP_DSN)
-  if (!dsn) return DISABLED
-  const eventId = randomId()
-  const full = { event_id: eventId, timestamp: Date.now() / 1000, platform: "node", ...event }
-  const envelope = [
-    JSON.stringify({ event_id: eventId, sent_at: new Date().toISOString() }),
-    JSON.stringify({ type: "event" }),
-    JSON.stringify(full),
-  ].join("\n")
-  const auth = `Sentry sentry_version=7, sentry_key=${dsn.key}, sentry_client=skiffr-telemetry/0.1`
-  return post(
-    dsn.endpoint,
-    { "content-type": "application/x-sentry-envelope", "x-sentry-auth": auth },
-    envelope,
-    options,
-  )
+  try {
+    const dsn = parseDsn(env.GLITCHTIP_DSN)
+    if (!dsn) return DISABLED
+    const eventId = randomId()
+    const full = { event_id: eventId, timestamp: Date.now() / 1000, platform: "node", ...event }
+    const envelope = [
+      JSON.stringify({ event_id: eventId, sent_at: new Date().toISOString() }),
+      JSON.stringify({ type: "event" }),
+      JSON.stringify(full),
+    ].join("\n")
+    const auth = `Sentry sentry_version=7, sentry_key=${dsn.key}, sentry_client=skiffr-telemetry/0.1`
+    return await post(
+      dsn.endpoint,
+      { "content-type": "application/x-sentry-envelope", "x-sentry-auth": auth },
+      envelope,
+      options,
+    )
+  } catch (error) {
+    return { sent: false, error: safeError(error) }
+  }
 }
 
 export function captureMessage(
@@ -50,23 +68,22 @@ export function captureMessage(
   extra: Record<string, unknown> = {},
   options: ExporterOptions = {},
 ): Promise<SendResult> {
-  return sendEvent({ level, message, extra }, options, options.env ?? process.env)
+  return sendEvent(
+    { level, message: message.slice(0, MAX_TEXT), extra: scalars(extra) },
+    options,
+    options.env ?? process.env,
+  )
 }
 
+/** Sends the error class and the scalar extras. The message and the stack can hold page or user text, so they stay home. */
 export function captureException(
   error: unknown,
   extra: Record<string, unknown> = {},
   options: ExporterOptions = {},
 ): Promise<SendResult> {
-  const type = error instanceof Error ? error.name : "Error"
-  const value = error instanceof Error ? error.message : String(error)
-  const frames = (error instanceof Error ? (error.stack ?? "") : "")
-    .split("\n")
-    .slice(1)
-    .map((line) => ({ filename: line.trim() }))
-    .reverse()
+  const type = error instanceof Error ? error.name.slice(0, 80) : "Error"
   return sendEvent(
-    { level: "error", exception: { values: [{ type, value, stacktrace: { frames } }] }, extra },
+    { level: "error", exception: { values: [{ type, value: "redacted" }] }, extra: scalars(extra) },
     options,
     options.env ?? process.env,
   )

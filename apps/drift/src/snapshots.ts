@@ -42,7 +42,9 @@ export async function takeSnapshots(input: {
   const sleep = input.sleep ?? ((ms: number) => new Promise<void>((done) => setTimeout(done, ms)))
   const dir = join(input.out, "snapshots")
   const wanted = input.report.targets.filter(
-    (row) => row.url && (row.status === "drift" || (row.status === "ok" && row.signatureChanged)),
+    (row) =>
+      row.url &&
+      (row.status === "drift" || row.severity === "critical" || (row.status === "ok" && row.signatureChanged)),
   )
   const outcomes: SnapshotOutcome[] = []
   if (wanted.length === 0) return outcomes

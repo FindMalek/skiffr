@@ -53,7 +53,6 @@ export function inspectPage(
   filter: { run: string; site: string },
   options: PageOptions = {},
 ): string {
-  const token = options.token ?? ""
   const red = submissions.filter(isRed)
   const banner = red.length
     ? `<div class="banner red" role="alert" data-guard="failed"><strong>guard failed</strong> in ${red.length} submission${red.length === 1 ? "" : "s"}: a sensitive field or a hidden trap holds a value. If you did not type it yourself, autofill touched it.</div>`
@@ -63,7 +62,7 @@ export function inspectPage(
   const body = `<h1>Submissions</h1>
 <p class="muted">The last ${submissions.length} in memory${filter.run ? ` for run <code>${esc(filter.run)}</code>` : ""}${filter.site ? ` on <code>${esc(filter.site)}</code>` : ""}. Nothing here leaves this server and a restart clears it.</p>
 ${banner}
-<form method="get" action="/inspect" class="small">run <input name="run" value="${esc(filter.run)}" size="12"> site <input name="site" value="${esc(filter.site)}" size="12">${token ? `<input type="hidden" name="token" value="${esc(token)}">` : ""} <button>filter</button></form>
+<form method="get" action="/inspect" class="small">run <input name="run" value="${esc(filter.run)}" size="12"> site <input name="site" value="${esc(filter.site)}" size="12"><button>filter</button></form>
 ${submissions.length ? submissions.map(submissionCard).join("") : '<p class="card">No submission yet. Fill a page and press its submit button.</p>'}`
   return page("Inspect - skiffr playground", body, options)
 }

@@ -17,6 +17,10 @@ export function severityOf(result: SmokeResult, signatureChanged: boolean): Seve
   return "none"
 }
 
+/** Drift, or a sensitive field that was asked about or filled: a privacy regression is never "ok". */
+export const isAlarm = (row: { status: string; severity: string }): boolean =>
+  row.status === "drift" || row.severity === "critical"
+
 export interface BuildInput {
   results: SmokeResult[]
   baselines: Map<string, Baseline>
@@ -26,18 +30,19 @@ export interface BuildInput {
 }
 
 export function buildReport({ results, baselines, targets, previous, now }: BuildInput): DriftReport {
-  const before = new Set(previous?.targets.filter((target) => target.status === "drift").map((target) => target.id))
+  const before = new Set(previous?.targets.filter(isAlarm).map((target) => target.id))
   const rows: TargetReport[] = results.map((result) => {
     const baseline = baselines.get(result.id)
     const seen = result.observation
     const signatureChanged = result.notes.some((note) => SIGNATURE_NOTE.test(note))
-    const drifted = result.status === "drift"
+    const severity = severityOf(result, signatureChanged)
+    const drifted = isAlarm({ status: result.status, severity })
     const target = targets.get(result.id)
     return {
       id: result.id,
       ats: result.ats,
       status: result.status,
-      severity: severityOf(result, signatureChanged),
+      severity,
       reasons: result.reasons,
       notes: result.notes,
       filled: seen?.filled ?? null,
@@ -55,12 +60,12 @@ export function buildReport({ results, baselines, targets, previous, now }: Buil
   })
   const count = (status: string): number => rows.filter((row) => row.status === status).length
   const severity = (level: Severity): number => rows.filter((row) => row.severity === level).length
-  const now_ids = new Set(rows.filter((row) => row.status === "drift").map((row) => row.id))
+  const now_ids = new Set(rows.filter(isAlarm).map((row) => row.id))
   const drift = count("drift")
   return {
     schemaVersion: 1,
     generatedAt: now.toISOString(),
-    drifted: drift > 0,
+    drifted: drift > 0 || severity("critical") > 0,
     totals: {
       targets: rows.length,
       drift,
@@ -82,37 +87,76 @@ export function buildReport({ results, baselines, targets, previous, now }: Buil
   }
 }
 
-const dash = (text: string): string => text.replace(/[–—]/g, "-")
-const cell = (text: string): string => dash(text).replace(/\|/g, "/").replace(/\s+/g, " ")
+const ZWSP = "\u200b"
+// biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are removed on purpose
+const INVISIBLE = /[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069\u200b-\u200f]/g
+const CELL_MAX = 200
+
+/**
+ * Text that came from a page ends up in an issue the bot writes: no mention, link, image, heading, html or table
+ * break may survive, and nothing may be long enough to push the body over what github accepts.
+ */
+export function escapeMd(text: string, max = CELL_MAX): string {
+  const flat = text
+    .replace(INVISIBLE, " ")
+    .replace(/[\u2013\u2014]/g, "-")
+    .replace(/\s+/g, " ")
+    .trim()
+  const cut = flat.length > max ? `${flat.slice(0, max)}...` : flat
+  return cut
+    .replace(/([\\`*_{}[\]()#+!|<>~])/g, "\\$1")
+    .replace(/@/g, `@${ZWSP}`)
+    .replace(/#/g, `#${ZWSP}`)
+    .replace(/:\/\//g, `:${ZWSP}//`)
+    .replace(/www\./gi, `www${ZWSP}.`)
+}
+
 const signed = (n: number): string => (n > 0 ? `+${n}` : String(n))
 
-/** The body of the tracking issue: lowercase, plain, one table. */
+export const BODY_MAX = 60_000
+export const MARKER = "<!-- skiffr-drift-report -->"
+
+/** The body of the tracking issue: lowercase, plain, one table, under the size github accepts. */
 export function renderMarkdown(report: DriftReport): string {
   const { totals } = report
   const head = report.drifted
     ? `drift on ${totals.drift} of ${totals.targets} real pages (critical ${totals.bySeverity.critical}, high ${totals.bySeverity.high}, medium ${totals.bySeverity.medium})`
     : `no drift on ${totals.targets} real pages`
+  const title =
+    totals.bySeverity.critical > 0
+      ? `critical: a sensitive field was touched on ${totals.bySeverity.critical} real page${totals.bySeverity.critical === 1 ? "" : "s"}. ${head}`
+      : head
   const interesting = report.targets.filter((row) => row.severity !== "none" || row.status === "error")
   const rows = interesting.map((row) => {
     const delta = row.deltas ? `filled ${signed(row.deltas.filled)}, collected ${signed(row.deltas.collected)}` : ""
     const age = row.newSince ? "new" : row.persisting ? "persisting" : ""
     const detail = [...row.reasons, ...row.notes, delta].filter(Boolean).join("; ")
-    return `| ${[row.id, row.ats, row.status, row.severity, age, cell(detail)].join(" | ")} |`
+    return `| ${[escapeMd(row.id, 64), escapeMd(row.ats, 32), row.status, row.severity, age, escapeMd(detail)].join(" | ")} |`
   })
-  const lines = [`drift report ${report.generatedAt.slice(0, 10)}: ${head}`, ""]
+  const lines = [`drift report ${report.generatedAt.slice(0, 10)}: ${title}`, ""]
   if (rows.length > 0) {
-    lines.push(
-      "| target | ats | status | severity | since | detail |",
-      "| --- | --- | --- | --- | --- | --- |",
-      ...rows,
-      "",
-    )
+    lines.push("| target | ats | status | severity | since | detail |", "| --- | --- | --- | --- | --- | --- |")
+    let size = lines.join("\n").length
+    let shown = 0
+    for (const row of rows) {
+      if (size + row.length + 1 > BODY_MAX - 2_000) break
+      lines.push(row)
+      size += row.length + 1
+      shown += 1
+    }
+    if (shown < rows.length)
+      lines.push("", `and ${rows.length - shown} more rows, the full report is in the run artifact`)
+    lines.push("")
   }
-  if (report.resolved.length > 0) lines.push(`back to normal since the last report: ${report.resolved.join(", ")}`, "")
+  if (report.resolved.length > 0) {
+    lines.push(`back to normal since the last report: ${report.resolved.map((id) => escapeMd(id, 64)).join(", ")}`, "")
+  }
   lines.push(
     `gone ${totals.gone}, blocked ${totals.blocked}, skipped ${totals.skipped}, errors ${totals.error}: these say nothing about the extension.`,
     "",
     "a sanitized snapshot of each changed page is in the run artifact. turn it into an adapter fixture by hand, nothing is committed for you.",
+    "",
+    MARKER,
     "",
   )
   return lines.join("\n")

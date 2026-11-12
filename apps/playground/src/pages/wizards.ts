@@ -69,7 +69,7 @@ export function linkedin(): string {
     },
   ]
   return shell({
-    title: "Senior Engineer | Acme | LinkedIn",
+    title: "Senior Engineer | Acme | Easy Apply (test)",
     css: `.top { background: #fff; border-bottom: 1px solid #ddd; padding: 10px 16px; color: #0a66c2; font-weight: 700 }
 .artdeco-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none; align-items: center; justify-content: center; z-index: 50 }
 .artdeco-modal-overlay.open { display: flex }
@@ -109,8 +109,8 @@ export function workday(switches: Switches): string {
         cta: "Create Account",
         html: `<p data-automation-id="createAccountHeading">Create an account to apply, or sign in if you already have one.</p>
 <div class="field"><label for="${id(1)}">Email Address <span class="req">*</span></label><input type="text" id="${id(1)}" name="account_email" data-automation-id="email" required aria-required="true" autocomplete="username"></div>
-<div class="field"><label for="${id(2)}">Password <span class="req">*</span></label><input type="password" id="${id(2)}" name="account_password" data-automation-id="password" required aria-required="true" autocomplete="new-password"></div>
-<div class="field"><label for="${id(3)}">Verify New Password <span class="req">*</span></label><input type="password" id="${id(3)}" name="account_verify" data-automation-id="verifyPassword" required aria-required="true" autocomplete="new-password"></div>
+<div class="field"><label for="${id(2)}">Password (test, never a real one) <span class="req">*</span></label><input type="password" id="${id(2)}" name="account_password" data-automation-id="password" required aria-required="true" autocomplete="new-password"></div>
+<div class="field"><label for="${id(3)}">Verify New Password (test, never a real one) <span class="req">*</span></label><input type="password" id="${id(3)}" name="account_verify" data-automation-id="verifyPassword" required aria-required="true" autocomplete="new-password"></div>
 <div class="field"><label class="check"><input type="checkbox" id="${id(4)}" name="create_account_consent" data-automation-id="createAccountCheckbox" required aria-required="true"> I have read and accept the Acme Privacy Notice.</label></div>`,
       }
     : null
@@ -158,7 +158,7 @@ ${text("signature_date", "Date", 52)}`,
     { title: "Review", review: true, html: `<p>Review your application before you submit it.</p>{{review}}` },
   ]
   return shell({
-    title: "Senior Engineer - Acme Careers",
+    title: "Senior Engineer - Acme Careers (test)",
     css: `.top { background: #0a3a6b; color: #fff; padding: 12px 16px; font-weight: 700 }
 .field { margin: 14px 0; position: relative }
 button[aria-haspopup=listbox] { display: block; width: 100%; text-align: left; padding: 8px; border: 1px solid #bbb; border-radius: 4px; background: #fff; font: inherit }

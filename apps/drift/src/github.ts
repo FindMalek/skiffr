@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process"
 import { writeFile } from "node:fs/promises"
 import { join } from "node:path"
+import { MARKER } from "./report.ts"
 import type { DriftReport } from "./schema.ts"
 
 export interface CommandResult {
@@ -20,6 +21,39 @@ export const ghRunner: GhRunner = (args) =>
 const TITLE = "drift: real ats pages changed"
 const LABEL = "drift"
 
+const BOT_AUTHORS = ["github-actions", "app/github-actions", "github-actions[bot]"]
+
+export const authorsFromEnv = (env: Record<string, string | undefined>): string[] => [
+  ...BOT_AUTHORS,
+  ...(env.DRIFT_ISSUE_AUTHORS ?? "")
+    .split(",")
+    .map((login) => login.trim())
+    .filter(Boolean),
+]
+
+interface ListedIssue {
+  number: number
+  title: string
+  body: string
+  author?: { login?: string }
+}
+
+/** The one issue this tool wrote: exact title, our marker in the body and one of the allowed authors. Label alone proves nothing. */
+export function ownIssue(listing: string, authors: string[]): string {
+  let issues: ListedIssue[]
+  try {
+    const parsed: unknown = JSON.parse(listing)
+    issues = Array.isArray(parsed) ? (parsed as ListedIssue[]) : []
+  } catch {
+    return ""
+  }
+  const mine = issues.find(
+    (issue) =>
+      issue.title === TITLE && (issue.body ?? "").includes(MARKER) && authors.includes(issue.author?.login ?? ""),
+  )
+  return mine ? String(mine.number) : ""
+}
+
 export type GithubAction = "created" | "updated" | "closed" | "nothing"
 
 /**
@@ -31,6 +65,8 @@ export async function updateTrackingIssue(input: {
   bodyFile: string
   out: string
   repo?: string
+  /** Logins that may own the tracking issue. Anything else with the label is somebody else's issue and is left alone. */
+  authors?: string[]
   gh?: GhRunner
 }): Promise<GithubAction> {
   const gh = input.gh ?? ghRunner
@@ -44,14 +80,12 @@ export async function updateTrackingIssue(input: {
     "--state",
     "open",
     "--limit",
-    "1",
+    "30",
     "--json",
-    "number",
-    "--jq",
-    ".[0].number // empty",
+    "number,title,body,author",
   ])
   if (found.code !== 0) throw new Error("could not list issues with gh")
-  const number = found.stdout.trim()
+  const number = ownIssue(found.stdout, input.authors ?? authorsFromEnv(process.env))
   if (input.report.drifted) {
     if (number) {
       await must(gh(["issue", "edit", number, ...repo, "--body-file", input.bodyFile]))

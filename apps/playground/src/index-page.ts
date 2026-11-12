@@ -16,7 +16,7 @@ export function indexPage(config: Config): string {
 <td class="small"><code>${esc(url)}</code>${real}${site.adapter ? '<div class="chip green">board adapter</div>' : ""}</td></tr>`
   }).join("")
   const body = `<h1>Test pages for autofill</h1>
-<p>Fake application pages shaped like real ones. Fill them with the extension, press submit and read what happened on <a href="/inspect">inspect</a>. Nothing is sent anywhere else. Do not type real personal data: submissions are readable by anyone who can open this server.</p>
+<p>Fake application pages shaped like real ones. Fill them with the extension, press submit and read what happened on <a href="/inspect">inspect</a>. Nothing is sent anywhere else. Do not type real personal data or a real password. What you submit is kept in memory under a private run id and is read back through the link on the confirmation page.</p>
 <h2>Switches</h2>
 <table><tr><th>query</th><th>effect</th></tr>
 <tr><td><code>?latency=1500</code></td><td>adds that many milliseconds to every timer that stands in for a network answer (async widgets, late mounts)</td></tr>

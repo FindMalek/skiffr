@@ -1,3 +1,5 @@
+// Temporary: #160 adds @skiffr/observability for the same sinks. When it lands this package goes away and callers switch to it.
+// The env names (GLITCHTIP_DSN, UMAMI_URL, UMAMI_WEBSITE_ID) are the ones #160 reads, so the swap is mechanical.
 import { captureException, captureMessage } from "./glitchtip.ts"
 import type { Env, ExporterOptions, SendResult } from "./http.ts"
 import { type Gauge, type OpenObserveRecord, pushMetrics, sendRecords } from "./openobserve.ts"
@@ -5,6 +7,7 @@ import { sendUmamiEvent, type UmamiEvent } from "./umami.ts"
 
 export { captureException, captureMessage, type Dsn, type Level, parseDsn } from "./glitchtip.ts"
 export type { Env, ExporterOptions, SendResult } from "./http.ts"
+export { createThrottle, type Throttle } from "./http.ts"
 export { type Gauge, type OpenObserveRecord, pushMetrics, sendRecords } from "./openobserve.ts"
 export { sendUmamiEvent, type UmamiEvent } from "./umami.ts"
 

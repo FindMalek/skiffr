@@ -2,10 +2,26 @@ const ESCAPES: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;"
 
 export const esc = (value: unknown): string => String(value ?? "").replace(/[&<>"']/g, (char) => ESCAPES[char] ?? char)
 
-/** Text from a visitor, safe to keep and to print: no control characters, bounded. */
+/** Control characters and the bidi overrides that reorder text on screen. */
+function isStripped(code: number): boolean {
+  return (
+    code <= 8 ||
+    code === 11 ||
+    code === 12 ||
+    (code >= 14 && code <= 31) ||
+    code === 127 ||
+    code === 0x200e ||
+    code === 0x200f ||
+    (code >= 0x202a && code <= 0x202e) ||
+    (code >= 0x2066 && code <= 0x2069)
+  )
+}
+
+/** Text from a visitor, safe to keep and to print: no control or bidi characters, bounded. */
 export function clean(value: unknown, max = 500): string {
-  // biome-ignore lint/suspicious/noControlCharactersInRegex: stripping control characters is the point
-  const text = String(value ?? "").replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "")
+  const text = Array.from(String(value ?? ""))
+    .filter((char) => !isStripped(char.codePointAt(0) ?? 0))
+    .join("")
   return text.length > max ? `${text.slice(0, max)}...` : text
 }
 
