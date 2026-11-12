@@ -119,13 +119,13 @@ test("an answer seen on two sites reports sites, forms, first seen, last used an
       { site: "boards.greenhouse.io", forms: 2 },
       { site: "jobs.lever.co/acme", forms: 2 },
     ],
-    firstSeenAt: at("2026-11-01T10:00:00Z"),
     firstSeenSite: "jobs.lever.co/acme",
-    lastUsedAt: at("2026-11-06T10:00:00Z"),
     timesUsed: 4,
     timesCorrected: 1,
     timesCleared: 0,
   })
+  expect(byId.get(seen)?.firstSeenAt?.getTime()).toBe(at("2026-11-01T10:00:00Z").getTime())
+  expect(byId.get(seen)?.lastUsedAt?.getTime()).toBe(at("2026-11-06T10:00:00Z").getTime())
   expect(byId.get(quiet)).toEqual({
     id: quiet,
     origin: "manual",
@@ -171,8 +171,9 @@ test("a field the user typed over the answer is a conflict, counted by distinct 
   const [row] = await provenance(cy)
   expect(row).toMatchObject({
     id,
-    conflict: { values: 2, sites: ["boards.greenhouse.io", "jobs.lever.co/acme"], lastAt: at("2026-11-04T10:00:00Z") },
+    conflict: { values: 2, sites: ["boards.greenhouse.io", "jobs.lever.co/acme"] },
   })
+  expect(row?.conflict?.lastAt.getTime()).toBe(at("2026-11-04T10:00:00Z").getTime())
   const json = JSON.stringify(row)
   for (const secret of [TYPED, FILLED, "kept value"]) expect(json).not.toContain(secret)
 })
@@ -192,6 +193,18 @@ test("another user's events and answers never show up, even on the same question
   expect(rows).toHaveLength(1)
   expect(rows[0]).toMatchObject({ forms: 0, sites: [], conflict: null })
   expect(JSON.stringify(rows)).not.toContain("eve.example")
+})
+
+test("two users with the same question and different answers never see each other's corrections as a conflict", async () => {
+  const ivy = await newUser()
+  const jon = await newUser()
+  await addAnswer(ivy, "salary", { value: "A-VALUE" })
+  await addAnswer(jon, "salary", { value: "B-VALUE" })
+  await addEvent(ivy, "salary", "2026-11-05T10:00:00Z", { outcome: "corrected", finalValue: "A-VALUE" })
+  expect((await provenance(ivy))[0]?.conflict).toBeNull()
+  await addEvent(jon, "salary", "2026-11-06T10:00:00Z", { outcome: "corrected", finalValue: "A-VALUE" })
+  expect((await provenance(jon))[0]?.conflict).toMatchObject({ values: 1 })
+  expect((await provenance(ivy))[0]?.conflict).toBeNull()
 })
 
 test("a page is the same page as the answer list, at every boundary", async () => {

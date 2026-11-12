@@ -41,14 +41,16 @@ const count = z.number().int().nonnegative()
 
 /**
  * Where one answer came from and how it is doing, from the fields recorded after fills (the last 90 days, see
- * `FIELD_EVENT_RETENTION_DAYS`). Counts, sites and times only: never a filled or final value. `site` is a host, or a host and
- * its first path segment on shared ATS hosts, as the extension recorded it.
+ * `FIELD_EVENT_RETENTION_DAYS`). Counts, sites and times only: never a filled or final value. `forms`, `sites` and
+ * `firstSeen*` count recorded fields with this question whatever filled them (profile, answer bank, model or site
+ * profile): only `lastUsedAt` is limited to fills from the answer bank. `site` is a host, or a host and its first path
+ * segment on shared ATS hosts, as the extension recorded it.
  */
 export const answerProvenanceSchema = z.object({
   id: z.string(),
-  /** `learned` from a correction and not yet confirmed, `confirmed` by the user, `manual` typed in, `imported`, or drafted by `ai`. */
+  /** Where it came from, not its status: `learned` from a correction (also when it was rejected since, read `status` in the list), `confirmed` by the user, `manual` typed in, `imported`, or drafted by `ai`. */
   origin: z.enum(ANSWER_ORIGINS),
-  /** Recorded forms with this question, over all sites. */
+  /** Recorded forms with this question, over all sites and whatever filled them. */
   forms: count,
   siteCount: count,
   /** Up to three sites, most forms first. */
@@ -60,7 +62,7 @@ export const answerProvenanceSchema = z.object({
   timesUsed: count,
   timesCorrected: count,
   timesCleared: count,
-  /** The user typed something other than this answer into the field: how many different values, where and when last. Null when they never did. */
+  /** The user corrected a field with this question to something other than the answer's current value: how many different values, where and when last. Null when they never did. */
   conflict: z.object({ values: count, sites: z.array(z.string()), lastAt: z.date() }).nullable(),
 })
 
