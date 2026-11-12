@@ -1,14 +1,17 @@
 import { afterAll, beforeAll, beforeEach, expect, spyOn, test } from "bun:test"
 import { createRouterClient } from "@orpc/server"
-import { mockModel } from "@skiffr/ai/testing"
+import { mockEmbeddingModel, mockModel } from "@skiffr/ai/testing"
 import type { Session } from "@skiffr/auth"
-import { aiUsage, type Db, notes } from "@skiffr/db"
+import { EMBEDDING_DIMENSIONS } from "@skiffr/common/constants"
+import { aiUsage, aiUsageGlobal, answer, type Db, notes } from "@skiffr/db"
+import { streamText } from "ai"
 import { MockLanguageModelV4 } from "ai/test"
+import { sql } from "drizzle-orm"
 import type { Context } from "../context"
-import type { AiBudget } from "../lib/ai-usage"
+import { type AiBudget, budgetedModels } from "../lib/ai-usage"
 import { connectDb } from "../lib/gmail/test-support"
-import { RateLimiter, type RateRules } from "../lib/rate-limit"
-import { limitClassOf } from "../procedures"
+import { DEFAULT_RATE_RULES, LIMIT_CLASSES, RateLimiter, type RateRules } from "../lib/rate-limit"
+import { CLASS_OVERRIDES, limitClassOf } from "../procedures"
 import { appRouter } from "./index"
 
 let db: Db
@@ -24,6 +27,8 @@ afterAll(async () => {
 })
 beforeEach(async () => {
   await db.delete(aiUsage)
+  await db.delete(aiUsageGlobal)
+  await db.delete(answer)
 })
 
 const DAY = new Date("2026-11-10T10:00:00Z")
@@ -34,6 +39,7 @@ interface Extra {
   limits?: RateLimiter
   aiBudget?: AiBudget
   model?: MockLanguageModelV4
+  embeddingModel?: ReturnType<typeof mockEmbeddingModel>
   token?: boolean
 }
 
@@ -50,6 +56,7 @@ function as(userId: string, extra: Extra = {}) {
       limits: extra.limits,
       aiBudget: extra.aiBudget,
       model: extra.model ?? mockModel("A short honest answer."),
+      embeddingModel: extra.embeddingModel ?? null,
     } as unknown as Context,
   }
 }
@@ -60,6 +67,8 @@ const api = (userId: string, extra?: Extra) => createRouterClient(appRouter, as(
 const RULES: RateRules = {
   read: { burst: 2, perMinute: 60 },
   write: { burst: 2, perMinute: 60 },
+  embed: { burst: 1, perMinute: 60 },
+  upload: { burst: 1, perMinute: 60 },
   ai: { burst: 1, perMinute: 60 },
   expensive: { burst: 1, perMinute: 60 },
 }
@@ -83,6 +92,9 @@ test("every procedure gets a class: model calls and network calls are named, the
   expect(limitClassOf("ai.mapFields", "POST")).toBe("ai")
   expect(limitClassOf("cv.preview", "POST")).toBe("ai")
   expect(limitClassOf("notes.summarize", "POST")).toBe("ai")
+  expect(limitClassOf("learning.lookup", "POST")).toBe("embed")
+  expect(limitClassOf("answers.create", "POST")).toBe("embed")
+  expect(limitClassOf("me.avatar", "POST")).toBe("upload")
   expect(limitClassOf("cv.test", "POST")).toBe("expensive")
   expect(limitClassOf("jobSources.runNow", "POST")).toBe("expensive")
   expect(limitClassOf("gmail.syncNow", "POST")).toBe("expensive")
@@ -100,7 +112,7 @@ test("a user over the limit gets a 429 with a wait time and no request data, and
     .profile.get()
     .catch((e) => e)
   expect(error).toMatchObject({ code: "TOO_MANY_REQUESTS", status: 429, data: { retryAfterSeconds: 1 } })
-  expect(error.message).toBe("Too many requests. Try again in 1 seconds.")
+  expect(error.message).toBe("Too many requests. Try again in 1 second.")
 
   await api("ben", extra).profile.get()
   await profile("ana", extra)
@@ -300,4 +312,127 @@ test("neither the errors nor the logs carry what the user sent", async () => {
   } finally {
     for (const log of logs) log.mockRestore()
   }
+})
+
+const vectorOf = () => {
+  const v = new Array<number>(EMBEDDING_DIMENSIONS).fill(0)
+  v[0] = 1
+  return v
+}
+const lookup = (userId: string, labels: string[], extra?: Extra) =>
+  api(userId, extra).learning.lookup({
+    siteKey: "careers.elsewhere.dev",
+    fields: labels.map((label, i) => ({ id: `f${i}`, label, type: "text" })),
+  } as never)
+const LABELS = Array.from({ length: 20 }, (_, i) => `Question number ${i} about something else`)
+
+test("embeddings take the same budget: a spent budget makes lookup skip the similarity step, not fail, and nothing more is embedded", async () => {
+  const embeddingModel = mockEmbeddingModel(vectorOf)
+  const extra = { embeddingModel, aiBudget: { dailyCalls: 1, dailyTokens: 0 } }
+  await api("ana", extra).answers.create({ rawLabel: "Notice period", value: "1 month" })
+  expect(embeddingModel.doEmbedCalls).toHaveLength(1)
+
+  const logs = spyOn(console, "error").mockImplementation(() => {})
+  try {
+    for (let i = 0; i < 5; i++) {
+      const { matches } = await lookup("ana", LABELS, extra)
+      expect(matches.every((match) => match.source === "none")).toBe(true)
+    }
+    expect(logs).not.toHaveBeenCalled()
+  } finally {
+    logs.mockRestore()
+  }
+  expect(embeddingModel.doEmbedCalls).toHaveLength(1)
+  expect(await api("ana", extra).me.usage()).toMatchObject({ calls: 1, limits: { calls: 1 } })
+  expect((await api("ana", extra).me.usage()).tokens).toBeGreaterThan(0)
+})
+
+test("saving an answer with a spent budget stores it without the vector", async () => {
+  const embeddingModel = mockEmbeddingModel(vectorOf)
+  const extra = { embeddingModel, aiBudget: { dailyCalls: 1, dailyTokens: 0 } }
+  await api("ana", extra).answers.create({ rawLabel: "Notice period", value: "1 month" })
+  const saved = await api("ana", extra).answers.create({ rawLabel: "Favourite colour", value: "blue" })
+  expect(saved.value).toBe("blue")
+  const rows = await db
+    .select({ label: answer.normalizedLabel, embedded: sql<boolean>`embedding is not null` })
+    .from(answer)
+  expect(rows.sort((a, b) => a.label.localeCompare(b.label))).toEqual([
+    { label: "favourite colour", embedded: false },
+    { label: "notice period", embedded: true },
+  ])
+  expect(embeddingModel.doEmbedCalls).toHaveLength(1)
+})
+
+test("lookups use the embed bucket, which is tighter than the write bucket", async () => {
+  const { limiter } = clocked()
+  const extra = { limits: limiter }
+  await lookup("ana", ["Notice period"], extra)
+  await expect(lookup("ana", ["Notice period"], extra)).rejects.toMatchObject({ code: "TOO_MANY_REQUESTS" })
+  await profile("ana", extra)
+})
+
+test("the server's own daily cap stops every user, and a user refused by it does not use up a slot of their own", async () => {
+  await profile("ana")
+  await profile("ben")
+  const model = mockModel("An answer.")
+  const extra = { model, aiBudget: { dailyCalls: 0, dailyTokens: 0, globalDailyCalls: 2 } }
+  await draft("ana", extra)
+  await draft("ben", extra)
+  await expect(draft("ana", extra)).rejects.toMatchObject({ code: "AI_BUDGET_EXHAUSTED", status: 429 })
+  expect(model.doGenerateCalls).toHaveLength(2)
+  expect((await used("ana")).map((row) => row.calls)).toEqual([1])
+  expect((await db.select().from(aiUsageGlobal)).map((row) => row.calls)).toEqual([2])
+})
+
+test("what a provider reports as usage can't refund the budget", async () => {
+  await profile("ana")
+  const reporting = (input: number) =>
+    new MockLanguageModelV4({
+      doGenerate: async () => ({
+        content: [{ type: "text", text: "An answer." }],
+        finishReason: { unified: "stop", raw: undefined },
+        usage: {
+          inputTokens: { total: input, noCache: undefined, cacheRead: undefined, cacheWrite: undefined },
+          outputTokens: { total: input, text: undefined, reasoning: undefined },
+        },
+        warnings: [],
+      }),
+    })
+  for (const bad of [-500_000, Number.NaN, 1.5, Number.POSITIVE_INFINITY]) await draft("ana", { model: reporting(bad) })
+  const [row] = await used("ana")
+  expect(row?.calls).toBe(4)
+  expect(row?.inputTokens).toBeGreaterThan(0)
+  expect(row?.outputTokens).toBeGreaterThan(0)
+})
+
+test("a metered model refuses streaming, which it can't count", async () => {
+  const { model } = budgetedModels(
+    { db, now: () => DAY, user: { id: "ana" } },
+    { model: mockModel("x"), embeddingModel: null },
+  )
+  let failure: unknown
+  const stream = streamText({
+    model: model!,
+    prompt: "hi",
+    onError: ({ error }) => {
+      failure = error
+    },
+  })
+  await stream.consumeStream()
+  expect(String(failure)).toContain("Streaming is not metered")
+})
+
+test("every override names a real procedure, and every procedure falls in a class with a rule", () => {
+  const paths: string[] = []
+  const walk = (node: object, prefix: string[]) => {
+    for (const [key, value] of Object.entries(node)) {
+      if (value && typeof value === "object" && "~orpc" in value) paths.push([...prefix, key].join("."))
+      else if (value && typeof value === "object") walk(value, [...prefix, key])
+    }
+  }
+  walk(appRouter, [])
+  expect(paths.length).toBeGreaterThan(50)
+  for (const name of Object.keys(CLASS_OVERRIDES)) expect(paths).toContain(name)
+  for (const name of paths) expect(LIMIT_CLASSES).toContain(limitClassOf(name, "GET"))
+  for (const limitClass of Object.values(CLASS_OVERRIDES)) expect(Object.keys(DEFAULT_RATE_RULES)).toContain(limitClass)
 })

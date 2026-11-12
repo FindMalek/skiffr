@@ -1,6 +1,7 @@
 import { ORPCError, os } from "@orpc/server"
 import type { Session } from "@skiffr/auth"
 import type { Context } from "./context"
+import { budgetExhausted, budgetedModels, isBudgetSpent } from "./lib/ai-usage"
 import { safeErrorFields } from "./lib/errors"
 import type { LimitClass } from "./lib/rate-limit"
 import type { TokenAuth } from "./lib/tokens"
@@ -71,27 +72,33 @@ const requireSession = o.middleware(async ({ context, path, next }) => {
   return next({ context: identity })
 })
 
-/** Calls that spend money on a model. Each one is also counted against the daily budget (see `lib/ai-usage.ts`). */
-const AI_PROCEDURES: ReadonlySet<string> = new Set(["ai.mapFields", "ai.draftAnswer", "cv.preview", "notes.summarize"])
-
-/** Calls that fetch from the network (a Reactive Resume instance, a careers page, the mailbox, storage). */
-const EXPENSIVE_PROCEDURES: ReadonlySet<string> = new Set([
-  "cv.connect",
-  "cv.test",
-  "cv.resumes",
-  "cv.setBase",
-  "cv.apply",
-  "cv.pdf",
-  "gmail.syncNow",
-  "jobSources.runNow",
-  "me.avatar",
-])
+/**
+ * Procedures that are not an ordinary read or write. Model calls are also metered against the daily budget, whatever
+ * their class (see `budgetedModels`): `ai` is the request pace, `embed` is the pace of writes that call the embedding provider.
+ */
+export const CLASS_OVERRIDES: Readonly<Record<string, LimitClass>> = {
+  "ai.mapFields": "ai",
+  "ai.draftAnswer": "ai",
+  "cv.preview": "ai",
+  "notes.summarize": "ai",
+  "learning.lookup": "embed",
+  "learning.record": "embed",
+  "answers.create": "embed",
+  "answers.update": "embed",
+  "cv.connect": "expensive",
+  "cv.test": "expensive",
+  "cv.resumes": "expensive",
+  "cv.setBase": "expensive",
+  "cv.apply": "expensive",
+  "cv.pdf": "expensive",
+  "gmail.syncNow": "expensive",
+  "jobSources.runNow": "expensive",
+  "me.avatar": "upload",
+}
 
 /** Every other procedure is a read when it is a GET and a write otherwise, so a new one is limited without being listed. */
 export function limitClassOf(path: string, method: string | undefined): LimitClass {
-  if (AI_PROCEDURES.has(path)) return "ai"
-  if (EXPENSIVE_PROCEDURES.has(path)) return "expensive"
-  return method === "GET" ? "read" : "write"
+  return CLASS_OVERRIDES[path] ?? (method === "GET" ? "read" : "write")
 }
 
 /** Per user, whether the caller is a session or a token. The message holds a wait time and nothing of the request. */
@@ -100,16 +107,33 @@ const limitRate = o.middleware(async ({ context, path, procedure, next }) => {
   if (user && context.limits) {
     const verdict = context.limits.take(user.id, limitClassOf(path.join("."), procedure["~orpc"].route.method))
     if (!verdict.ok) {
+      const seconds = verdict.retryAfterSeconds
       throw new ORPCError("TOO_MANY_REQUESTS", {
-        message: `Too many requests. Try again in ${verdict.retryAfterSeconds} seconds.`,
-        data: { retryAfterSeconds: verdict.retryAfterSeconds },
+        message: `Too many requests. Try again in ${seconds} ${seconds === 1 ? "second" : "seconds"}.`,
+        data: { retryAfterSeconds: seconds },
       })
     }
   }
   return next()
 })
 
-export const protectedProcedure = publicProcedure.use(requireSession).use(limitRate)
+/**
+ * Every model a procedure sees is metered for this user. A spent budget stops the request before the provider is called;
+ * it is an error for a chat call and a quiet skip for the best effort embedding work, which handles its own failure.
+ */
+const meterAi = o.middleware(async ({ context, next }) => {
+  const user = (context as { user?: { id: string } }).user
+  if (!user) return next()
+  const models = budgetedModels({ ...context, user }, { model: context.model, embeddingModel: context.embeddingModel })
+  try {
+    return await next({ context: models })
+  } catch (error) {
+    if (isBudgetSpent(error)) throw budgetExhausted(context.now())
+    throw error
+  }
+})
+
+export const protectedProcedure = publicProcedure.use(requireSession).use(limitRate).use(meterAi)
 
 const requireAdmin = o.middleware(async ({ context, next }) => {
   if (context.session?.user.role !== "admin") throw new ORPCError("FORBIDDEN", { message: "Admins only." })

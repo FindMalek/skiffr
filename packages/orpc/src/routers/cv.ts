@@ -17,7 +17,6 @@ import {
 import { cvConnection, job } from "@skiffr/db"
 import { eq } from "drizzle-orm"
 import type { Context } from "../context"
-import { withAiBudget } from "../lib/ai-usage"
 import { reactiveResume } from "../lib/cv/client"
 import { CvError, type CvErrorKind, logCvFailure } from "../lib/cv/errors"
 import { patchTooLarge } from "../lib/cv/patch"
@@ -198,17 +197,15 @@ export const cvRouter = {
       const target = await jobOf(context, input.jobId)
       const model = context.model
       const result = await guard("cv.preview", () =>
-        withAiBudget(context, model, (metered) =>
-          preview({
-            db: context.db,
-            runtime,
-            model: metered,
-            userId: context.user.id,
-            job: target,
-            description: input.description,
-            spend: () => runtime.budget.take(context.user.id, context.now()),
-          }),
-        ),
+        preview({
+          db: context.db,
+          runtime,
+          model,
+          userId: context.user.id,
+          job: target,
+          description: input.description,
+          spend: () => runtime.budget.take(context.user.id, context.now()),
+        }),
       )
       return {
         baseUpdatedAt: result.baseUpdatedAt,

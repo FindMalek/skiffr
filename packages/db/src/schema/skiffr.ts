@@ -380,3 +380,9 @@ export const aiUsage = pgTable(
   },
   (t) => [primaryKey({ columns: [t.userId, t.day] })],
 )
+
+/** All users' model calls on one UTC day, for the server's own daily cap. */
+export const aiUsageGlobal = pgTable("ai_usage_global", {
+  day: date("day", { mode: "string" }).primaryKey(),
+  calls: integer("calls").notNull().default(0),
+})

@@ -9,7 +9,6 @@ import {
 import { profile } from "@skiffr/db"
 import { eq } from "drizzle-orm"
 import type { Context } from "../context"
-import { withAiBudget } from "../lib/ai-usage"
 import { protectedProcedure } from "../procedures"
 
 /** The profile is read here, not sent by the caller: the payload stays small and a client can't ask about someone else's data. */
@@ -26,7 +25,7 @@ export async function guarded<T>(route: string, run: () => Promise<T>): Promise<
     return await run()
   } catch (error) {
     if (error instanceof AiInputError) throw new ORPCError("BAD_REQUEST", { message: error.message })
-    if (!(error instanceof AiModelError)) throw error
+    if (!(error instanceof AiModelError) || error.kind === "budget") throw error
     const { name, kind, status, modelId, requestId } = error
     console.error(`[${route}]`, { name, kind, status, modelId, requestId })
     throw new ORPCError("SERVICE_UNAVAILABLE", { message: "The AI is unavailable, try again." })
@@ -45,10 +44,7 @@ export const aiRouter = {
     .output(mapFieldsOutputSchema)
     .handler(async ({ context, input }) => {
       const ai = await loadAi(context)
-      const mappings = await guarded("ai.mapFields", () =>
-        withAiBudget(context, ai.model, (model) => mapFields({ ...ai, model, fields: input.fields })),
-      )
-      return { mappings }
+      return { mappings: await guarded("ai.mapFields", () => mapFields({ ...ai, fields: input.fields })) }
     }),
 
   draftAnswer: protectedProcedure
@@ -62,8 +58,6 @@ export const aiRouter = {
     .output(draftAnswerOutputSchema)
     .handler(async ({ context, input }) => {
       const ai = await loadAi(context)
-      return guarded("ai.draftAnswer", () =>
-        withAiBudget(context, ai.model, (model) => draftAnswer({ ...ai, ...input, model })),
-      )
+      return guarded("ai.draftAnswer", () => draftAnswer({ ...ai, ...input }))
     }),
 }

@@ -44,6 +44,12 @@ export async function handleGmail(
   if (!session) return redirect(new URL("/sign-in", dashboardUrl).href)
   const userId = session.user.id
   const now = services.now()
+  const verdict = services.limits?.take(userId, "expensive")
+  if (verdict && !verdict.ok) {
+    const response = refuse(429, "Too many requests. Try again in a moment.")
+    response.headers.set("retry-after", String(verdict.retryAfterSeconds))
+    return response
+  }
 
   if (pathname === "/gmail/connect") {
     const site = request.headers.get("sec-fetch-site")

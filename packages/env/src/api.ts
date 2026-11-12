@@ -3,6 +3,15 @@ import { parseEnv } from "./parse"
 
 const optional = z.string().optional()
 
+/** Digits only, so a stray space or "1e3" is an error and never reads as 0, and within what an int4 column holds. */
+const count = (fallback: number, max = 2_147_483_647) =>
+  z
+    .string()
+    .regex(/^\d+$/, "must be a whole number, digits only")
+    .transform(Number)
+    .pipe(z.number().int().max(max))
+    .default(fallback)
+
 const schema = z.object({
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
   PORT: z.coerce.number().default(3001),
@@ -62,8 +71,17 @@ const schema = z.object({
   OPENAI_API_KEY: optional,
   ANTHROPIC_API_KEY: optional,
   /** Per user and UTC day, kept in the database so it holds across restarts and replicas. 0 means no limit. */
-  AI_DAILY_CALLS: z.coerce.number().int().min(0).default(300),
-  AI_DAILY_TOKENS: z.coerce.number().int().min(0).default(1_000_000),
+  AI_DAILY_CALLS: count(600),
+  AI_DAILY_TOKENS: count(1_000_000),
+  /** Model calls the whole server may make per UTC day, all users together: the guard against many free accounts. 0 means no limit. */
+  AI_GLOBAL_DAILY_CALLS: count(0),
+
+  /** Where the api finds the client address: the header the proxy in front sets, and how many proxies append to it. 0 ignores the header and uses the connection's own address. */
+  CLIENT_IP_HEADER: z
+    .string()
+    .regex(/^[a-z0-9-]+$/i)
+    .default("x-forwarded-for"),
+  TRUSTED_PROXY_COUNT: count(1, 10),
 })
 
 const GMAIL_KEYS = ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GMAIL_ENCRYPTION_KEY"] as const
