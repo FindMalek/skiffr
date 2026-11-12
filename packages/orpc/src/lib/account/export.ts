@@ -1,5 +1,5 @@
 import { ORPCError } from "@orpc/server"
-import { ACCOUNT_EXPORT_ROWS_MAX, ACCOUNT_EXPORT_VERSION } from "@skiffr/common/constants"
+import { ACCOUNT_EXPORT_BYTES_MAX, ACCOUNT_EXPORT_ROWS_MAX, ACCOUNT_EXPORT_VERSION } from "@skiffr/common/constants"
 import type { AccountExport } from "@skiffr/common/schemas"
 import {
   aiUsage,
@@ -17,7 +17,7 @@ import {
   profile,
   siteProfile,
 } from "@skiffr/db"
-import { asc, count, eq, getTableColumns } from "drizzle-orm"
+import { asc, count, eq, getTableColumns, type SQL, sql } from "drizzle-orm"
 import type { PgTable } from "drizzle-orm/pg-core"
 
 type UserTable = PgTable & { userId: Parameters<typeof eq>[0] }
@@ -78,22 +78,43 @@ export const NOT_EXPORTED: Record<string, string> = {
 const selection = ({ table, omit }: Spec) =>
   Object.fromEntries(Object.entries(getTableColumns(table)).filter(([key]) => !omit.includes(key)))
 
-/** Everything the user owns in one document, read in one snapshot. Refuses an account above `ACCOUNT_EXPORT_ROWS_MAX` rows rather than building a document that can't be held in memory. */
+/** The text length of the exported columns of one row, in bytes: what the document will weigh, not what is stored (stored values are compressed). */
+const rowBytes = (spec: Spec): SQL => {
+  const columns = Object.values(selection(spec))
+  return sql.join(
+    columns.map((column) => sql`coalesce(octet_length(${column}::text), 0)`),
+    sql` + `,
+  )
+}
+
+export interface ExportLimits {
+  rows: number
+  bytes: number
+}
+
+/** Everything the user owns in one document, read in one snapshot. Refuses an account above the limits (rows and, mostly, bytes) rather than building a document that can't be held in memory. */
 export async function buildExport(
   db: Db,
   owner: { id: string; name: string; email: string; image: string | null; createdAt: Date },
   now: Date,
+  limits: ExportLimits = { rows: ACCOUNT_EXPORT_ROWS_MAX, bytes: ACCOUNT_EXPORT_BYTES_MAX },
 ): Promise<AccountExport> {
   return db.transaction(
     async (tx) => {
       let rows = 0
-      for (const { table } of EXPORTED) {
-        const [total] = await tx.select({ n: count() }).from(table).where(eq(table.userId, owner.id))
+      let bytes = 0
+      for (const spec of EXPORTED) {
+        const [total] = await tx
+          .select({ n: count(), bytes: sql<string>`coalesce(sum(${rowBytes(spec)}), 0)` })
+          .from(spec.table)
+          .where(eq(spec.table.userId, owner.id))
         rows += total?.n ?? 0
+        bytes += Number(total?.bytes ?? 0)
       }
-      if (rows > ACCOUNT_EXPORT_ROWS_MAX) {
+      if (rows > limits.rows || bytes > limits.bytes) {
+        const mb = (n: number) => `${Math.ceil(n / 1024 / 1024)} MB`
         throw new ORPCError("PAYLOAD_TOO_LARGE", {
-          message: `Too much to export in one file (${rows} rows, the limit is ${ACCOUNT_EXPORT_ROWS_MAX}). Ask whoever runs this instance for a database dump.`,
+          message: `Too much to export in one file (${rows} rows, about ${mb(bytes)}; the limits are ${limits.rows} rows and ${mb(limits.bytes)}). Ask whoever runs this instance for a database dump.`,
         })
       }
       const document: Record<string, unknown> = {

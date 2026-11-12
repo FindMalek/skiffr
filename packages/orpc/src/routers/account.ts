@@ -10,7 +10,7 @@ import {
   okSchema,
   profileInputSchema,
 } from "@skiffr/common/schemas"
-import { account, user } from "@skiffr/db"
+import { account, session as sessionTable, user } from "@skiffr/db"
 import { and, count, desc, eq, isNotNull } from "drizzle-orm"
 import { z } from "zod"
 import type { Context } from "../context"
@@ -48,10 +48,12 @@ export const meRouter = {
     .input(profileInputSchema)
     .output(okSchema)
     .handler(async ({ context, input }) => {
-      await context.db
+      const changed = await context.db
         .update(user)
         .set({ name: input.name, updatedAt: context.now() })
         .where(eq(user.id, context.user.id))
+        .returning({ id: user.id })
+      if (changed.length === 0) throw new ORPCError("NOT_FOUND", { message: "This account no longer exists." })
       return { ok: true as const }
     }),
 
@@ -67,7 +69,16 @@ export const meRouter = {
       const key = `${context.storage.prefix}avatars/${context.user.id}-${Date.now()}.${ext}`
       await context.storage.put(key, await input.file.arrayBuffer(), input.file.type)
       const image = `/api/files/${key}`
-      await context.db.update(user).set({ image, updatedAt: context.now() }).where(eq(user.id, context.user.id))
+      const changed = await context.db
+        .update(user)
+        .set({ image, updatedAt: context.now() })
+        .where(eq(user.id, context.user.id))
+        .returning({ id: user.id })
+      if (changed.length === 0) {
+        // The account was deleted while this request ran: nothing would ever point at the file.
+        await context.storage.delete(key).catch(() => {})
+        throw new ORPCError("NOT_FOUND", { message: "This account no longer exists." })
+      }
       return { image }
     }),
 }
@@ -88,18 +99,42 @@ async function confirmDeletion(
     .from(account)
     .where(and(eq(account.userId, context.user.id), eq(account.providerId, "credential"), isNotNull(account.password)))
   if (credential) {
-    const valid = input.password
-      ? await context.auth.api.verifyPassword({ body: { password: input.password }, headers: context.headers }).then(
-          () => true,
-          () => false,
-        )
-      : false
-    if (!valid) throw new ORPCError("UNAUTHORIZED", { message: "Wrong password." })
+    if (!input.password || !(await passwordIsRight(context, input.password))) {
+      throw new ORPCError("UNAUTHORIZED", { message: "Wrong password." })
+    }
     return
   }
-  const signedInAt = context.session?.session.createdAt.getTime() ?? 0
-  if (context.now().getTime() - signedInAt > ACCOUNT_FRESH_SESSION_MINUTES * 60_000) {
+  // The authoritative session row, not the cookie cache: a session the user revoked a minute ago is not fresh.
+  const row = await sessionRow(context)
+  if (!row || context.now().getTime() - row.createdAt.getTime() > ACCOUNT_FRESH_SESSION_MINUTES * 60_000) {
     throw new ORPCError("FORBIDDEN", { message: "Sign in again, then delete your account." })
+  }
+}
+
+/** Only a wrong password is "wrong password": any other failure (database, session) stays the server error it is. */
+async function passwordIsRight(context: Context, password: string): Promise<boolean> {
+  try {
+    await context.auth.api.verifyPassword({ body: { password }, headers: context.headers })
+    return true
+  } catch (error) {
+    if ((error as { body?: { code?: string } }).body?.code === "INVALID_PASSWORD") return false
+    throw error
+  }
+}
+
+async function sessionRow(context: Context) {
+  if (!context.session) return undefined
+  const [row] = await context.db
+    .select({ createdAt: sessionTable.createdAt, impersonatedBy: sessionTable.impersonatedBy })
+    .from(sessionTable)
+    .where(eq(sessionTable.id, context.session.session.id))
+  return row
+}
+
+/** An admin impersonating a user is not the user: no export, no deletion, whatever the password says. */
+async function refuseImpersonation(context: Context): Promise<void> {
+  if ((await sessionRow(context))?.impersonatedBy) {
+    throw new ORPCError("FORBIDDEN", { message: "Not while signed in as someone else." })
   }
 }
 
@@ -114,6 +149,7 @@ export const accountRouter = {
     })
     .output(accountExportSchema)
     .handler(async ({ context }) => {
+      await refuseImpersonation(context)
       const [owner] = await context.db.select().from(user).where(eq(user.id, context.user.id))
       if (!owner) throw new ORPCError("NOT_FOUND", { message: "This account no longer exists." })
       const document = await buildExport(context.db, owner, context.now())
@@ -131,6 +167,7 @@ export const accountRouter = {
     .input(accountDeleteInputSchema)
     .output(accountDeleteOutputSchema)
     .handler(async ({ context, input }) => {
+      await refuseImpersonation(context)
       await confirmDeletion(context, input)
       const result = await deleteAccount(
         { db: context.db, gmail: context.gmail, storage: context.storage },

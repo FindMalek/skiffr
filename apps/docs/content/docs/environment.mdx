@@ -46,7 +46,7 @@ Tailoring your CV through Reactive Resume (`CV_ENCRYPTION_KEY`) is optional and 
 
 Watching careers pages and feeds (`WATCH_SCHEDULER`, `WATCH_REFRESH_MINUTES`) needs no keys and is described in [Job sources](/docs/sources).
 
-Every signed-in call is also rate limited per user in the api's memory (reads, writes, writes that call the embedding provider, model calls, uploads and anything that fetches the network each have their own bucket). With several replicas each one counts on its own, so the daily budget above is the real cost control. Sign-in and sign-up are limited per client address by better-auth in production, counted in the database (old rows are pruned hourly). They are not limited per account, so one email tried from many addresses is not slowed. Requests to made-up `/auth/*` paths each write a row until it is pruned: cap them at the proxy if that matters to you.
+Every signed-in call is also rate limited per user in the api's memory (reads, writes, writes that call the embedding provider, model calls, uploads, anything that fetches the network, and the export and delete of your own account each have their own bucket). With several replicas each one counts on its own, so the daily budget above is the real cost control. Sign-in and sign-up are limited per client address by better-auth in production, counted in the database (old rows are pruned hourly). They are not limited per account, so one email tried from many addresses is not slowed. Requests to made-up `/auth/*` paths each write a row until it is pruned: cap them at the proxy if that matters to you.
 
 What each provider receives is listed in [privacy and data flow](/docs/privacy).
 

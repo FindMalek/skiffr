@@ -137,7 +137,9 @@ export const CV_REJECTIONS = [
 ] as const
 /** Shape version of the `account.export` document: bump it when a section or a field is renamed or removed. */
 export const ACCOUNT_EXPORT_VERSION = 1
-/** Rows in one export across all sections: a bigger account gets a clear error instead of a document that can't be built in memory. */
-export const ACCOUNT_EXPORT_ROWS_MAX = 20_000
+/** Rows in one export across all sections. */
+export const ACCOUNT_EXPORT_ROWS_MAX = 100_000
+/** Size of one export in bytes (the text of the exported columns). It is built in memory and about six times that is held while it is validated and sent, so this is the real bound. */
+export const ACCOUNT_EXPORT_BYTES_MAX = 25 * 1024 * 1024
 /** A session older than this can't delete an account that has no password to type. */
 export const ACCOUNT_FRESH_SESSION_MINUTES = 10

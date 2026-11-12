@@ -29,9 +29,13 @@ async function retryAfterOf(response: Response): Promise<string | null> {
   return typeof seconds === "number" && Number.isFinite(seconds) ? String(Math.max(1, Math.ceil(seconds))) : null
 }
 
-async function withRequestId(response: Response, requestId: string): Promise<Response> {
+/** A full dump of the user's data: no cache or proxy may keep it. */
+const EXPORT_PATH = /\/account\/export$/
+
+async function withRequestId(response: Response, requestId: string, pathname: string): Promise<Response> {
   const headers = new Headers(response.headers)
   headers.set("x-request-id", requestId)
+  if (EXPORT_PATH.test(pathname)) headers.set("cache-control", "no-store")
   const wait = await retryAfterOf(response)
   if (wait) headers.set("retry-after", wait)
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
@@ -115,9 +119,9 @@ export function createServer(
       prefix: "/rpc",
       context,
     })
-    if (viaRpc.matched) return await withRequestId(viaRpc.response, requestId)
+    if (viaRpc.matched) return await withRequestId(viaRpc.response, requestId, pathname)
     const viaRest = await rest.handle(request, { prefix: "/v1", context })
-    if (viaRest.matched) return await withRequestId(viaRest.response, requestId)
+    if (viaRest.matched) return await withRequestId(viaRest.response, requestId, pathname)
     return Response.json({ message: "Not found." }, { status: 404 })
   }
 
