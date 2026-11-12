@@ -15,6 +15,21 @@ export const PROFILE_FIELDS_MAX = 200
 export const JOB_SEARCH_MAX = 100
 export const JOB_SOURCES_MAX = 50
 export const JOB_BULK_MAX = 100
+export const STATS_RANGES = [7, 30, 90] as const
+export const STATS_DEFAULT_DAYS = 30
+/** Rows in the by-ats and by-role tables. */
+export const STATS_TOP = 10
+/** Sources shown one by one in the funnel; the rest are summed into one row. */
+export const STATS_SOURCES_SHOWN = 8
+/** A rate over fewer applications than this is not shown: it would only be noise. */
+export const STATS_MIN_SAMPLE = 5
+/** Match score buckets, lowest first. A score is in the first bucket whose `max` it does not pass. */
+export const MATCH_BUCKETS = [
+  { key: "0-49", max: 49 },
+  { key: "50-69", max: 69 },
+  { key: "70-84", max: 84 },
+  { key: "85-100", max: 100 },
+] as const
 export const JOB_SETTABLE_STATUSES = ["queued", "skipped"] as const
 export const AI_FIELDS_MAX = 60
 export const AI_OPTIONS_MAX = 50

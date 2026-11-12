@@ -10,6 +10,7 @@ import { learningRouter } from "./learning"
 import { notesRouter } from "./notes"
 import { profileRouter } from "./profile"
 import { publicRouter } from "./public"
+import { statsRouter } from "./stats"
 import { extensionRouter, tokensRouter } from "./tokens"
 
 const admin = {
@@ -29,6 +30,7 @@ export const appRouter = {
   jobs: jobsRouter,
   applications: applicationsRouter,
   jobSources: jobSourcesRouter,
+  stats: statsRouter,
   tokens: tokensRouter,
   extension: extensionRouter,
   admin,
