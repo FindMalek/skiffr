@@ -1,29 +1,6 @@
-import type { BrowserContext, Page, Worker } from "@playwright/test"
+import { connect, FIELDS, FILLED, openApplication } from "../fixtures/application.ts"
 import { expect, test } from "../fixtures/extension.ts"
-import { ATS_PAGES } from "../fixtures/pages.ts"
-import { ToastDriver } from "../fixtures/toast.ts"
-import { MOCK_TOKEN, type MockApi } from "../mock-api/server.ts"
-
-const FIELDS = {
-  first: "#first_name",
-  last: "#last_name",
-  email: "#email",
-  phone: "#phone",
-}
-const FILLED = /^Filled \d+ fields?/
-
-async function connect(worker: Worker, api: MockApi, token = MOCK_TOKEN): Promise<void> {
-  await worker.evaluate((settings) => chrome.storage.local.set({ settings }), { apiUrl: api.url, token })
-}
-
-async function openApplication(context: BrowserContext, origin: string): Promise<{ page: Page; toast: ToastDriver }> {
-  const page = await context.newPage()
-  await page.goto(`${origin}${ATS_PAGES.greenhouse.path}`)
-  await page.bringToFront()
-  const toast = await ToastDriver.attach(context, page)
-  await toast.waitFor((s) => s.buttons.some((b) => b.action === "yes"))
-  return { page, toast }
-}
+import { MOCK_TOKEN } from "../mock-api/server.ts"
 
 test.beforeEach(({ mockApi, fixtureServer }) => {
   mockApi.reset()
