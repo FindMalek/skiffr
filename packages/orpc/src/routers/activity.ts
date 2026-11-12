@@ -23,7 +23,7 @@ export const activityRouter = {
       const page = rows.slice(0, input.limit)
       const last = page.at(-1)
       return {
-        items: page.flatMap((row) => toEvent(row) ?? []),
+        items: page.flatMap((row) => toEvent(row, since) ?? []),
         nextCursor:
           rows.length > input.limit && last ? encodeCursor({ at: last.at, kind: last.kind, key: last.key }) : null,
         since,

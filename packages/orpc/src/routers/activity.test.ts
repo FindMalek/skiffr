@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test"
+import { createHash } from "node:crypto"
 import { PGlite } from "@electric-sql/pglite"
 import { vector } from "@electric-sql/pglite-pgvector"
 import { call } from "@orpc/server"
@@ -317,4 +318,115 @@ test("the feed is session only: a token is refused and nothing here is on the to
   const noCsrf = { context: { ...jo.as().context, headers: new Headers() } as Context }
   await expect(call(appRouter.activity.list, {}, noCsrf)).rejects.toMatchObject({ code: "FORBIDDEN" })
   expect(limitClassOf("activity.list", "GET")).toBe("read")
+})
+
+test("an event keeps its own time, and an hour bucket that starts before since is shown at since with only the rows after it", async () => {
+  const ian = await newUser()
+  await addJob(ian, 1, at("2026-11-12T10:15:00Z"), { source: "gmail:indeed" })
+  await addJob(ian, 2, at("2026-11-12T10:45:00Z"), { source: "gmail:indeed" })
+  const bucket = at("2026-11-12T10:00:00Z").getTime()
+  const sinceIso = "2026-11-12T10:30:00Z"
+  const [event] = (await list(ian, { since: sinceIso })).items
+  expect(event).toMatchObject({ kind: "jobs_queued", count: 1 })
+  expect(event!.at.getTime()).toBe(at(sinceIso).getTime())
+  expect(event!.id).toBe(`jobs_queued:${bucket}:${createHash("md5").update("gmail:indeed").digest("hex")}`)
+  expect((await list(ian)).items[0]!.at.getTime()).toBe(bucket)
+
+  await db.insert(fieldEvent).values(
+    ["10:15", "10:45"].map((time) => ({
+      userId: ian.id,
+      siteKey: "x.example",
+      fingerprint: "f",
+      normalizedLabel: "l",
+      rawLabel: "l",
+      filledValue: "a",
+      finalValue: "a",
+      source: "profile" as const,
+      outcome: "accepted" as const,
+      createdAt: at(`2026-11-12T${time}:00Z`),
+    })),
+  )
+  const filled = (await list(ian, { since: sinceIso })).items.find((e) => e.kind === "fields_filled")
+  expect(filled).toMatchObject({ count: 1 })
+  expect(filled!.at.getTime()).toBe(at(sinceIso).getTime())
+  const applied = await addJob(ian, 3, at("2026-11-12T11:00:00Z"), { status: "applied" })
+  await db
+    .insert(application)
+    .values({ userId: ian.id, jobId: applied.id, ats: "x", appliedAt: at("2026-11-12T11:05:00.250Z") })
+  const item = (await list(ian)).items.find((e) => e.kind === "job_applied")
+  expect(item!.at.getTime()).toBe(at("2026-11-12T11:05:00.250Z").getTime())
+  expect(item!.id).toMatch(/^job_applied:\d+:[0-9a-f-]{36}$/)
+})
+
+test("answers: a rejected one, a typed one and one created and corrected inside the window are not double counted or shown wrongly", async () => {
+  const kim = await newUser()
+  const row = (label: string, extra: Partial<typeof answer.$inferInsert>) => ({
+    userId: kim.id,
+    normalizedLabel: label,
+    rawLabel: label,
+    value: "v",
+    ...extra,
+  })
+  await db.insert(answer).values([
+    row("rejected new", { source: "autofill", status: "rejected", createdAt: at("2026-11-12T10:00:00Z") }),
+    row("rejected old", {
+      source: "autofill",
+      status: "rejected",
+      createdAt: at("2026-09-01T00:00:00Z"),
+      lastCorrectedAt: at("2026-11-12T10:00:00Z"),
+    }),
+    row("typed", { source: "manual", status: "confirmed", createdAt: at("2026-11-12T10:00:00Z") }),
+    row("both", {
+      source: "autofill",
+      createdAt: at("2026-11-12T10:00:00Z"),
+      lastCorrectedAt: at("2026-11-12T11:00:00Z"),
+    }),
+  ])
+  const items = (await list(kim)).items
+  expect(items.map((e) => [e.kind, "label" in e ? e.label : ""])).toEqual([["answer_learned", "both"]])
+})
+
+test("fields before since, a source that checked fine and a gmail account without an error are not events", async () => {
+  const lou = await newUser()
+  await db.insert(fieldEvent).values({
+    userId: lou.id,
+    siteKey: "old.example",
+    fingerprint: "f",
+    normalizedLabel: "l",
+    rawLabel: "l",
+    filledValue: "a",
+    finalValue: "a",
+    source: "profile",
+    outcome: "accepted",
+    createdAt: at("2026-11-12T08:00:00Z"),
+  })
+  await db.insert(jobSource).values({
+    userId: lou.id,
+    url: "https://careers.fine.dev/feed",
+    status: "ok",
+    lastCheckedAt: at("2026-11-12T12:00:00Z"),
+  })
+  await db.insert(gmailAccount).values({
+    userId: lou.id,
+    email: "lou@gmail.test",
+    refreshTokenEnc: "x",
+    scopes: "x",
+    updatedAt: at("2026-11-12T12:00:00Z"),
+  })
+  expect((await list(lou, { since: "2026-11-12T09:00:00Z" })).items).toEqual([])
+  expect((await list(lou)).items.map((e) => e.kind)).toEqual(["fields_filled"])
+})
+
+test("a cursor with a NUL, an unknown kind or a bad key is a 400, never a database error", async () => {
+  const max = await newUser()
+  const forge = (cursor: object) => Buffer.from(JSON.stringify(cursor)).toString("base64url")
+  for (const bad of [
+    { at: 1, kind: "jobs_queued", key: "a\u0000b" },
+    { at: 1, kind: "nope", key: "abc" },
+    { at: 1, kind: "jobs_queued", key: "ABC DEF" },
+    { at: 1, kind: "jobs_queued", key: "a".repeat(81) },
+    { at: -1, kind: "jobs_queued", key: "abc" },
+  ]) {
+    await expect(list(max, { cursor: forge(bad) }), JSON.stringify(bad)).rejects.toMatchObject({ code: "BAD_REQUEST" })
+  }
 })

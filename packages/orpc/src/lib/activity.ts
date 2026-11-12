@@ -1,5 +1,5 @@
 import { ACTIVITY_WINDOW_DAYS, APPLICATION_STATUSES } from "@skiffr/common/constants"
-import type { ActivityEvent, ActivityKind } from "@skiffr/common/schemas"
+import { ACTIVITY_KINDS, type ActivityEvent, type ActivityKind } from "@skiffr/common/schemas"
 import { displayText, linkHost } from "@skiffr/common/utils"
 import { answer, apiToken, application, type Db, fieldEvent, gmailAccount, job, jobSource } from "@skiffr/db"
 import { and, desc, eq, gte, isNotNull, isNull, lt, lte, ne, type SQL, sql } from "drizzle-orm"
@@ -13,7 +13,11 @@ const TEXT_MAX = 120
 
 export type Cursor = { at: number; kind: string; key: string }
 
-const cursorSchema = z.object({ at: z.number().int(), kind: z.string().max(40), key: z.string().max(80) })
+const cursorSchema = z.object({
+  at: z.number().int().nonnegative(),
+  kind: z.enum(ACTIVITY_KINDS),
+  key: z.string().regex(/^[0-9a-z:-]{1,80}$/),
+})
 
 export const encodeCursor = (cursor: Cursor): string => Buffer.from(JSON.stringify(cursor)).toString("base64url")
 
@@ -74,6 +78,8 @@ function legs(db: Db, userId: string, since: Date, now: Date, cursor: Cursor | n
     n: n.as("n"),
   })
   const paged = (kind: ActivityKind, at: SQL<number>, key: SQL<string>) => after(cursor, kind, at, key)
+  /** The same cursor cut on the raw column, so an index on it can narrow the scan: every row after the cursor is before this moment. */
+  const before = (column: PgColumn, slackMs = 1) => (cursor ? lt(column, new Date(cursor.at + slackMs)) : undefined)
 
   const stage = (name: (typeof APPLICATION_STATUSES)[number], column: PgColumn) => {
     const at = ms(column)
@@ -82,7 +88,9 @@ function legs(db: Db, userId: string, since: Date, now: Date, cursor: Cursor | n
       .select(row("application_stage", at, key, text(job.title), text(job.company), text(name)))
       .from(application)
       .innerJoin(job, eq(job.id, application.jobId))
-      .where(and(eq(application.userId, userId), gte(column, since), paged("application_stage", at, key)))
+      .where(
+        and(eq(application.userId, userId), gte(column, since), before(column), paged("application_stage", at, key)),
+      )
       .orderBy(desc(at), desc(key))
       .limit(take)
   }
@@ -107,7 +115,7 @@ function legs(db: Db, userId: string, since: Date, now: Date, cursor: Cursor | n
     db
       .select(row("jobs_queued", queuedAt, queuedKey, text(job.source), none, none, sql<number>`count(*)::int`))
       .from(job)
-      .where(and(eq(job.userId, userId), gte(job.queuedAt, since)))
+      .where(and(eq(job.userId, userId), gte(job.queuedAt, since), before(job.queuedAt, HOUR_S * 1000)))
       .groupBy(queuedAt, job.source)
       .having(paged("jobs_queued", queuedAt, queuedKey))
       .orderBy(desc(queuedAt), desc(queuedKey))
@@ -138,6 +146,7 @@ function legs(db: Db, userId: string, since: Date, now: Date, cursor: Cursor | n
           eq(answer.source, "autofill"),
           ne(answer.status, "rejected"),
           gte(answer.createdAt, since),
+          before(answer.createdAt),
           paged("answer_learned", learnedAt, learnedKey),
         ),
       )
@@ -152,6 +161,7 @@ function legs(db: Db, userId: string, since: Date, now: Date, cursor: Cursor | n
           ne(answer.status, "rejected"),
           gte(answer.lastCorrectedAt, since),
           lt(answer.createdAt, since),
+          before(answer.lastCorrectedAt),
           paged("answer_corrected", correctedAt, learnedKey),
         ),
       )
@@ -162,7 +172,13 @@ function legs(db: Db, userId: string, since: Date, now: Date, cursor: Cursor | n
         row("fields_filled", filledAt, filledKey, text(fieldEvent.siteKey), none, none, sql<number>`count(*)::int`),
       )
       .from(fieldEvent)
-      .where(and(eq(fieldEvent.userId, userId), gte(fieldEvent.createdAt, since)))
+      .where(
+        and(
+          eq(fieldEvent.userId, userId),
+          gte(fieldEvent.createdAt, since),
+          before(fieldEvent.createdAt, HOUR_S * 1000),
+        ),
+      )
       .groupBy(filledAt, fieldEvent.siteKey)
       .having(paged("fields_filled", filledAt, filledKey))
       .orderBy(desc(filledAt), desc(filledKey))
@@ -175,6 +191,7 @@ function legs(db: Db, userId: string, since: Date, now: Date, cursor: Cursor | n
           eq(gmailAccount.userId, userId),
           isNotNull(gmailAccount.lastError),
           gte(gmailAccount.updatedAt, since),
+          before(gmailAccount.updatedAt),
           paged("gmail_failed", gmailAt, gmailKey),
         ),
       )
@@ -197,6 +214,7 @@ function legs(db: Db, userId: string, since: Date, now: Date, cursor: Cursor | n
           eq(jobSource.userId, userId),
           eq(jobSource.status, "error"),
           gte(jobSource.lastCheckedAt, since),
+          before(jobSource.lastCheckedAt),
           paged("source_failed", sourceAt, sourceKey),
         ),
       )
@@ -211,6 +229,7 @@ function legs(db: Db, userId: string, since: Date, now: Date, cursor: Cursor | n
           isNull(apiToken.revokedAt),
           gte(apiToken.expiresAt, since),
           lte(apiToken.expiresAt, now),
+          before(apiToken.expiresAt),
           paged("token_expired", tokenAt, tokenKey),
         ),
       )
@@ -247,8 +266,13 @@ const show = (value: string | null) => displayText(value ?? "", TEXT_MAX)
 const STAGES = new Set<string>(APPLICATION_STATUSES)
 
 /** A row to its event. Every piece of text is page or email text, so it is neutralized here and the client only renders it as text. */
-export function toEvent(row: FeedRow): ActivityEvent | null {
-  const base = { id: `${row.kind}:${row.at}:${row.key}`, at: new Date(row.at) }
+export function toEvent(row: FeedRow, since: Date): ActivityEvent | null {
+  /** An hour bucket starts before `since` when `since` falls inside it: only rows at or after `since` were counted, so it is shown at `since`. */
+  const bucketed = row.kind === "jobs_queued" || row.kind === "fields_filled"
+  const base = {
+    id: `${row.kind}:${row.at}:${row.key}`,
+    at: new Date(bucketed ? Math.max(row.at, since.getTime()) : row.at),
+  }
   switch (row.kind) {
     case "jobs_queued":
       return { ...base, kind: "jobs_queued", source: show(row.a), count: row.n }

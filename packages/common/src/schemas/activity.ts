@@ -4,12 +4,24 @@ import { queryInt } from "./query"
 
 export const activityListInputSchema = z
   .object({
-    /** Only events at or after this moment. Older than the feed window counts as the window start. */
+    /** Only what happened at or after this moment, never older than the feed window. Keep it the same while paging with a cursor. */
     since: z.iso.datetime({ offset: true }).optional(),
     cursor: z.string().min(1).max(300).optional(),
     limit: queryInt(z.number().int().min(1).max(ACTIVITY_LIMIT_MAX)).default(ACTIVITY_LIMIT_DEFAULT),
   })
   .prefault({})
+
+export const ACTIVITY_KINDS = [
+  "jobs_queued",
+  "job_applied",
+  "application_stage",
+  "answer_learned",
+  "answer_corrected",
+  "fields_filled",
+  "gmail_failed",
+  "source_failed",
+  "token_expired",
+] as const
 
 const base = { id: z.string(), at: z.date() }
 const text = z.string()
