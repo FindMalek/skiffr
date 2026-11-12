@@ -378,7 +378,13 @@ const GENERATED = /^(none|normal|""|'')?$/
 
 /** A label with no text of its own whose words are drawn by CSS (`::before`, `::after`): the page asks something we cannot read. */
 function drawnByCss(el: HTMLElement, ctx: Ctx): boolean {
-  return labelsFor(el, ctx).some((label) => {
+  const named = (el.getAttribute("aria-labelledby") ?? "")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 5)
+    .map((id) => byId(el, id))
+    .filter(isElement)
+  return [...labelsFor(el, ctx), ...named].some((label) => {
     if (textOf(label)) return false
     try {
       const win = view(label)

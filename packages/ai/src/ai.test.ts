@@ -964,3 +964,117 @@ test("ordinary questions in the same languages stay readable", () => {
     expect(isSensitiveQuestion({ label }), label).toBe(false)
   }
 })
+
+test("permission to contact, permission to keep or use data, opt-ins and signatures are the person's own", () => {
+  for (const label of [
+    "May we contact your current employer?",
+    "Can we contact your references?",
+    "Do we have your permission to contact your employer?",
+    "I give Acme permission to process my data",
+    "I allow Acme to retain my CV",
+    "Keep my profile for future openings",
+    "Send me similar jobs",
+    "Yes, I want to receive job alerts",
+    "Yes, you may store my application for 12 months",
+    "Are you happy for us to keep your details on file?",
+    "Je donne mon accord pour la conservation de mes données",
+    "Doy mi autorización",
+    "Autorización para contactar a su empleador",
+    "Erlaubnis zur Kontaktaufnahme",
+    "Arbeitgeber kontaktieren",
+    "Daten speichern",
+    "Quiero recibir el boletín",
+    "أمنح موافقتي",
+    "أبدي موافقتي على معالجة البيانات",
+    "أسمح بالاحتفاظ بسيرتي الذاتية",
+    "إذن الاتصال بصاحب العمل",
+    "تفويض",
+    "Signature",
+    "Electronic signature",
+    "E-signature",
+    "Sign here",
+    "Typed name as signature",
+    "Date signed",
+    "Unterschrift",
+    "Firma",
+    "Firma electrónica",
+    "Firma del solicitante",
+    "التوقيع",
+  ]) {
+    expect(isSensitiveQuestion({ label }), label).toBe(true)
+  }
+})
+
+test("work authorization, a company's Firma and a driving licence requirement stay readable", () => {
+  for (const label of [
+    "Are you authorized to work in the United States?",
+    "Are you legally authorised to work in the UK?",
+    "Êtes-vous autorisé à travailler en France ?",
+    "¿Tiene autorización para trabajar en España?",
+    "Haben Sie eine Arbeitsgenehmigung?",
+    "Do you require a work permit?",
+    "Company (Firma)",
+    "Firmenname",
+    "Do you have a valid driver's license?",
+    "Avez-vous le permis de conduire ?",
+    "Age of your oldest project",
+    "Contact email",
+    "Preferred contact method",
+    "Where can we reach you?",
+  ]) {
+    expect(isSensitiveQuestion({ label }), label).toBe(false)
+  }
+  // still private: the number, and a bare "driving licence" field
+  expect(isSensitiveQuestion({ label: "Driver's license number" })).toBe(true)
+  expect(isSensitiveQuestion({ label: "Driving licence" })).toBe(true)
+  expect(isSensitiveQuestion({ label: "Age" })).toBe(true)
+})
+
+test("family, union, birth country and age and salutation wording in the claimed languages", () => {
+  for (const label of [
+    "Number of children",
+    "Do you have dependents?",
+    "Spouse name",
+    "Union membership",
+    "Country of birth",
+    "Year you were born",
+    "Faith",
+    "Indigenous status",
+    "Branch of service",
+    "Honorific",
+    "Nombre d'enfants à charge",
+    "Appartenance syndicale",
+    "Anzahl der Kinder",
+    "Gewerkschaftsmitglied",
+    "Número de hijos",
+    "Afiliación sindical",
+    "عدد الأطفال",
+    "Wie alt sind Sie?",
+    "¿Cuántos años tiene?",
+    "كم عمرك؟",
+    "Ethnische Zugehörigkeit",
+    "Staatsbürgerschaft",
+    "اللقب",
+  ]) {
+    expect(isSensitiveQuestion({ label }), label).toBe(true)
+  }
+})
+
+test("a neutral label is still private when its answers are honorifics, marital states, beliefs, races or age bands", () => {
+  const neutral = (options: string[]) => isSensitiveQuestion({ label: "Please choose", options })
+  expect(neutral(["Mr", "Mrs", "Ms", "Mx"])).toBe(true)
+  expect(neutral(["Herr", "Frau"])).toBe(true)
+  expect(neutral(["Señor", "Señora"])).toBe(true)
+  expect(neutral(["Single", "Married", "Divorced"])).toBe(true)
+  expect(neutral(["Soltero", "Casado"])).toBe(true)
+  expect(neutral(["Christian", "Muslim", "Jewish"])).toBe(true)
+  expect(neutral(["Asian", "White", "Black"])).toBe(true)
+  expect(neutral(["Blanc", "Noir", "Asiatique"])).toBe(true)
+  expect(neutral(["Under 25", "25-34", "35-44", "65+"])).toBe(true)
+  expect(neutral(["Yes, I have a disability", "No, I do not have a disability"])).toBe(true)
+  expect(neutral(["I am a veteran", "I am not a veteran"])).toBe(true)
+  expect(neutral(["Remote", "On site", "Hybrid"])).toBe(false)
+  expect(neutral(["1-2 years", "3-5 years", "5+ years"])).toBe(false)
+  expect(neutral(["Single room", "Shared room"])).toBe(false)
+  expect(neutral(["Yes", "No"])).toBe(false)
+})

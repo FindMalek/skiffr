@@ -213,6 +213,162 @@ const CONSENT_MORE_PHRASES = [
   "موافقه",
 ]
 
+/**
+ * Permission, authorization and opt-in questions: contacting an employer or references, keeping or using the person's
+ * data, job alerts and newsletters, signatures. A yes is an act done in their name, so it is theirs to give. `authoriz`
+ * words are handled apart, because "authorized to work" is the work authorization question and stays fillable.
+ */
+const PERMISSION_PHRASES = [
+  // en
+  "permission",
+  "may we contact",
+  "can we contact",
+  "could we contact",
+  "contact your current employer",
+  "contact your previous employer",
+  "contact your employer",
+  "contact your references",
+  "contact references",
+  "contact your referees",
+  "i allow",
+  "allow us to",
+  "allow acme",
+  "you may store",
+  "you may keep",
+  "you may retain",
+  "you may contact",
+  "may store my",
+  "happy for us to",
+  "keep my profile",
+  "keep my cv",
+  "keep my data",
+  "keep my details",
+  "keep your details",
+  "on file",
+  "future openings",
+  "other positions",
+  "considered for other",
+  "similar jobs",
+  "similar roles",
+  "job alerts",
+  "job alert",
+  "send me",
+  "receive job",
+  "receive updates",
+  "receive emails",
+  "stay informed",
+  "i give",
+  "give my",
+  // signatures
+  "signature",
+  "signatures",
+  "e signature",
+  "esignature",
+  "electronic signature",
+  "digital signature",
+  "sign here",
+  "date signed",
+  "signed date",
+  "signed on",
+  "signed by",
+  "typed name",
+  // fr
+  "accord",
+  "mon accord",
+  "j accorde",
+  "conservation de mes donnees",
+  "conserver mes donnees",
+  "conserver mon cv",
+  "contacter votre employeur",
+  "contacter vos references",
+  "alertes emploi",
+  "offres similaires",
+  "signez ici",
+  "date de signature",
+  // de
+  "erlaubnis",
+  "unterschrift",
+  "unterschreiben",
+  "arbeitgeber kontaktieren",
+  "referenzen kontaktieren",
+  "daten speichern",
+  "lebenslauf speichern",
+  "bewerbung speichern",
+  "aufbewahren",
+  "aufbewahrung",
+  "jobalarm",
+  "ahnliche stellen",
+  // es
+  "mi autorizacion",
+  "firma electronica",
+  "firma del solicitante",
+  "firma del candidato",
+  "firma digital",
+  "firme aqui",
+  "fecha de firma",
+  "contactar a su empleador",
+  "contactar con su empleador",
+  "contactar a sus referencias",
+  "contactar con sus referencias",
+  "conservar mis datos",
+  "guardar mi cv",
+  "futuras ofertas",
+  "boletin",
+  "alertas de empleo",
+  "ofertas similares",
+  "recibir ofertas",
+  // ar
+  "اذن",
+  "توقيع",
+]
+
+/** Family, union and other personal extras. */
+const FAMILY_PHRASES = [
+  "number of children",
+  "children",
+  "dependents",
+  "dependants",
+  "spouse",
+  "union membership",
+  "trade union",
+  "faith",
+  "indigenous",
+  "aboriginal",
+  "first nations",
+  "native american",
+  "branch of service",
+  "national of",
+  "country of birth",
+  "year born",
+  "year you were born",
+  "born in",
+  "honorific",
+  "herr frau",
+  "mr mrs",
+  "mr ms",
+  "tratamiento",
+  "sr sra",
+  "nombre d enfants",
+  "enfants a charge",
+  "conjoint",
+  "appartenance syndicale",
+  "anzahl der kinder",
+  "kinder",
+  "ehepartner",
+  "gewerkschaft",
+  "numero de hijos",
+  "hijos",
+  "conyuge",
+  "afiliacion sindical",
+  "wie alt",
+  "cuantos anos",
+  "ethnische zugehorigkeit",
+  "عدد الاطفال",
+  "الزوجه",
+  "نقابه",
+  "كم عمرك",
+]
+
 /** Protected and personal categories beyond the equal opportunity lists above, in en fr de es ar. */
 const IDENTITY_PHRASES = [
   // gender, sex, salutation
@@ -274,7 +430,6 @@ const IDENTITY_PHRASES = [
   "minorities",
   "caste",
   // age, birth
-  "age",
   "how old",
   "years old",
   "old are you",
@@ -390,7 +545,6 @@ const IDENTITY_PHRASES = [
   "government benefits",
   "social benefits",
   // other
-  "age",
   "edad",
   "العمر",
   "pronouns",
@@ -456,6 +610,10 @@ const INSIDE = [
   "nutzungsbedingung",
   "geschaftsbedingung",
   "staatsangehor",
+  "staatsburger",
+  "zugehorigkeit",
+  "unterzeichn",
+  "gewerkschaft",
   "geschlecht",
   "geburts",
   "konfession",
@@ -467,6 +625,23 @@ const INSIDE = [
   "عرقي",
   "اثني",
   "ميلاد",
+  "موافقت",
+  "اسمح",
+  "احتفاظ",
+  "معالجه البيانات",
+  "الاتصال بصاحب",
+  "الاتصال بالمراجع",
+  "التواصل مع صاحب",
+  "التواصل مع المراجع",
+  "نشره بريديه",
+  "ارغب في تلقي",
+  "اشتراك",
+  "تفويض",
+  "ترخيص",
+  "اللقب",
+  "توقيع",
+  "ذوو الاحتياجات",
+  "المحاربين",
   "جنسيه",
   "اعاقه",
   "خصوصيه",
@@ -494,6 +669,9 @@ const INSIDE = [
 const ARABIC_WORDS = new RegExp(
   `(^| )(ال|لل|بال|وال|فال|ل|ب|و)?(${[
     "جنس",
+    "اذن",
+    "عمري",
+    "عمرك",
     "عرق",
     "سن",
     "عمر",
@@ -517,7 +695,7 @@ const ARABIC_WORDS = new RegExp(
 )
 
 /** Labels that are private only as a whole: the arabic "type" is also a word in "job type". */
-const BARE_PRIVATE = new Set(["النوع", "نوع", "genre", "alter", "sex"].map(clean))
+const BARE_PRIVATE = new Set(["النوع", "نوع", "genre", "alter", "sex", "firma"].map(clean))
 
 /** Letters of long words that stay in view when a page spaces them out or swaps a digit in (G e n d e r, G3nder). */
 const SQUASH_STEMS = [
@@ -597,6 +775,20 @@ const OPTION_PATTERN = new RegExp(
     "american indian",
     "alaska native",
     "african american",
+    "i have a disability",
+    "i do not have a disability",
+    "i am a veteran",
+    "i am not a veteran",
+    "heterosexuel",
+    "heterosexuell",
+    "bisexuel",
+    "bisexuell",
+    "homosexuel",
+    "homosexuell",
+    "ich habe eine behinderung",
+    "tengo una discapacidad",
+    "j ai un handicap",
+    "لدي اعاقه",
     "pas de reponse",
     "keine angabe",
     "prefiero no",
@@ -811,13 +1003,6 @@ const PHRASES = [
   "identifiant fiscal",
   "numero de identificacion fiscal",
   "rentenversicherung",
-  "permis de conduire",
-  "licencia de conducir",
-  "carnet de conducir",
-  "driving licence",
-  "driving license",
-  "رخصة القيادة",
-  "رخصة السياقة",
   "الرقم الضريبي",
   "رقم ضريبي",
   "رقم التعريف الضريبي",
@@ -930,6 +1115,8 @@ const PHRASES = [
   "salary history",
   ...CONSENT_PHRASES,
   ...CONSENT_MORE_PHRASES,
+  ...PERMISSION_PHRASES,
+  ...FAMILY_PHRASES,
   ...IDENTITY_PHRASES,
 ].map((phrase) => ` ${clean(phrase)} `)
 
@@ -995,9 +1182,6 @@ const SQUASHED = [
   "identitynumber",
   "documentodeidentidad",
   "taxidentification",
-  "drivinglicen",
-  "driverlicen",
-  "driverslicen",
   "visanumber",
   "maidenname",
   "dateofbirth",
@@ -1014,10 +1198,6 @@ const SQUASHED = [
   "reisepass",
   "steueridentifikation",
   "steuerid",
-  "fuhrerschein",
-  "permisdeconduire",
-  "licenciadeconducir",
-  "carnetdeconducir",
   "kartenprufnummer",
   "kontoinhaber",
   "karteninhaber",
@@ -1050,10 +1230,36 @@ export function isLearnableField(field: { label: string; type?: string; autocomp
   if (ownLabels(field.label).some((own) => BARE_PRIVATE.has(clean(own)))) return false
   const padded = ` ${label} `
   if (PHRASES.some((phrase) => padded.includes(phrase)) || STEM_PATTERN.test(label) || isPinSecret(padded)) return false
-  if (INSIDE.some((stem) => label.includes(stem)) || ARABIC_WORDS.test(label) || isCitizenshipStatus(label))
+  if (INSIDE.some((stem) => label.includes(stem)) || ARABIC_WORDS.test(label)) return false
+  if (isCitizenshipStatus(label) || isAgeQuestion(label) || isPermissionToAct(label) || isLicenceNumber(label))
     return false
   const squashed = squash(foldConfusables(field.label))
   return !SQUASHED.some((word) => squashed.includes(word)) && !SQUASH_STEMS.some((stem) => squashed.includes(stem))
+}
+
+/** "Age" and "your age" are about the person; "age of your oldest project" is not. */
+function isAgeQuestion(label: string): boolean {
+  return /\bage\b/.test(label) && !/\bage of (your|the|a|an|this|that|my|each|any)\b/.test(label)
+}
+
+const WORK_FRAMING =
+  /\b(work|working|employment|employed|travail|travailler|trabajar|trabajo|arbeit\w*|empleo|visa|permit|permis|sponsor|legally|legal|eligible|elegible|berechtigt)\b|عمل/
+
+/** Authorization is permission to act in the person's name, unless it is the work authorization question. */
+function isPermissionToAct(label: string): boolean {
+  return (
+    /\b(authori[sz]\w*|autoris\w*|autoriz\w*|ermachtig\w*|genehmig\w*|permiso)/.test(label) && !WORK_FRAMING.test(label)
+  )
+}
+
+const LICENCE =
+  /(driv\w* licen|driver s licen|permis de conduire|licencia de conducir|carnet de conducir|fuhrerschein|رخصه القياده|رخصه السياقه)/
+const LICENCE_QUESTION = /\b(do you|have|hold|valid|possess|own|avez|tiene|tienes|haben|besitzen|verfugen)\b|هل/
+const NUMBERISH = /\b(number|no|num|numero|nummer|id)\b|رقم/
+
+/** A driving licence number is an id; "do you have a valid driver's licence?" is an ordinary requirement. */
+function isLicenceNumber(label: string): boolean {
+  return LICENCE.test(label) && (NUMBERISH.test(label) || !LICENCE_QUESTION.test(label))
 }
 
 /** Citizenship is a protected status, except where it is plainly the work authorization question. */
@@ -1063,6 +1269,98 @@ function isCitizenshipStatus(label: string): boolean {
     !/\b(authori[sz]|eligible|right to work|work permit|permit to work|visa|sponsor)/.test(label)
   )
 }
+
+const set = (...words: string[]): ReadonlySet<string> => new Set(words.map(clean))
+const HONORIFICS = set(
+  "Mr",
+  "Mrs",
+  "Ms",
+  "Miss",
+  "Mx",
+  "Herr",
+  "Frau",
+  "Monsieur",
+  "Madame",
+  "Mademoiselle",
+  "Señor",
+  "Señora",
+  "Sr",
+  "Sra",
+  "السيد",
+  "السيدة",
+)
+const MARITAL = set(
+  "Single",
+  "Married",
+  "Divorced",
+  "Widowed",
+  "Separated",
+  "Célibataire",
+  "Marié",
+  "Mariée",
+  "Divorcé",
+  "Veuf",
+  "Ledig",
+  "Verheiratet",
+  "Geschieden",
+  "Verwitwet",
+  "Soltero",
+  "Casado",
+  "Divorciado",
+  "Viudo",
+  "أعزب",
+  "متزوج",
+  "مطلق",
+  "أرمل",
+)
+const BELIEFS = set(
+  "Christian",
+  "Muslim",
+  "Jewish",
+  "Hindu",
+  "Buddhist",
+  "Sikh",
+  "Atheist",
+  "Agnostic",
+  "Catholic",
+  "Protestant",
+  "Chrétien",
+  "Musulman",
+  "Juif",
+  "Bouddhiste",
+  "Christlich",
+  "Muslimisch",
+  "Jüdisch",
+  "Cristiano",
+  "Musulmán",
+  "Judío",
+  "مسلم",
+  "مسيحي",
+  "يهودي",
+)
+const RACES = set(
+  "Asian",
+  "White",
+  "Black",
+  "Caucasian",
+  "African",
+  "Arab",
+  "Blanc",
+  "Noir",
+  "Asiatique",
+  "Weiß",
+  "Schwarz",
+  "Asiatisch",
+  "Blanco",
+  "Negro",
+  "Asiático",
+  "أبيض",
+  "أسود",
+  "آسيوي",
+)
+/** "18-24", "25 to 34", "65+", "Under 25", "65 or older". */
+const AGE_BAND =
+  /^\s*(under\s*\d{2}|\d{2}\s*(-|\u2013|to)\s*\d{2}|\d{2}\s*\+|\d{2}\s*(or|and)\s*(older|over|above))\s*$/
 
 /** A section heading (equal opportunity, self identification, diversity, consent) under which every question is private. */
 export function isSensitiveSection(heading: string): boolean {
@@ -1074,6 +1372,8 @@ export function isDemographicOptions(options: readonly string[]): boolean {
   const texts = options.map(clean)
   if (texts.some((text) => OPTION_PATTERN.test(text))) return true
   const both = (a: string, b: string) => texts.includes(a) && texts.includes(b)
+  const several = (words: ReadonlySet<string>) => texts.filter((text) => words.has(text)).length >= 2
+  const bands = options.filter((text) => AGE_BAND.test(text.toLowerCase())).length >= 2
   return (
     both("male", "female") ||
     both("man", "woman") ||
@@ -1082,7 +1382,12 @@ export function isDemographicOptions(options: readonly string[]): boolean {
     both("mannlich", "weiblich") ||
     both("hombre", "mujer") ||
     both("masculin", "feminin") ||
-    both("masculino", "femenino")
+    both("masculino", "femenino") ||
+    several(HONORIFICS) ||
+    several(MARITAL) ||
+    several(BELIEFS) ||
+    several(RACES) ||
+    bands
   )
 }
 

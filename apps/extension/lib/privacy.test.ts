@@ -278,3 +278,86 @@ describe("round two: wording, descriptions and drawn labels", () => {
     expect(navigated).toBe(0)
   })
 })
+
+describe("round three: permissions, signatures and the long tail", () => {
+  const BLOCKED = [
+    "May we contact your current employer?",
+    "Can we contact your references?",
+    "Do we have your permission to contact your employer?",
+    "I give Acme permission to process my data",
+    "I allow Acme to retain my CV",
+    "Keep my profile for future openings",
+    "Send me similar jobs",
+    "Yes, I want to receive job alerts",
+    "Je donne mon accord pour la conservation de mes données",
+    "Doy mi autorización",
+    "Erlaubnis",
+    "أمنح موافقتي",
+    "أبدي موافقتي على معالجة البيانات",
+    "Signature",
+    "Electronic signature",
+    "Sign here",
+    "Date signed",
+    "Unterschrift",
+    "Firma",
+    "Firma electrónica",
+    "التوقيع",
+    "Number of children",
+    "Union membership",
+    "Wie alt sind Sie?",
+    "¿Cuántos años tiene?",
+    "كم عمرك؟",
+    "Staatsbürgerschaft",
+  ]
+  const KEPT = [
+    "Are you authorized to work in the United States?",
+    "Êtes-vous autorisé à travailler en France ?",
+    "Do you have a valid driver's license?",
+    "Age of your oldest project",
+    "Company (Firma)",
+    "Firmenname",
+  ]
+  const rows = (list: string[]) =>
+    list.map((label, i) => `<label for="f${i}">${label}</label><input id="f${i}">`).join("")
+
+  test("permission, signature and family wording is kept out on any site, ordinary neighbours stay", () => {
+    expect(labels(mount(`<form>${rows(BLOCKED)}</form>`).document)).toEqual([])
+    expect(labels(mount(`<form>${rows(KEPT)}</form>`).document)).toEqual(KEPT)
+  })
+
+  test("a signature field of a lever style form is not read outside its section either", () => {
+    const { document } = mount(`<form><div><label for="s">Signature</label><input id="s"></div>
+      <div><label for="n">Notice period</label><input id="n"></div></form>`)
+    expect(labels(document)).toEqual(["Notice period"])
+  })
+
+  test("a neutral label over honorifics, marital states, beliefs, races or age bands is not read", () => {
+    const select = (id: string, options: string[]) =>
+      `<label for="${id}">Please choose</label><select id="${id}"><option value="">Select</option>${options.map((o) => `<option>${o}</option>`).join("")}</select>`
+    const sensitive = [
+      ["Mr", "Mrs", "Ms"],
+      ["Single", "Married", "Divorced"],
+      ["Christian", "Muslim", "Jewish"],
+      ["Asian", "White", "Black"],
+      ["Under 25", "25-34", "35-44", "65+"],
+    ].map((options, i) => select(`s${i}`, options))
+    const { document } = mount(`<form>${sensitive.join("")}${select("ok", ["Remote", "On site"])}</form>`)
+    expect(collectFields(document)).toHaveLength(1)
+  })
+
+  test("a label reached through aria-labelledby and drawn only by CSS is not read", () => {
+    const { document, window } = mount(`<form>
+      <span id="q"></span><input aria-labelledby="q" name="q_1">
+      <label for="b">Notice period</label><input id="b">
+    </form>`)
+    const original = window.getComputedStyle.bind(window) as unknown as (
+      el: Element,
+      pseudo?: string,
+    ) => CSSStyleDeclaration
+    window.getComputedStyle = ((el: Element, pseudo?: string) =>
+      pseudo === "::after" && el.id === "q"
+        ? ({ content: '"Your question"' } as CSSStyleDeclaration)
+        : original(el, pseudo)) as unknown as typeof window.getComputedStyle
+    expect(labels(document)).toEqual(["Notice period"])
+  })
+})
