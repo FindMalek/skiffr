@@ -33,3 +33,38 @@ Create a project with a postgres database on the docker image `pgvector/pgvector
 Do not swap the image of an existing database in place. The pgvector image uses a different libc than an alpine based postgres image, so text btree indexes silently break on the old data. Create a new postgres service with its own volume on `pgvector/pgvector:pg17` and restore with `pg_dump` / `pg_restore`, or at least run `REINDEX DATABASE` after any libc change.
 
 `vector` is not a trusted extension, so `CREATE EXTENSION vector` needs a superuser. If the app's database user is not one, run it once as superuser, the migration's `IF NOT EXISTS` is then a no-op.
+
+## Self-hosting with GitHub Actions
+
+`.github/workflows/deploy.yml` builds the four images on every green push to `main`, pushes them to `ghcr.io/<owner>/skiffr-<app>` (tags `main` and `sha-<commit>`), redeploys the Dokploy applications and then checks `/health` on the api and the other three sites. The api migrates the database when it starts. Nothing runs until the repo variable `DEPLOY_ENABLED` is `true`.
+
+### One-time setup
+
+1. point four DNS records at your server (a CNAME to its public name or an A record): the base domain for the landing page, and `dashboard.`, `api.` and `docs.` under it. Traefik issues the certificates through Let's Encrypt, so ports 80 and 443 must reach Dokploy
+2. create a Dokploy API key (Settings, Profile, API keys)
+3. run the bootstrap, first without `--apply` to read the plan:
+
+```bash
+DOKPLOY_URL=https://dokploy.example.com DOKPLOY_TOKEN=... \
+  node scripts/dokploy-bootstrap.mjs --domain skiffr.example.com --env-file .env.production
+# looks right? add --apply
+```
+
+It creates the `skiffr` project, a postgres on `pgvector/pgvector:pg17` (its user is the superuser the `vector` extension needs), the `skiffr-api`, `skiffr-web`, `skiffr-dashboard` and `skiffr-docs` applications, their domains and their env. It is safe to run again: existing things are kept and an env key that is already set in Dokploy is never overwritten. `BETTER_AUTH_SECRET`, the database password and, when `ADMIN_EMAIL` is given without a password, `ADMIN_PASSWORD` are generated and live in Dokploy only. The script prints key names, never values.
+
+`--env-file` is optional and only these keys are read from it: `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `EXTENSION_ORIGINS`, `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_TOKEN`, the `S3_*` keys, the three Gmail keys, `AI_MODEL`, `GROQ_API_KEY`, `OPENAI_API_KEY` and `ANTHROPIC_API_KEY`. Anything left out stays unset and the api still boots, see [environment](/docs/environment).
+
+4. set the GitHub repo settings below, then run the `deploy` workflow once from the Actions tab
+
+| Where | Name | Value |
+| --- | --- | --- |
+| variable | `DEPLOY_ENABLED` | `true` |
+| variable | `PRODUCTION_DOMAIN` | the base domain, for example `skiffr.example.com` |
+| variable | `DOKPLOY_URL` | the public url of Dokploy |
+| secret | `DOKPLOY_TOKEN` | the Dokploy API key |
+| variable, optional | `TURBO_API`, `TURBO_TEAM` | a turbo remote cache for the image builds |
+| secret, optional | `TURBO_TOKEN`, `GHCR_READ_TOKEN` | the cache token, and a `read:packages` token if the ghcr packages are private |
+
+`DOKPLOY_URL`, `DOKPLOY_TOKEN` are the same settings the PR previews use.
+
+Back up the database from Dokploy (Backups tab of the postgres service) to an S3 destination. The `backup` workflow only works against a database that is reachable from GitHub.
