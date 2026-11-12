@@ -49,6 +49,10 @@ function frames(lines: string[] | undefined) {
     .reverse()
 }
 
+/** Sentry tag values are strings: `error_status` or `items` arrive as numbers and `db_ok` as a boolean. */
+const stringTags = (tags: Attrs): Record<string, string> =>
+  Object.fromEntries(Object.entries(tags).map(([key, value]) => [key, String(value)]))
+
 /**
  * The event is built from `safeErrorFields` and allowlisted tags, field by field, so it never holds the error's own
  * message, its cause, a request, headers, a body or breadcrumbs. An SDK would capture those by default and scrub them
@@ -72,12 +76,12 @@ export function buildEvent(error: unknown, tags: Attrs, options: { environment: 
     exception: {
       values: [{ type, value: detail || type, ...(stack.length > 0 ? { stacktrace: { frames: stack } } : {}) }],
     },
-    tags: {
+    tags: stringTags({
       ...tags,
       ...(fields.causeName && fields.causeName !== type ? { cause: fields.causeName } : {}),
       ...(fields.constraint ? { constraint: fields.constraint } : {}),
       ...(fields.table ? { table: fields.table } : {}),
-    },
+    }),
     fingerprint: [type, fields.code ?? "", String(tags.route ?? tags.job ?? "")],
   }
 }
@@ -120,6 +124,7 @@ export function createErrorReporter(options: ErrorReporterOptions): ErrorReporte
           },
           body,
           signal: AbortSignal.timeout(3000),
+          redirect: "error",
         })
           .catch(() => undefined)
           .finally(() => pending.delete(request))

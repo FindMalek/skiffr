@@ -168,3 +168,36 @@ test("a request is logged and counted by method, route and status, never by its 
     collector.stop()
   }
 })
+
+test("a flood of urls with a typed segment can't add labels or hide the health gauge", async () => {
+  const collector = mockCollector()
+  const observability = createObservability({
+    service: "skiffr-api",
+    environment: "test",
+    otlpEndpoint: `${collector.url}/api/default`,
+    flushMs: 0,
+  })
+  setObservability(observability)
+  try {
+    for (let i = 0; i < 1500; i++)
+      await server(new Request(`http://api.test/v1/answers/jane${i}`, { method: "PATCH", body: "{}" }))
+    await server(new Request("http://api.test/v1/answers/3f2c9a10-1b2c-4d3e-8f90-123456789abc/use", { method: "POST" }))
+    await server(new Request("http://api.test/rpc/answers/jane"))
+    await server(new Request("http://api.test/health"))
+    await observability.flush()
+    const sent = collector.everything()
+    expect(sent).not.toContain("jane")
+    expect(sent).not.toContain("3f2c9a10")
+    expect(sent).toContain("/v1/answers/:id")
+    expect(sent).toContain("/v1/answers/:id/use")
+    expect(sent).toContain("skiffr.db.up")
+    const metrics = collector.requests.find((request) => request.path.endsWith("/metrics"))?.body ?? ""
+    const series = JSON.parse(metrics).resourceMetrics[0].scopeMetrics[0].metrics.flatMap(
+      (metric: { sum?: { dataPoints: unknown[] } }) => metric.sum?.dataPoints ?? [],
+    )
+    expect(series.length).toBeLessThan(20)
+  } finally {
+    setObservability(noopObservability)
+    collector.stop()
+  }
+})

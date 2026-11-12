@@ -96,8 +96,25 @@ export const configFromEnv = (
 })
 
 const CONTENT_MAX = 16_000
-const outcomeOf = (error: unknown): "budget" | "error" =>
-  (error as { name?: unknown } | null)?.name === "ModelBudgetError" ? "budget" : "error"
+const outcomeOf = (error: unknown): "budget" | "error" => {
+  try {
+    return (error as { name?: unknown } | null)?.name === "ModelBudgetError" ? "budget" : "error"
+  } catch {
+    return "error"
+  }
+}
+
+/** A getter on a hostile error may throw: the caller must still see its own error, not ours. */
+const errorClassOf = (error: unknown): string | undefined => {
+  try {
+    return safeErrorFields(error).name
+  } catch {
+    return undefined
+  }
+}
+
+/** Product events per minute; the rest are dropped, so a busy path can't open a request per call. */
+const TRACK_PER_MINUTE = 60
 
 const clip = (value: unknown): string | undefined => {
   if (value === undefined) return undefined
@@ -142,6 +159,10 @@ export function createObservability(config: ObservabilityConfig): Observability 
 
   if (otlp && config.flushMs !== 0) setInterval(() => void otlp.flush(), config.flushMs ?? 15_000).unref?.()
 
+  const tracked = new Set<Promise<unknown>>()
+  let trackWindow = 0
+  let trackUsed = 0
+
   const metric = (name: string) => (otlp && isSafeName(name) ? otlp.metrics : null)
 
   return {
@@ -155,7 +176,13 @@ export function createObservability(config: ObservabilityConfig): Observability 
     track(name, props) {
       const allow = EVENTS[name] as Allowlist | undefined
       if (!umami || !allow) return
-      send(`${umami.url}/api/send`, {
+      const at = now()
+      if (at - trackWindow >= 60_000) {
+        trackWindow = at
+        trackUsed = 0
+      }
+      if (++trackUsed > TRACK_PER_MINUTE) return
+      const request = send(`${umami.url}/api/send`, {
         method: "POST",
         headers: { "content-type": "application/json", "user-agent": "Mozilla/5.0 (compatible; skiffr-api)" },
         body: JSON.stringify({
@@ -163,7 +190,11 @@ export function createObservability(config: ObservabilityConfig): Observability 
           payload: { website: umami.id, hostname: config.service, url: "/", name, data: allowlisted(props, allow) },
         }),
         signal: AbortSignal.timeout(3000),
-      }).catch(() => undefined)
+        redirect: "error",
+      })
+        .catch(() => undefined)
+        .finally(() => tracked.delete(request))
+      tracked.add(request)
     },
     count: (name, value = 1, attrs) => metric(name)?.count(name, value, scrubAttrs(attrs)),
     gauge: (name, value, attrs) => metric(name)?.gauge(name, value, scrubAttrs(attrs)),
@@ -178,7 +209,7 @@ export function createObservability(config: ObservabilityConfig): Observability 
         return await run({ record: (next) => Object.assign(data, next) })
       } catch (error) {
         outcome = outcomeOf(error)
-        errorClass = safeErrorFields(error).name
+        errorClass = errorClassOf(error)
         throw error
       } finally {
         const end = now()
@@ -218,7 +249,7 @@ export function createObservability(config: ObservabilityConfig): Observability 
       }
     },
     async flush() {
-      await Promise.all([reporter?.flush(), otlp?.flush()])
+      await Promise.all([reporter?.flush(), otlp?.flush(), Promise.allSettled([...tracked])])
     },
   }
 }

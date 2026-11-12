@@ -48,3 +48,12 @@ test("a server that is down or slow never throws into the caller, and a burst is
   await capped?.flush()
   expect(collector.requests.length - before).toBe(3)
 })
+
+test("tags are sent as strings, as Sentry expects", async () => {
+  collector.requests.length = 0
+  const reporter = createErrorReporter({ dsn, environment: "t", service: "s" })
+  reporter?.capture(new Error("x"), { job: "gmail", error_status: 502, db_ok: false })
+  await reporter?.flush()
+  const event = JSON.parse((collector.requests[0]?.body ?? "").split("\n")[2] ?? "{}")
+  expect(event.tags).toEqual({ job: "gmail", error_status: "502", db_ok: "false" })
+})

@@ -122,3 +122,105 @@ test("an unreachable collector costs nothing but the batch", async () => {
   o.logEvent("info", "x")
   await o.flush()
 })
+
+test("a flood of labels on one metric can't push out the others", async () => {
+  collector.requests.length = 0
+  const o = make()
+  o.gauge("skiffr.db.up", 1)
+  for (let i = 0; i < 1500; i++) o.count("skiffr.http.requests", 1, { "http.route": `/v1/answers/jane${i}` })
+  o.gauge("skiffr.scheduler.runs", 1, { job: "gmail" })
+  await o.flush()
+  const metrics = JSON.parse(collector.requests.find((r) => r.path.endsWith("/metrics"))?.body ?? "{}")
+    .resourceMetrics[0].scopeMetrics[0].metrics as Array<{ name: string; sum?: { dataPoints: unknown[] } }>
+  const names = metrics.map((metric) => metric.name)
+  expect(names).toContain("skiffr.db.up")
+  expect(names).toContain("skiffr.scheduler.runs")
+  const flooded = metrics.find((metric) => metric.name === "skiffr.http.requests")
+  expect(flooded?.sum?.dataPoints.length).toBeLessThanOrEqual(301)
+  const points = (flooded?.sum?.dataPoints ?? []) as Array<{ asDouble: number }>
+  const total = points.reduce((sum, point) => sum + point.asDouble, 0)
+  expect(total).toBe(1500)
+})
+
+test("a redirect from a sink is not followed, so a header or a key never goes to another host", async () => {
+  const target = mockCollector()
+  const redirector = Bun.serve({
+    port: 0,
+    fetch: () => new Response(null, { status: 307, headers: { location: `${target.url}/elsewhere` } }),
+  })
+  try {
+    const o = createObservability({
+      service: "s",
+      environment: "t",
+      glitchtipDsn: `http://key@localhost:${redirector.port}/1`,
+      otlpEndpoint: `http://localhost:${redirector.port}/api/default`,
+      otlpHeaders: "x-secret=1",
+      umamiUrl: `http://localhost:${redirector.port}`,
+      umamiWebsiteId: "11111111-2222-4333-8444-555555555555",
+      flushMs: 0,
+    })
+    o.captureError(new Error("x"))
+    o.logEvent("info", "http.request")
+    o.track("ai_budget_exhausted")
+    await o.flush()
+    expect(target.requests).toEqual([])
+  } finally {
+    redirector.stop(true)
+    target.stop()
+  }
+})
+
+test("a hostile error never changes what traceAi throws", async () => {
+  const hostile = new Error("x")
+  Object.defineProperty(hostile, "name", {
+    get() {
+      throw new Error("getter")
+    },
+  })
+  await expect(
+    make().traceAi({ operation: "chat", model: "m" }, async () => {
+      throw hostile
+    }),
+  ).rejects.toBe(hostile)
+})
+
+const UMAMI_ID = "11111111-2222-4333-8444-555555555555"
+
+test("product events are capped per minute", () => {
+  let at = 1_000
+  let sent = 0
+  const o = createObservability({
+    service: "s",
+    environment: "t",
+    umamiUrl: "http://umami.test",
+    umamiWebsiteId: UMAMI_ID,
+    now: () => at,
+    fetch: async () => {
+      sent++
+      return new Response("{}")
+    },
+  })
+  for (let i = 0; i < 200; i++) o.track("ai_budget_exhausted", { limit: "daily" })
+  expect(sent).toBe(60)
+  at += 61_000
+  o.track("ai_budget_exhausted")
+  expect(sent).toBe(61)
+})
+
+test("flush waits for a product event in flight", async () => {
+  let done = false
+  const o = createObservability({
+    service: "s",
+    environment: "t",
+    umamiUrl: "http://umami.test",
+    umamiWebsiteId: UMAMI_ID,
+    fetch: async () => {
+      await Bun.sleep(50)
+      done = true
+      return new Response("{}")
+    },
+  })
+  o.track("ai_budget_exhausted")
+  await o.flush()
+  expect(done).toBe(true)
+})

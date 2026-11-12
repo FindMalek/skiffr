@@ -1,3 +1,4 @@
+export { reportCrashes } from "./crash"
 export { describeError, safeErrorFields } from "./errors"
 export { buildEvent, createErrorReporter, type ErrorReporter, type Fetch, parseDsn } from "./glitchtip"
 export {

@@ -4,7 +4,7 @@ import { createDb } from "@skiffr/db"
 import { runMigrations } from "@skiffr/db/migrate"
 import { seedDemo } from "@skiffr/db/seed"
 import { loadApiEnv } from "@skiffr/env/api"
-import { configFromEnv, createObservability, setObservability } from "@skiffr/observability"
+import { configFromEnv, createObservability, parseDsn, reportCrashes, setObservability } from "@skiffr/observability"
 import { RateLimiter } from "@skiffr/orpc"
 import { createCvRuntime } from "@skiffr/orpc/cv"
 import { advisoryLeader, createScheduler, LOCKS } from "@skiffr/orpc/gmail"
@@ -21,15 +21,15 @@ const env = loadApiEnv()
 const observability = createObservability(configFromEnv(env, { service: "skiffr-api", environment: env.DEPLOY_ENV }))
 setObservability(observability)
 const sinks = [
-  env.GLITCHTIP_DSN && "errors",
+  env.GLITCHTIP_DSN && parseDsn(env.GLITCHTIP_DSN) && "errors",
   env.OTEL_EXPORTER_OTLP_ENDPOINT && "otlp",
   env.UMAMI_URL && env.UMAMI_WEBSITE_ID && "umami",
 ].filter(Boolean)
 console.info(
   `observability: ${sinks.length > 0 ? sinks.join(", ") : "off"}${env.AI_TRACE_CAPTURE_CONTENT === "true" ? " (model call content captured)" : ""}`,
 )
-// Observes without changing what a crash does: the process still exits.
-process.on("uncaughtExceptionMonitor", (error) => observability.captureError(error, { job: "api" }))
+// A crash is reported before the process exits with code 1, as it did without this.
+reportCrashes(observability, { job: "api" })
 const db = createDb(env.DATABASE_URL)
 await runMigrations(db)
 

@@ -35,7 +35,9 @@ export interface SpanRecord {
 
 const SEVERITY = { info: 9, warn: 13, error: 17 } as const
 const BUCKETS = [5, 25, 100, 250, 500, 1000, 2500, 5000, 10_000]
-const MAX_SERIES = 1000
+/** Per metric, so a flood of labels on one can't take the room of the others; past it a metric folds into one `overflow` series. */
+const MAX_SERIES_PER_METRIC = 300
+const OVERFLOW: Attrs = { overflow: true }
 
 interface Series {
   name: string
@@ -56,38 +58,45 @@ const seriesKey = (name: string, attrs: Attrs) =>
     .map((key) => `${key}=${attrs[key]}`)
     .join(",")}`
 
-/** In-process aggregation, exported as cumulative OTLP metrics. Bounded: a new series past the cap is dropped. */
+/** In-process aggregation, exported as cumulative OTLP metrics. Bounded per metric: past the cap new label sets fold into one `overflow` series. */
 export class MetricStore {
   private counters = new Map<string, Counter>()
   private gauges = new Map<string, Counter>()
   private histograms = new Map<string, Histogram>()
+  private perMetric = new Map<string, number>()
 
   constructor(private startedAt: number) {}
 
   private size = () => this.counters.size + this.gauges.size + this.histograms.size
 
-  count(name: string, value: number, attrs: Attrs): void {
+  private slot<T extends Series>(map: Map<string, T>, name: string, attrs: Attrs, make: (attrs: Attrs) => T): T {
     const key = seriesKey(name, attrs)
-    const found = this.counters.get(key)
-    if (found) found.value += value
-    else if (this.size() < MAX_SERIES) this.counters.set(key, { name, attrs, value })
+    const found = map.get(key)
+    if (found) return found
+    const used = this.perMetric.get(name) ?? 0
+    if (attrs !== OVERFLOW && used >= MAX_SERIES_PER_METRIC) return this.slot(map, name, OVERFLOW, make)
+    const created = make(attrs)
+    map.set(key, created)
+    if (attrs !== OVERFLOW) this.perMetric.set(name, used + 1)
+    return created
+  }
+
+  count(name: string, value: number, attrs: Attrs): void {
+    this.slot(this.counters, name, attrs, (a) => ({ name, attrs: a, value: 0 })).value += value
   }
 
   gauge(name: string, value: number, attrs: Attrs): void {
-    const key = seriesKey(name, attrs)
-    const found = this.gauges.get(key)
-    if (found) found.value = value
-    else if (this.size() < MAX_SERIES) this.gauges.set(key, { name, attrs, value })
+    this.slot(this.gauges, name, attrs, (a) => ({ name, attrs: a, value })).value = value
   }
 
   observe(name: string, value: number, attrs: Attrs): void {
-    const key = seriesKey(name, attrs)
-    let found = this.histograms.get(key)
-    if (!found && this.size() < MAX_SERIES) {
-      found = { name, attrs, count: 0, sum: 0, buckets: new Array(BUCKETS.length + 1).fill(0) }
-      this.histograms.set(key, found)
-    }
-    if (!found) return
+    const found = this.slot(this.histograms, name, attrs, (a) => ({
+      name,
+      attrs: a,
+      count: 0,
+      sum: 0,
+      buckets: new Array(BUCKETS.length + 1).fill(0),
+    }))
     found.count++
     found.sum += value
     const index = BUCKETS.findIndex((bound) => value <= bound)
@@ -189,6 +198,7 @@ export class OtlpExporter {
       headers: { "content-type": "application/json", ...this.options.headers },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(5000),
+      redirect: "error",
     }).then(
       () => undefined,
       () => undefined,

@@ -26,7 +26,9 @@ const hostile = (): Error => {
       query: `select ${SECRETS[0]}`,
     },
   )
-  return Object.assign(new Error(`could not save "${SECRETS[2]}" = "${SECRETS[0]}"`, { cause: driver }), {
+  // the fake frame in the message must not become a frame of the report
+  const message = `could not save "${SECRETS[2]}" = "${SECRETS[0]}"\n    at evil (/home/${SECRETS[1]}/x.ts:1:1)`
+  return Object.assign(new Error(message, { cause: driver }), {
     name: "ValidationError",
     body: { values: SECRETS },
     headers: { authorization: SECRETS[6] },

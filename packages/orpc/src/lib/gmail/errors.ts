@@ -59,9 +59,8 @@ export function logSyncFailure(accountId: string, error: unknown, extra?: Record
   const obs = getObservability()
   const kind = syncErrorOf(error)
   obs.count("skiffr.sync.failures", 1, { job: "gmail", error_kind: kind })
-  // An expired grant or a rate limit is the user's or Google's to fix and is counted above; only our own faults page us.
-  if (kind === "internal" || kind === "upstream")
-    obs.captureError(error, { job: "gmail", account_id: accountId, error_kind: kind })
+  // An expired grant, a rate limit or a Google answer is the user's or Google's and is counted above; only our own faults page us.
+  if (kind === "internal") obs.captureError(error, { job: "gmail", account_id: accountId, error_kind: kind })
 }
 
 /** What a log line may say about a failed connect: the step and the kind and status of Google's answer, never the code, a token or an address. */
