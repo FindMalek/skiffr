@@ -1,0 +1,99 @@
+---
+title: Previews
+description: A running copy of every pull request, with its own database and bucket.
+---
+
+Every pull request from this repository gets a preview of all apps on the self-hosted Dokploy: the landing page, the dashboard, the api and the docs (and the e2e playground once it has a Dockerfile). One sticky comment on the pull request lists the links, a test login and the extension build. Closing or merging the pull request deletes all of it.
+
+Nothing runs until the repo variable `PREVIEW_ENABLED` is `true`. Pull requests from forks and from dependabot get no preview: they cannot read the secrets.
+
+## What a push does
+
+1. **plan** asks turbo which packages the pull request changes (`turbo ls --affected`, dependents included). An app is built when it is in that list. A change to a shared package such as `@skiffr/orpc` or `@skiffr/db` rebuilds every app that uses it. If turbo cannot answer, every app is built.
+2. **build** builds the changed apps on GitHub runners with docker buildx and pushes `ghcr.io/findmalek/skiffr-<app>:pr-<number>-<short sha>`. It uses the same build args as the production build, so the layers and the turbo remote cache (`TURBO_API`, `TURBO_TEAM`, `TURBO_TOKEN`) that `main` already warmed are reused.
+3. **dokploy** creates or updates the preview in the Dokploy project `skiffr-previews`: a bucket, a postgres, then the apps, the api first. An app that was not built runs the production image `ghcr.io/findmalek/skiffr-<app>:main`, wired to the preview's own env. The images are env agnostic: the Next apps read `API_URL` per request, so the production image works behind a preview api.
+4. it waits for the deploys, checks `/health` of the api (the database answers and `env` is `pr-<number>`) and every other app, then edits the sticky comment and the GitHub deployment `preview-pr-<number>`.
+
+A new push cancels the running one. An app that is behind `main` is not rebuilt: a preview mixes the pull request's changed apps with the latest production images of the rest.
+
+## What a preview owns
+
+| What | Name |
+| --- | --- |
+| apps | `skiffr-<app>-pr-<number>` at `https://pr-<number>-<app>.<PREVIEW_DOMAIN>` |
+| database | a Dokploy postgres `skiffr-db-pr-<number>` on `pgvector/pgvector:pg17`, its own user and password, its own volume |
+| bucket | `skiffr-pr-<number>` on the S3 api (the api also prefixes keys with `pr-<number>/`) |
+| env | its own `BETTER_AUTH_SECRET`, `ADMIN_PASSWORD`, `DATABASE_URL`, urls, `DEPLOY_ENV=pr-<number>` |
+
+The api migrates the database when it starts and creates the admin from `ADMIN_EMAIL` and `ADMIN_PASSWORD`. A dedicated postgres per preview needs nothing but the Dokploy api to create and delete, and removing it frees the data. A shared postgres server with a database per preview would be lighter, but creating and dropping databases needs a connection from the runner, and the server is not reachable from GitHub.
+
+Nothing from production is shared. Previews get no model key, no Google client and no GitHub OAuth client, so the AI, Gmail import and GitHub sign in stay off. The job source and Gmail schedulers are off. The optional secret `PREVIEW_GROQ_API_KEY` (a key with its own small budget, never the production key) turns the model on with `AI_DAILY_CALLS=20` and `AI_GLOBAL_DAILY_CALLS=200`.
+
+`DEPLOY_ENV=pr-<number>` makes the web and docs apps answer `noindex`. `EXTENSION_ORIGINS` is not set on previews: an unpacked extension has no stable id, so any extension origin may call the preview api with a token.
+
+## The seeder
+
+The preview api seeds its empty database on start. It sets `SEED=preview` when `packages/env/src/api.ts` accepts that value, and `SEED=demo` until then. The contract for the seeder is: `SEED=preview` seeds a realistic, deterministic dataset into an empty database only, never touches a database that already has data, and runs inside the api start (after the migrations and `ensureAdmin`). The test login in the comment is the env admin. Any extra seeded accounts belong in the seeder's own documentation.
+
+## The extension
+
+The comment links the CI run that holds the artifact `extension-chrome-pr-<number>` (built by the `extension` job of every pull request). Unzip it twice, load the folder unpacked, set the api url in the options to the preview api (`https://pr-<number>-api.<PREVIEW_DOMAIN>`), then create a token in the preview dashboard under Extension and paste it. The extension has no build time default for the api url.
+
+## Cleanup
+
+- `preview-cleanup` runs when a pull request is closed or merged. It deletes the apps (their domains go with them), the postgres and its volume, the bucket with its objects, the `pr-<number>-*` image tags on ghcr, and marks the GitHub deployments inactive. It is safe to run twice.
+- `preview-sweep` runs daily, or by hand with `dry_run` to only list. It removes previews of closed pull requests the cleanup missed, previews idle for more than `PREVIEW_TTL_DAYS` (default 7) even when the pull request is open (a push brings it back), and orphans: postgres volumes and buckets no preview owns. Dokploy's `postgres.remove` leaves the data volume behind, so both paths remove it through `dockerVolume.removeVolume`.
+- at most `PREVIEW_MAX` previews (default 6) run at once. A new one over the limit is skipped, the comment says so, and it starts on the next push once there is room.
+
+Image layers of old previews stay in the box's docker cache: turn on Dokploy's daily docker cleanup in Settings, Server.
+
+Both scripts take `--dry-run`:
+
+```bash
+DOKPLOY_URL=... DOKPLOY_TOKEN=... GITHUB_TOKEN=... GITHUB_REPOSITORY=FindMalek/skiffr \
+  node .github/scripts/preview.mjs sweep --dry-run
+```
+
+## One-time setup
+
+DNS, one record: `*.preview.skiffr` CNAME to `home.findmalek.engineer`, TTL 60. Every preview host is one label under it (`pr-12-web.preview.skiffr.findmalek.engineer`), so a single wildcard certificate covers all of them. Without it each host orders its own Let's Encrypt certificate, and the weekly limit of 50 certificates per domain is reached after a few pull requests.
+
+Certificate, once, on the Dokploy box: put this in `/etc/dokploy/traefik/dynamic/preview-skiffr-wildcard.yml`. Traefik orders the wildcard certificate with the DNS challenge resolver `vercel` and every preview router reuses it.
+
+```yaml
+http:
+  routers:
+    preview-skiffr-wildcard-cert:
+      rule: Host(`preview.skiffr.findmalek.engineer`)
+      entryPoints: [websecure]
+      service: noop@internal
+      tls:
+        certResolver: vercel
+        domains:
+          - main: "*.preview.skiffr.findmalek.engineer"
+```
+
+Preview domains are created with `certificateType: custom` and `customCertResolver: vercel` (the variable `PREVIEW_CERT_RESOLVER`; `letsencrypt` uses the HTTP challenge and one certificate per host instead).
+
+S3, once: create a key that may create buckets and nothing else, so the runner needs no admin access. On Garage: `garage key create skiffr-preview-key`, then `garage key allow --create-bucket skiffr-preview-key`. A key owns the buckets it creates and can empty and delete them.
+
+| Where | Name | Value |
+| --- | --- | --- |
+| variable | `PREVIEW_ENABLED` | `true` |
+| variable | `PREVIEW_DOMAIN` | `preview.skiffr.findmalek.engineer` |
+| variable | `DOKPLOY_URL`, `PRODUCTION_DOMAIN` | the same as for the production deploy |
+| secret | `DOKPLOY_TOKEN` | the same Dokploy API key |
+| variable, optional | `PREVIEW_S3_ENDPOINT`, `PREVIEW_S3_REGION` | the S3 api (`https://s3.findmalek.engineer`) and its region (`garage` unless configured). Without them previews have no uploads |
+| secret, optional | `PREVIEW_S3_ACCESS_KEY_ID`, `PREVIEW_S3_SECRET_ACCESS_KEY` | the bucket creating key |
+| variable, optional | `PREVIEW_MAX`, `PREVIEW_TTL_DAYS`, `PREVIEW_CERT_RESOLVER` | 6, 7 and `vercel` |
+| variable, optional | `TURBO_API`, `TURBO_TEAM` | the turbo remote cache for the builds |
+| secret, optional | `TURBO_TOKEN`, `GHCR_READ_TOKEN`, `PREVIEW_GROQ_API_KEY` | the cache token, a `read:packages` token (ghcr packages are private unless made public), and a model key with its own budget |
+
+Never log Dokploy into ghcr with a workflow token: it expires with the run and every later pull on the box fails. `GHCR_READ_TOKEN` is the only registry login the scripts send.
+
+## Limits
+
+- previews are public: anyone with a link can sign in with the test login. Only same-repo pull requests get one, the data is fake and the model and mail are off, but do not put anything real in a preview.
+- one S3 key owns all preview buckets, and a bucket has no quota. The daily sweep and the idle limit bound the space.
+- the preview of an app that was not rebuilt runs the latest `main` image, which can be newer than the pull request's base.
+- the `web` and `docs` builds bake the production site url into their metadata. The previews tell search engines not to index.
