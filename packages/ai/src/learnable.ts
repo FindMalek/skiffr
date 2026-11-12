@@ -46,7 +46,7 @@ const CONFUSABLES: Record<string, string> = {
 /**
  * The form a label is matched in: lowercase, no accents, punctuation or format characters (a zero width space inside a
  * word is gone), look-alike letters folded to latin, and the arabic letters that only differ by dots or hamza folded
- * (ة to ه, ى to ي; hamza and diacritics are already dropped with the accents), and the turkish ı and polish ł that no accent folding reaches. The lists are folded the same way.
+ * (ة to ه, ى to ي; hamza and diacritics are already dropped with the accents), and the turkish ı and polish Ł and ł that no accent folding reaches. The lists are folded the same way.
  */
 function foldConfusables(text: string): string {
   return text
@@ -62,7 +62,7 @@ function clean(text: string): string {
       .replace(/\u0629/g, "\u0647")
       .replace(/\u0640/g, "")
       .replace(/\u0131/g, "i")
-      .replace(/\u0142/g, "l"),
+      .replace(/[\u0141\u0142]/g, "l"),
   )
 }
 
@@ -240,8 +240,10 @@ const MORE_LANGUAGES = [
   "trattamento dei miei dati|termini e condizioni|condizioni d uso|protezione dei dati",
   "conservazione dei dati|conservare i miei dati|conservare il mio cv|conservare il mio profilo",
   "opportunita future|posizioni future|avvisi di lavoro|sesso|identita di genere|razza",
-  "quanti anni|data di nascita|luogo di nascita|anno di nascita|compleanno",
+  "quanti anni hai|quanti anni ha|maggiorenne|maggiorenni|data di nascita|luogo di nascita|anno di nascita|compleanno",
   "nazionalita|cittadinanza|disabile|invalidita|categorie protette|servizio militare|servizio di leva",
+  "conservare il tuo cv|conservare il tuo profilo|conservare i tuoi dati|conservare la tua candidatura",
+  "conservare il suo cv|conservare il suo profilo|conservare i suoi dati|tenere i tuoi dati|tenere il tuo cv",
   "forze armate|esercito|orientamento sessuale|stato civile|firma elettronica|firma digitale|firma qui",
   "data della firma|data di firma|firma del candidato",
   // pt
@@ -249,15 +251,16 @@ const MORE_LANGUAGES = [
   "protecao de dados|tratamento de dados|tratamento dos meus dados",
   "conservar os meus dados|guardar os meus dados|manter os meus dados|manter o meu cv",
   "futuras oportunidades|vagas futuras|alertas de emprego|alertas de vagas|boletim informativo|raca",
-  "origem etnica|cor da pele|idade|quantos anos|data de nascimento|local de nascimento",
+  "origem etnica|cor da pele|idade|quantos anos tem|quantos anos voce tem|quantos anos tens|data de nascimento|local de nascimento",
   "ano de nascimento|nacionalidade|cidadania|deficiencia|incapacidade|necessidades especiais",
-  "forcas armadas|crenca|orientacao sexual",
+  "forcas armadas|exercito|crenca|orientacao sexual",
   // nl
   "akkoord|ik verklaar|voorwaarden|privacybeleid|privacyverklaring",
-  "gegevensbescherming|avg|verwerking van mijn gegevens|verwerking van persoonsgegevens",
+  "gegevensbescherming|avg verklaring|avg beleid|avg toestemming|verwerking van mijn gegevens|verwerking van persoonsgegevens",
   "bewaar mijn gegevens|bewaren van mijn gegevens|toekomstige vacatures|vacaturealerts|nieuwsbrief",
+  "gegevens bewaren|gegevens opslaan|cv bewaren|cv opslaan|profiel bewaren|profiel opslaan",
   "ik heb gelezen|geslacht|geslachtsidentiteit|voornaamwoorden|ras|etniciteit|etnische|afkomst",
-  "leeftijd|hoe oud|geboortedatum|geboorteplaats|geboortejaar",
+  "leeftijd|hoe oud ben|hoe oud bent|geboortedatum|geboorteplaats|geboortejaar",
   "beperking|arbeidsbeperking|gehandicapt|veteraan|militair|krijgsmacht",
   "geloofsovertuiging|godsdienst|levensovertuiging|seksuele geaardheid|seksuele voorkeur",
   "seksuele orientatie|burgerlijke staat|huwelijkse staat|handtekening|teken hier|ondertekening",
@@ -267,7 +270,7 @@ const MORE_LANGUAGES = [
   "kisisel veri|kisisel verilerimin|verilerimin saklanmasi|sartlar|kullanim kosullari",
   "gelecekteki pozisyonlar|acik pozisyonlar|is alarmi|bulten|cinsiyet|zamir|zamirler|irk|etnik",
   "kac yasindasiniz|dogum tarihi|dogum yeri|dogum yili",
-  "engel durumu|sakatlik|gazi|askeri|dini|mezhep|inanc|cinsel yonelim",
+  "engel durumu|sakatlik|gazi misiniz|gazi mi|gazi durumu|askeri|dini|mezhep|inanc|cinsel yonelim",
   "cinsel tercih|medeni durum|medeni hal",
   // pl
   "zgoda|zgode|zgody|zgadzam sie|akceptuje|potwierdzam|polityka prywatnosci",
@@ -276,6 +279,8 @@ const MORE_LANGUAGES = [
   "zaimki|rasa|pochodzenie|narodowosc|obywatelstwo|ile masz lat|data urodzenia",
   "miejsce urodzenia|rok urodzenia|weteran|sluzba wojskowa",
   "wojsko|wyznanie|wiara|orientacja seksualna|stan cywilny",
+  "zachowac twoje cv|zachowac moje cv|zachowac cv|zachowac twoje dane|zachowac dane|przechowywac cv",
+  "przechowywac dane|przechowywac twoje dane",
 ]
 
 /** Beginnings of words: `certif` is certify, certified and certification. Matched where a word starts. */
@@ -285,6 +290,9 @@ const STEMS = [
   "underrepresent|lgbt|sexual orient|sexual prefer|disabilit|ethnic|religi|nationalit|willig",
   "zustimm|dichiar|acconsent|assin|onay|imza|uyru|vatandas|engelli|askerlik|oswiadcz|przetwarz|podpis",
   "niepelnospraw",
+  // it, nl, tr, pl: the forms a question takes (Cinsiyetiniz, Doğum tarihiniz, Weteranem, nieuwsbrieven)
+  "cinsiyet|dogum tarih|dogum yer|dogum yil|medeni|engel durum|dinin|yasin|irkin|mezheb|weteran|wojsk",
+  "pelnolet|newslett|nieuwsbrie|d accordo",
 ]
 
 /** Long stems that are matched inside a word: german compounds (Datenschutzerklärung, Schwerbehinderung) and arabic, where the article and prefixes do not matter. */
@@ -311,9 +319,17 @@ const labelPattern = /* @__PURE__ */ lazy(
 )
 
 /** Labels that are private only as a whole: the arabic "type" is also a word in "job type". */
-const BARE_PRIVATE = new Set(
-  ["النوع", "نوع", "genre", "alter", "sex", "firma", "genere", "eta", "din", "yas", "wiek"].map(clean),
-)
+const BARE_PRIVATE = new Set(["النوع", "نوع", "genre", "alter", "sex", "firma"].map(clean))
+
+/** Bare words of it, tr and pl that are private as the first or last word of a short label (`Il tuo genere`, `Wiek (lata)`), not in the middle of a long one. */
+const BARE_EDGE = new Set(["genere", "eta", "din", "yas", "wiek"])
+const BARE_EDGE_WORDS = 4
+const isBareEdge = (own: string): boolean => {
+  const words = own.split(" ")
+  return (
+    words.length <= BARE_EDGE_WORDS && (BARE_EDGE.has(words[0] ?? "") || BARE_EDGE.has(words[words.length - 1] ?? ""))
+  )
+}
 
 /** Letters of long words that stay in view when a page spaces them out or swaps a digit in (G e n d e r, G3nder). */
 const SQUASH_STEMS =
@@ -349,6 +365,8 @@ const optionPattern = /* @__PURE__ */ lazy(() => new RegExp(`(^| )(${alternation
 /** Whole labels that are private only when they stand alone: `Visa expiry date` and `Country code` are something else. */
 const BARE_LABELS = new Set([
   "code",
+  "avg",
+  "gazi",
   "bic",
   "nir",
   "clabe",
@@ -404,18 +422,22 @@ function isPinSecret(padded: string): boolean {
 }
 
 /** Whether a field's value may be stored and filled back later. Case, spaces and zero-width characters in `type` can't dodge it. */
+/** A page controls its labels: only this many characters are split into tails, or `a: a: a: ...` is quadratic. */
+const OWN_LABEL_MAX = 2000
+
 /** The label and each tail of it after a section prefix (`Payment details: Code` also reads `Code`), normalized. */
 function ownLabels(label: string): string[] {
-  const parts = label.split(/:\s+/)
-  return parts.map((_, index) => normalizeLabel(parts.slice(index).join(" ")))
+  const parts = label.slice(0, OWN_LABEL_MAX).split(/:\s+/)
+  return parts.map((_, index) => clean(parts.slice(index).join(" ")))
 }
 
 export function isLearnableField(field: { label: string; type?: string; autocomplete?: string }): boolean {
   if (!controlKind(field.type)) return false
   if (field.autocomplete && SENSITIVE_AUTOCOMPLETE.test(field.autocomplete)) return false
   const label = clean(field.label)
-  if (label.length === 0 || ownLabels(field.label).some((own) => BARE_LABELS.has(own))) return false
-  if (ownLabels(field.label).some((own) => BARE_PRIVATE.has(clean(own)))) return false
+  if (label.length === 0) return false
+  const owns = ownLabels(field.label)
+  if (owns.some((own) => BARE_LABELS.has(own) || BARE_PRIVATE.has(own) || isBareEdge(own))) return false
   const padded = ` ${label} `
   if (labelPattern().test(padded) || isPinSecret(padded)) return false
   if (
@@ -439,25 +461,32 @@ function isAgeQuestion(label: string): boolean {
 
 /** "Are you over 21?", "18 or older", "plus de 18 ans": an age asked without the word. "Over 10 years of experience" is not. */
 const AGE_YES_NO =
-  /\b(?:are|is) you (?:currently )?(?:(?:at least|over|under|above|below|older than|younger than|more than|less than) )?\d{2}\b(?! (?:years?|yrs?) (?:of|experience))|\b\d{2} (?:years )?(?:or|and) (?:older|over|above|younger|under)\b|\b(?:plus|moins|au moins) de \d{2} ans\b|\b(?:mayor|menor) de \d{2}\b|\buber \d{2}\b/
+  /\b(?:are|is) you (?:currently )?(?:(?:at least|over|under|above|below|older than|younger than|more than|less than) )?\d{2}\b(?! (?:years?|yrs?) (?:of|experience))|\b\d{2} (?:years )?(?:or|and) (?:older|over|above|younger|under)\b|\b(?:plus|moins) de \d{2} ans\b|\bau moins (?:de )?\d{2} ans\b(?! d experience)|\b(?:etes vous|es tu|etre) (?:majeur|mineur)\b|\b(?:mayor|menor|maior) de \d{2}\b|\buber \d{2}\b|\b(?:ouder|jonger) dan \d{2}\b/
 
 /** "Are you Asian?", "Are you Muslim?": a protected category asked as a yes or no. */
 const PROTECTED_YES_NO =
-  /\b(?:are|is) you (?:an? )?(?:asian|black|white|caucasian|african|arab|hispanic|latinx?|latino|latina|indigenous|native|jewish|muslim|christian|hindu|buddhist|sikh|catholic|atheist)\b/
+  /\b(?:are|is) you (?:an? )?(?:asian|black|white|caucasian|african|arab|hispanic|latinx?|latino|latina|indigenous|native (?:american|hawaiian|born)|alaska native|jewish|muslim|christian|hindu|buddhist|sikh|catholic|atheist)\b/
 
 const WORK_FRAMING =
   /\b(work|working|employment|employed|travail|travailler|trabajar|trabajo|trabalh\w*|lavor\w*|arbeit\w*|empleo|visa|permit|permis|sponsor|legally|legal|eligible|elegible|berechtigt)\b|عمل/
 
-/** Contacting an employer or references, in any of the languages and either word order. A word between the two that is only a detail ("contact details of your employer") is not the ask. */
+/** Contacting an employer or references, in any of the languages and either word order, active or passive. A word between the two that is only a detail ("contact details of your employer") is not the ask. */
 const THIRD_PARTY_CONTACT = /* @__PURE__ */ lazy(() => {
   const targets = alternation([
-    "employer|employeur|arbeitgeber|empleador|empregador|datore|werkgever|isveren|pracodawc|referen|referee|referans|supervisor",
+    "employer|employeur|arbeitgeber|empleador|empregador|datore|werkgever|isveren|pracodawc|referen|referee|referans|supervisor|boss",
+    "current company|previous company|former company|last company|anterior empresa|empresa anterior|empresa actual|entreprise actuelle|ancienne entreprise",
   ])
-  const details = alternation(["name|email|phone|number|detail|info|address|person"])
-  const verbs = alternation(["contact|kontakt|skontakt|contatt|contat|iletisim"])
-  const reversed = alternation(["kontaktier|contacteren|skontaktowac|kontaktowac|iletisime"])
+  const details = alternation(["name|email|phone|number|detail|info|address|person|of"])
+  const verbs = alternation([
+    "contact|kontakt|skontakt|contatt|contat|iletisim|appeler|joindre|llam|ligar|chiam|benader|bellen|zadzwon|dzwon|zapyta",
+  ])
+  const plainVerbs = alternation(["call|speak|talk|verify|reach|approach|get in touch|touch base"])
+  const reversed = alternation([
+    "kontaktier|contacteren|skontaktowac|kontaktowac|iletisime|contacted|called|phoned|emailed|verified|approached",
+    "anruf|befrag|nachfrag|ansprech|aray|ulas|bellen|benaderen",
+  ])
   return new RegExp(
-    `\\b(?:${verbs})\\w* (?:(?!(?:${details}))\\w+ ){0,4}(?:${targets})|\\b(?:${targets})\\w* (?:\\w+ ){0,3}(?:${reversed})`,
+    `\\b(?:(?:${verbs})\\w*|(?:${plainVerbs})\\b) (?:(?!(?:${details}))\\w+ ){0,4}(?:${targets})|\\b(?:${targets})\\w* (?:\\w+ ){0,3}(?:${reversed})|\\b(?:referen\\w*|referee) (?:checks?|verification)\\b`,
   )
 })
 
@@ -469,14 +498,15 @@ const ASKS_PERMISSION = /* @__PURE__ */ lazy(
     ),
 )
 const WORK_PERMISSION =
-  /\b(?:permission|permit) to (?:work|relocate|relocating|move)\b|\btoestemming om (?:\w+ ){0,4}(?:te )?werken\b|اذن (?:ال|لل|ل)?عمل|تصريح (?:ال|لل|ل)?عمل/
+  /\b(?:permission|permit) to (?:work|relocate|relocating|move)\b|\btoestemming om (?:\w+ ){0,4}(?:te )?werken\b|اذن (?:ال|لل|ل)?عمل|تصريح (?:ال|لل|ل)?عمل/g
+/** Reaching the person ends the label or ends at the channel ("by phone or email") or the application it is about: more after it ("about marketing", "and share your data") is another ask. */
 const CONTACTS_APPLICANT =
-  /\b(?:contact|call|reach|phone|email|text|message|e mail) (?:you|me|us)\b|\bget in touch with (?:you|me)\b/
+  /(?:(?:may|can|could|shall|should) we |allow us to |permission to |i allow )?(?:\b(?:contact|call|reach|phone|email|text|message|e mail) (?:you|me|us)|\bget in touch with (?:you|me))(?: (?:by|via|on|through|using|over) \w+(?: (?:or|and) \w+)*| (?:about|regarding|concerning|for) (?:this|the|your|my) (?:application|role|job|position|candidacy|interview|vacancy))?$/
 
 /** Authorization is permission to act in the person's name, unless it is the work authorization question. Contacting the person is not asking for anything of theirs. */
 function isPermissionToAct(label: string): boolean {
   if (THIRD_PARTY_CONTACT().test(label)) return true
-  if (ASKS_PERMISSION().test(label) && !WORK_PERMISSION.test(label) && !CONTACTS_APPLICANT.test(label)) return true
+  if (ASKS_PERMISSION().test(label.replace(WORK_PERMISSION, " ").replace(CONTACTS_APPLICANT, " "))) return true
   return (
     /\b(authori[sz]\w*|autoris\w*|autoriz\w*|ermachtig\w*|genehmig\w*|permiso)/.test(label) && !WORK_FRAMING.test(label)
   )
@@ -515,7 +545,8 @@ const AGE_BAND =
 
 /** A section heading (equal opportunity, self identification, diversity, consent) under which every question is private. */
 export function isSensitiveSection(heading: string): boolean {
-  return sectionPattern().test(clean(heading))
+  const text = clean(heading)
+  return sectionPattern().test(text) || THIRD_PARTY_CONTACT().test(text)
 }
 
 /** The two genders as a form words them in it, pt, nl, tr and pl. */

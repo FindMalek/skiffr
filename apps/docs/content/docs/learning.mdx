@@ -40,7 +40,10 @@ Each event is stored with the application it belongs to, which gives corrections
 ## What is never learned
 
 - password, one-time code and card fields, and anything the page marks with an autocomplete token such as `cc-*`, `one-time-code`, `new-password`, `current-password` or `bday*`
-- labels for secrets, card and bank data, government and tax ids, birth dates, and equal opportunity categories (gender, ethnicity, race, disability, religion, veteran status, orientation, marital status), in English, French, German, Spanish and Arabic
+- labels for secrets, card and bank data, government and tax ids, birth dates, and equal opportunity categories (gender, ethnicity, race, disability, religion, veteran status, orientation, marital status), in English, French, German, Spanish and Arabic. Italian, Portuguese, Dutch, Turkish and Polish are a first pass: consent, gender, race, age and birth, nationality, disability, military service, religion, orientation, marital status, pronouns and signatures, not family, union or honorific wording. A question in another language, or worded in a way the lists do not know, can still be learned
+- questions that ask for permission to act in your name: contacting an employer or references, keeping or using your data, job alerts, newsletters, future openings and signatures. "Permission to work" and being contacted yourself ("can we contact you by phone") are ordinary questions and stay learnable
+- questions a page draws without readable text (an image, a canvas) are not recognised
+- the answers you saved before a question was recognised as private stay in the dashboard with a "not filled any more: sensitive question" note, and you can delete them from there
 - control kinds outside an allowlist, and fields with no declared type
 - values over 300 characters: the correction is logged but not learned, and if you correct a field to a value over 300 characters, the old learned answer for that label is deleted
 - values that look like a card number (13 to 19 digits that pass the Luhn check), a valid IBAN or a US social security number (`123-45-6789`): never stored or filled, whatever the field is called. This is a backstop for labels the lists above do not think of
