@@ -2,8 +2,10 @@ import type { Auth, Session } from "@skiffr/auth"
 import type { Db } from "@skiffr/db"
 import type { Storage } from "@skiffr/storage"
 import type { EmbeddingModel, LanguageModel } from "ai"
+import type { AiBudget } from "./lib/ai-usage"
 import type { CvRuntime } from "./lib/cv"
 import type { GmailRuntime, TokenCache } from "./lib/gmail"
+import type { RateLimiter } from "./lib/rate-limit"
 import { bearerSecret, type TokenAuth, TokenStoreError, tokenErrorFields, verifyToken } from "./lib/tokens"
 import type { WatchRuntime } from "./lib/watch/run"
 
@@ -31,6 +33,10 @@ export interface Services {
   gmail?: GmailService | null
   /** The job source watcher's network and limits; without it "Run now" is unavailable. */
   watch?: WatchRuntime | null
+  /** Per user request limits, in this process only. Without it nothing is limited (tests). */
+  limits?: RateLimiter | null
+  /** Daily model budget per user, counted in the database. Without it the model is not limited (tests). */
+  aiBudget?: AiBudget | null
   /** Reactive Resume tailoring, present only when `CV_ENCRYPTION_KEY` is set. */
   cv?: CvRuntime | null
 }

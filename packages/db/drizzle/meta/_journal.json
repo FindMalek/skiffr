@@ -71,6 +71,20 @@
       "when": 1794485383535,
       "tag": "0009_hot_jackpot",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1794501432019,
+      "tag": "0010_mixed_plazm",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1794506195657,
+      "tag": "0011_perfect_layla_miller",
+      "breakpoints": true
     }
   ]
 }

@@ -107,6 +107,7 @@ export async function guardLearningDb<T>(operation: string, run: () => Promise<T
 
 /** Failures of work that is allowed to fail are logged as a class, never with the request: model errors add kind, status and request id. */
 export function logBestEffort(route: string, what: string, error: unknown): void {
+  if (error instanceof AiModelError && error.kind === "budget") return
   const fields: Record<string, unknown> = safeErrorFields(error)
   if (error instanceof AiModelError) {
     Object.assign(fields, {

@@ -3,18 +3,37 @@ import { OpenAPIReferencePlugin } from "@orpc/openapi/plugins"
 import { RPCHandler } from "@orpc/server/fetch"
 import { SimpleCsrfProtectionHandlerPlugin } from "@orpc/server/plugins"
 import { ZodToJsonSchemaConverter } from "@orpc/zod/zod4"
-import type { Auth } from "@skiffr/auth"
+import { type Auth, CLIENT_IP_HEADER, UNKNOWN_CLIENT_IP } from "@skiffr/auth"
 import { appRouter, bearerSecret, createContext, type Services } from "@skiffr/orpc"
 import { sql } from "drizzle-orm"
+import { type ClientIpConfig, clientIpOf } from "./client-ip"
 import { type Handler, withExtensionCors } from "./cors"
 import { GMAIL_ROUTES, handleGmail } from "./gmail"
 import { withSecurityHeaders } from "./headers"
 
 export type { Handler } from "./cors"
 
-function withRequestId(response: Response, requestId: string): Response {
+const DEFAULT_CLIENT_IP: ClientIpConfig = { header: "x-forwarded-for", trustedProxies: 1 }
+
+/** A rate limited answer carries its wait in `data.retryAfterSeconds`; plain http clients look in `Retry-After`. */
+async function retryAfterOf(response: Response): Promise<string | null> {
+  if (response.status !== 429 || response.headers.has("retry-after")) return null
+  const body = (await response
+    .clone()
+    .json()
+    .catch(() => null)) as {
+    json?: { data?: { retryAfterSeconds?: unknown } }
+    data?: { retryAfterSeconds?: unknown }
+  } | null
+  const seconds = body?.json?.data?.retryAfterSeconds ?? body?.data?.retryAfterSeconds
+  return typeof seconds === "number" && Number.isFinite(seconds) ? String(Math.max(1, Math.ceil(seconds))) : null
+}
+
+async function withRequestId(response: Response, requestId: string): Promise<Response> {
   const headers = new Headers(response.headers)
   headers.set("x-request-id", requestId)
+  const wait = await retryAfterOf(response)
+  if (wait) headers.set("retry-after", wait)
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
 }
 
@@ -32,8 +51,11 @@ type Interceptors = NonNullable<NonNullable<ConstructorParameters<typeof RPCHand
  */
 export function createServer(
   services: Services & { auth: Auth },
-  opts: { publicUrl: string; dashboardUrl?: string; extensionOrigins?: string[] },
+  opts: { publicUrl: string; dashboardUrl?: string; extensionOrigins?: string[]; clientIp?: ClientIpConfig },
 ) {
+  const clientIp = opts.clientIp ?? DEFAULT_CLIENT_IP
+  const peers = new WeakMap<Request, string>()
+  let warned = false
   const interceptors: Interceptors = []
   const wrappers: Array<(next: Handler) => Handler> = []
   const rpc = new RPCHandler(appRouter, { plugins: [new SimpleCsrfProtectionHandlerPlugin()], interceptors })
@@ -61,7 +83,17 @@ export function createServer(
       // The proxy strips the app's `/api` prefix; better-auth expects its default `/api/auth` base path back.
       const url = new URL(request.url)
       url.pathname = `/api${pathname}`
-      return services.auth.handler(new Request(url, request))
+      const forwarded = new Request(url, request)
+      // Always set here and never taken from the client: it is the one header better-auth reads the address from
+      const ip = clientIpOf(request.headers, clientIp, peers.get(request))
+      if (!ip && !warned) {
+        warned = true
+        console.warn(
+          `[auth] no client address from ${clientIp.header} or the connection: those requests share one sign-in bucket. Check CLIENT_IP_HEADER and TRUSTED_PROXY_COUNT`,
+        )
+      }
+      forwarded.headers.set(CLIENT_IP_HEADER, ip ?? UNKNOWN_CLIENT_IP)
+      return services.auth.handler(forwarded)
     }
     if (GMAIL_ROUTES.has(pathname)) return handleGmail(request, services, opts.dashboardUrl)
     if (pathname === "/health") {
@@ -83,9 +115,9 @@ export function createServer(
       prefix: "/rpc",
       context,
     })
-    if (viaRpc.matched) return withRequestId(viaRpc.response, requestId)
+    if (viaRpc.matched) return await withRequestId(viaRpc.response, requestId)
     const viaRest = await rest.handle(request, { prefix: "/v1", context })
-    if (viaRest.matched) return withRequestId(viaRest.response, requestId)
+    if (viaRest.matched) return await withRequestId(viaRest.response, requestId)
     return Response.json({ message: "Not found." }, { status: 404 })
   }
 
@@ -94,7 +126,8 @@ export function createServer(
     wrappers.reduceRight<Handler>((next, wrap) => wrap(next), handle),
     opts.extensionOrigins,
   )
-  return async function fetch(request: Request): Promise<Response> {
+  return async function fetch(request: Request, peer?: string): Promise<Response> {
+    if (peer) peers.set(request, peer)
     return withSecurityHeaders(await handler(request), { https })
   }
 }

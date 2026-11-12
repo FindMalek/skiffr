@@ -1,4 +1,5 @@
 export { type Context, createContext, type GmailService, type Services } from "./context"
+export { RateLimiter } from "./lib/rate-limit"
 export { bearerSecret } from "./lib/tokens"
 export { adminProcedure, o, protectedProcedure, publicProcedure, TOKEN_PROCEDURES } from "./procedures"
 export { type AppRouter, type AppRouterClient, appRouter } from "./routers"
