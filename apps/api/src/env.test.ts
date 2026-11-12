@@ -30,3 +30,15 @@ test("the number of trusted proxies is a small whole number", () => {
   for (const bad of [" ", "11", "-1", "two"])
     expect(() => load({ TRUSTED_PROXY_COUNT: bad })).toThrow("TRUSTED_PROXY_COUNT")
 })
+
+test("observability keys are all optional, bad urls are refused, and content capture is off unless it says true", () => {
+  expect(load({})).toMatchObject({ AI_TRACE_CAPTURE_CONTENT: "false" })
+  expect(
+    load({ GLITCHTIP_DSN: "https://k@errors.example.com/1", UMAMI_WEBSITE_ID: "11111111-2222-4333-8444-555555555555" }),
+  ).toMatchObject({
+    GLITCHTIP_DSN: "https://k@errors.example.com/1",
+  })
+  for (const key of ["GLITCHTIP_DSN", "OTEL_EXPORTER_OTLP_ENDPOINT", "UMAMI_URL", "UMAMI_WEBSITE_ID"])
+    expect(() => load({ [key]: "nope" })).toThrow(key)
+  expect(() => load({ AI_TRACE_CAPTURE_CONTENT: "yes" })).toThrow("AI_TRACE_CAPTURE_CONTENT")
+})
