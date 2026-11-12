@@ -2,6 +2,7 @@ import { ORPCError, os } from "@orpc/server"
 import type { Session } from "@skiffr/auth"
 import type { Context } from "./context"
 import { safeErrorFields } from "./lib/errors"
+import type { LimitClass } from "./lib/rate-limit"
 import type { TokenAuth } from "./lib/tokens"
 
 export const o = os.$context<Context>()
@@ -70,7 +71,45 @@ const requireSession = o.middleware(async ({ context, path, next }) => {
   return next({ context: identity })
 })
 
-export const protectedProcedure = publicProcedure.use(requireSession)
+/** Calls that spend money on a model. Each one is also counted against the daily budget (see `lib/ai-usage.ts`). */
+const AI_PROCEDURES: ReadonlySet<string> = new Set(["ai.mapFields", "ai.draftAnswer", "cv.preview", "notes.summarize"])
+
+/** Calls that fetch from the network (a Reactive Resume instance, a careers page, the mailbox, storage). */
+const EXPENSIVE_PROCEDURES: ReadonlySet<string> = new Set([
+  "cv.connect",
+  "cv.test",
+  "cv.resumes",
+  "cv.setBase",
+  "cv.apply",
+  "cv.pdf",
+  "gmail.syncNow",
+  "jobSources.runNow",
+  "me.avatar",
+])
+
+/** Every other procedure is a read when it is a GET and a write otherwise, so a new one is limited without being listed. */
+export function limitClassOf(path: string, method: string | undefined): LimitClass {
+  if (AI_PROCEDURES.has(path)) return "ai"
+  if (EXPENSIVE_PROCEDURES.has(path)) return "expensive"
+  return method === "GET" ? "read" : "write"
+}
+
+/** Per user, whether the caller is a session or a token. The message holds a wait time and nothing of the request. */
+const limitRate = o.middleware(async ({ context, path, procedure, next }) => {
+  const user = (context as { user?: { id: string } }).user
+  if (user && context.limits) {
+    const verdict = context.limits.take(user.id, limitClassOf(path.join("."), procedure["~orpc"].route.method))
+    if (!verdict.ok) {
+      throw new ORPCError("TOO_MANY_REQUESTS", {
+        message: `Too many requests. Try again in ${verdict.retryAfterSeconds} seconds.`,
+        data: { retryAfterSeconds: verdict.retryAfterSeconds },
+      })
+    }
+  }
+  return next()
+})
+
+export const protectedProcedure = publicProcedure.use(requireSession).use(limitRate)
 
 const requireAdmin = o.middleware(async ({ context, next }) => {
   if (context.session?.user.role !== "admin") throw new ORPCError("FORBIDDEN", { message: "Admins only." })

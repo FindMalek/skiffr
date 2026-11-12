@@ -9,6 +9,7 @@ import {
 import { profile } from "@skiffr/db"
 import { eq } from "drizzle-orm"
 import type { Context } from "../context"
+import { withAiBudget } from "../lib/ai-usage"
 import { protectedProcedure } from "../procedures"
 
 /** The profile is read here, not sent by the caller: the payload stays small and a client can't ask about someone else's data. */
@@ -44,7 +45,10 @@ export const aiRouter = {
     .output(mapFieldsOutputSchema)
     .handler(async ({ context, input }) => {
       const ai = await loadAi(context)
-      return { mappings: await guarded("ai.mapFields", () => mapFields({ ...ai, fields: input.fields })) }
+      const mappings = await guarded("ai.mapFields", () =>
+        withAiBudget(context, ai.model, (model) => mapFields({ ...ai, model, fields: input.fields })),
+      )
+      return { mappings }
     }),
 
   draftAnswer: protectedProcedure
@@ -58,6 +62,8 @@ export const aiRouter = {
     .output(draftAnswerOutputSchema)
     .handler(async ({ context, input }) => {
       const ai = await loadAi(context)
-      return guarded("ai.draftAnswer", () => draftAnswer({ ...ai, ...input }))
+      return guarded("ai.draftAnswer", () =>
+        withAiBudget(context, ai.model, (model) => draftAnswer({ ...ai, ...input, model })),
+      )
     }),
 }

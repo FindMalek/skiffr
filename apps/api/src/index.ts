@@ -4,6 +4,7 @@ import { createDb } from "@skiffr/db"
 import { runMigrations } from "@skiffr/db/migrate"
 import { seedDemo } from "@skiffr/db/seed"
 import { loadApiEnv } from "@skiffr/env/api"
+import { RateLimiter } from "@skiffr/orpc"
 import { createCvRuntime } from "@skiffr/orpc/cv"
 import { advisoryLeader, createScheduler, LOCKS } from "@skiffr/orpc/gmail"
 import { createWatchRuntime, createWatchScheduler } from "@skiffr/orpc/watch"
@@ -68,6 +69,8 @@ const fetch = createServer(
     gmail,
     watch,
     cv,
+    limits: new RateLimiter(),
+    aiBudget: { dailyCalls: env.AI_DAILY_CALLS, dailyTokens: env.AI_DAILY_TOKENS },
   },
   {
     publicUrl: env.API_PUBLIC_URL,

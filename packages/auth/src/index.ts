@@ -12,6 +12,8 @@ export interface AuthConfig {
   trustedOrigins: string[]
   github?: { clientId: string; clientSecret: string }
   secureCookies: boolean
+  /** Leave unset for better-auth's default: on in production only. */
+  rateLimit?: boolean
   /** Called with the link to email; unset means those flows stay off. */
   sendVerification?: (user: { email: string; name: string }, url: string) => Promise<unknown>
   sendResetPassword?: (user: { email: string; name: string }, url: string) => Promise<unknown>
@@ -47,6 +49,14 @@ export function createAuth(config: AuthConfig) {
     advanced: {
       useSecureCookies: config.secureCookies,
       defaultCookieAttributes: { httpOnly: true, sameSite: "lax" },
+    },
+    rateLimit: {
+      enabled: config.rateLimit,
+      storage: "database",
+      customRules: {
+        "/sign-in/email": { window: 60, max: 10 },
+        "/sign-up/email": { window: 60, max: 5 },
+      },
     },
     session: { cookieCache: { enabled: true, maxAge: 5 * 60 } },
   })

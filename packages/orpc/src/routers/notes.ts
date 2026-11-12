@@ -4,6 +4,7 @@ import { notes } from "@skiffr/db"
 import { generateText } from "ai"
 import { and, count, desc, eq } from "drizzle-orm"
 import { z } from "zod"
+import { withAiBudget } from "../lib/ai-usage"
 import { protectedProcedure } from "../procedures"
 
 const mine = (userId: string, id: string) => and(eq(notes.userId, userId), eq(notes.id, id))
@@ -80,11 +81,13 @@ export const notesRouter = {
       if (!context.model) throw new ORPCError("SERVICE_UNAVAILABLE", { message: "No AI provider key is configured." })
       const [note] = await context.db.select().from(notes).where(mine(context.user.id, input.id))
       if (!note) throw new ORPCError("NOT_FOUND", { message: "Note not found." })
-      const { text } = await generateText({
-        model: context.model,
-        system: "Summarize the note in one short sentence. Plain text, no preamble.",
-        prompt: `${note.title}\n\n${note.body}`,
-      })
+      const { text } = await withAiBudget(context, context.model, (model) =>
+        generateText({
+          model,
+          system: "Summarize the note in one short sentence. Plain text, no preamble.",
+          prompt: `${note.title}\n\n${note.body}`,
+        }),
+      )
       return { summary: text.trim() }
     }),
 }

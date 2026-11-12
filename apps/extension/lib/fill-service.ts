@@ -1,5 +1,6 @@
 import { ORPCError } from "@orpc/client"
 import {
+  AI_BUDGET_EXHAUSTED,
   AI_FIELDS_MAX,
   type FieldDescriptor,
   type FieldMapping,
@@ -66,7 +67,7 @@ export function classify(error: unknown): FillErrorCode {
   if (error instanceof ORPCError) {
     if (error.status === 401 || error.status === 403) return "rejected"
     if (error.status === 412) return "no-profile"
-    if (error.status === 429) return "busy"
+    if (error.status === 429) return error.code === AI_BUDGET_EXHAUSTED ? "budget" : "busy"
     if (error.status === 400) return "invalid"
     if (error.status >= 500) return "unavailable"
     return "failed"

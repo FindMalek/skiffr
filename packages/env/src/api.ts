@@ -61,6 +61,9 @@ const schema = z.object({
   GROQ_API_KEY: optional,
   OPENAI_API_KEY: optional,
   ANTHROPIC_API_KEY: optional,
+  /** Per user and UTC day, kept in the database so it holds across restarts and replicas. 0 means no limit. */
+  AI_DAILY_CALLS: z.coerce.number().int().min(0).default(300),
+  AI_DAILY_TOKENS: z.coerce.number().int().min(0).default(1_000_000),
 })
 
 const GMAIL_KEYS = ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GMAIL_ENCRYPTION_KEY"] as const

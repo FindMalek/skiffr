@@ -1,9 +1,10 @@
 import { ORPCError } from "@orpc/server"
 import { ADMIN_LIST_LIMIT } from "@skiffr/common/constants"
-import { adminUserSchema, meSchema, okSchema, profileInputSchema } from "@skiffr/common/schemas"
+import { adminUserSchema, aiUsageSchema, meSchema, okSchema, profileInputSchema } from "@skiffr/common/schemas"
 import { user } from "@skiffr/db"
 import { count, desc, eq } from "drizzle-orm"
 import { z } from "zod"
+import { aiUsageToday } from "../lib/ai-usage"
 import { adminProcedure, protectedProcedure } from "../procedures"
 
 const IMAGE_TYPES: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" }
@@ -19,6 +20,16 @@ export const meRouter = {
       image: context.user.image ?? null,
       role: context.user.role ?? null,
     })),
+
+  usage: protectedProcedure
+    .route({
+      method: "GET",
+      path: "/me/usage",
+      summary: "Today's AI calls and tokens against the daily limits",
+      tags: ["account"],
+    })
+    .output(aiUsageSchema)
+    .handler(({ context }) => aiUsageToday(context)),
 
   update: protectedProcedure
     .route({ method: "PATCH", path: "/me", summary: "Update your profile", tags: ["account"] })

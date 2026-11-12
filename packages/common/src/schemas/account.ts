@@ -19,6 +19,15 @@ export const adminUserSchema = z.object({
   createdAt: z.date(),
 })
 
+/** Today's (UTC) model spend against the server's daily limits. A limit of 0 means none. */
+export const aiUsageSchema = z.object({
+  day: z.string(),
+  calls: z.number(),
+  tokens: z.number(),
+  limits: z.object({ calls: z.number(), tokens: z.number() }),
+})
+
 export const okSchema = z.object({ ok: z.literal(true) })
 
 export type Me = z.infer<typeof meSchema>
+export type AiUsage = z.infer<typeof aiUsageSchema>
