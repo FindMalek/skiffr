@@ -20,7 +20,7 @@ const securityHeaders = [
   },
 ]
 
-const transpilePackages = ["@skiffr/ui", "@skiffr/orpc", "@skiffr/common"]
+const transpilePackages = ["@skiffr/ui", "@skiffr/orpc", "@skiffr/common", "@skiffr/ai"]
 
 const nextConfig: NextConfig = {
   output: "standalone",

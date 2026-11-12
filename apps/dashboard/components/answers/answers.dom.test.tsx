@@ -112,3 +112,22 @@ test("two quick clicks on Stop filling send one request and the answer ends reje
   ])
   expect(server.status).toBe("confirmed")
 })
+
+test("a saved answer whose question is now private stays listed with a note and can still be deleted", async () => {
+  const sensitive = answer({
+    id: "00000000-0000-4000-8000-000000000002",
+    rawLabel: "Do you consent to us keeping your data?",
+    normalizedLabel: "do you consent to us keeping your data",
+    value: "Yes",
+  })
+  const ordinary = answer({ id: "00000000-0000-4000-8000-000000000003", rawLabel: "Notice period" })
+  await mount(<AnswerBank />, (client) => client.setQueryData(bankKey(orpc.answers.key()), [sensitive, ordinary]))
+
+  const notes = Array.from(host.querySelectorAll("span")).filter((node) =>
+    node.textContent?.includes("Not filled any more: sensitive question"),
+  )
+  expect(notes).toHaveLength(2) // one in the table, one in the card list; both drawn for the sensitive row only
+  for (const note of notes) expect(note.closest("tr, li")?.textContent).toContain("Do you consent")
+  expect(host.textContent).toContain("Notice period")
+  expect(host.querySelector('[aria-label^="Delete: Do you consent"]')).not.toBeNull()
+})
