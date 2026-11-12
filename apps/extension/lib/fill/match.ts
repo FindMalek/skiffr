@@ -135,6 +135,15 @@ export function sameValue(shown: string, wanted: string): boolean {
   return a !== "" && a === loose(wanted)
 }
 
+/** A phone widget with a country picker keeps the dial code out of the input: "+351 912 345 678" shows as "912 345 678". */
+export function movedDialCode(shown: string, wanted: string): boolean {
+  const digits = (text: string) => text.replace(/\D/g, "")
+  const [a, w] = [digits(shown), digits(wanted)]
+  return (
+    wanted.trim().startsWith("+") && a.length >= 5 && w.length > a.length && w.length - a.length <= 3 && w.endsWith(a)
+  )
+}
+
 export function splitList(value: string | string[]): string[] {
   const parts = Array.isArray(value) ? value : value.split(/[\n;,]/)
   return parts.map((part) => part.trim()).filter(Boolean)

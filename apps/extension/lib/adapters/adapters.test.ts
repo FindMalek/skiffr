@@ -162,6 +162,19 @@ describe("workable", () => {
     expect(labels(mountBoard("workable", SOMEWHERE_ELSE).document)).toContain("Summary (Optional)")
   })
 
+  test("the personal information section is read: name, email and the phone with its country picker", async () => {
+    const { document } = mountBoard("workable")
+    const seen = collectFields(document)
+    const names = seen.map((field) => field.descriptor.label ?? "")
+    for (const label of [/^First name$/, /^Last name$/, /^Email$/, /Phone$/])
+      expect(names.some((n) => label.test(n))).toBe(true)
+    const phone = seen.find((field) => field.el.id === "input_phone")
+    expect(phone).toMatchObject({ kind: "text", descriptor: { type: "tel" }, info: { required: false } })
+    expect(names.some((label) => /^Equal Employment|^Diversity|Please select one|^Gender|Veteran/.test(label))).toBe(
+      false,
+    )
+  })
+
   test("a radio group is answered through its label, read back and left alone when it already matches", async () => {
     const { document } = mountBoard("workable")
     const field = find(document, /eligible to work/) as NonNullable<ReturnType<typeof find>>

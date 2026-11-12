@@ -9,6 +9,8 @@
   section { background: #fff; border-radius: 8px; padding: 8px 16px 16px; margin: 16px 0 }
   .field { margin: 14px 0 }
   .field > label, .field > div { display: block }
+  .iti { display: flex; align-items: center; gap: 4px }
+  .iti input { flex: 1 }
   .title { font-weight: 600 }
   .req { color: #b42318; margin-right: 4px }
   .opt { color: #777; font-weight: 400 }
@@ -25,7 +27,8 @@
   input[type=file] { position: absolute; opacity: 0; width: 1px; height: 1px }
   button[data-ui=apply-button] { padding: 10px 24px }
   .consent label { display: flex; gap: 8px; align-items: flex-start }
-  [data-ui=cookie-consent] { position: fixed; bottom: 0; left: 0; max-width: 560px; box-sizing: border-box; background: #222; color: #fff; padding: 12px 16px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center }
+  [data-ui=backdrop] { position: fixed; inset: 0; z-index: 999999; opacity: .95; background: #383940 }
+  [data-ui=cookie-consent] { position: fixed; z-index: 1000000; bottom: 0; left: 0; max-width: 560px; box-sizing: border-box; background: #222; color: #fff; padding: 12px 16px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center }
   [data-ui=cookie-consent] button { padding: 6px 12px }
 </style>
 </head>
@@ -41,7 +44,7 @@
   <div class="field"><label><span><span class="req"><strong>*</strong></span><span><span class="title" id="firstname_label"><strong>First name</strong></span></span></span><div data-role="illustrated-input"><div><input aria-required="true" id="firstname" maxlength="127" data-ui="firstname" name="firstname" aria-labelledby="firstname_label" required type="text" dir="auto" value=""></div></div></label></div>
   <div class="field"><label><span><span class="req"><strong>*</strong></span><span><span class="title" id="lastname_label"><strong>Last name</strong></span></span></span><div data-role="illustrated-input"><div><input aria-required="true" id="lastname" maxlength="127" data-ui="lastname" name="lastname" aria-labelledby="lastname_label" required type="text" dir="auto" value=""></div></div></label></div>
   <div class="field"><label><span><span class="req"><strong>*</strong></span><span><span class="title" id="email_label"><strong>Email</strong></span></span></span><div data-role="illustrated-input"><div><input aria-required="true" id="email" maxlength="255" data-ui="email" name="email" aria-labelledby="email_label" required type="email" dir="auto" value=""></div></div></label></div>
-  <div class="field"><label><span><span class="req"><strong>*</strong></span><span><span class="title" id="phone_label"><strong>Phone</strong></span></span></span><div data-role="illustrated-input"><div><input aria-required="true" id="phone" maxlength="127" data-ui="phone" name="phone" aria-labelledby="phone_label" required type="tel" dir="auto" value=""></div></div></label></div>
+  <div class="field"><div><span><span class="title" id="phone_label"><strong>Phone</strong></span><span class="opt"> (Optional)</span></span><div data-ui="phone" data-ignore-focus="true"><div data-role="illustrated-input"><div class="iti"><div class="iti__country-container"><button type="button" class="iti__selected-country" aria-haspopup="dialog" aria-expanded="false" aria-label="Change country for phone number, currently selected Tunisia (+216)"><span class="iti__selected-dial-code">+216</span></button></div><input aria-describedby="phone_helper" aria-labelledby="phone_label" aria-required="false" autocomplete="tel" dir="auto" id="input_phone" inputmode="tel" maxlength="255" name="phone" type="tel"></div></div></div><div><span id="phone_helper">The hiring team may use this number to contact you about this job.</span></div></div></div>
 </div></section>
 <section data-ui="section"><div><h2 id="section-1_section_name">Profile</h2><a role="button" data-ui="clear-section-1" aria-label="Clear Profile" aria-disabled="true"><span>Clear</span></a></div>
 <div data-ui="section-fields">
@@ -88,6 +91,19 @@
 <script src="/shared/widgets.js"></script>
 <script>
   const { bind, h } = Fixture
+
+  // the phone widget keeps the dial code in its country picker: a number typed or set with +351 shows without it
+  // it listens first, so the framework reads the value the person sees
+  const DIAL = { "+351": "Portugal", "+44": "United Kingdom", "+1": "United States" }
+  const phone = document.querySelector("#input_phone")
+  const flag = document.querySelector(".iti__selected-country")
+  phone.addEventListener("input", () => {
+    const code = Object.keys(DIAL).find((dial) => phone.value.trim().startsWith(dial))
+    if (!code) return
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(phone, phone.value.trim().slice(code.length).trim())
+    flag.querySelector(".iti__selected-dial-code").textContent = code
+    flag.setAttribute("aria-label", `Change country for phone number, currently selected ${DIAL[code]} (${code})`)
+  })
   for (const el of document.querySelectorAll("form input[type=text], form input[type=email], form input[type=tel], form textarea")) {
     if (!el.readOnly) bind(el)
   }
@@ -131,7 +147,7 @@
   field.addEventListener("blur", () => setTimeout(close, 150))
 
   for (const button of document.querySelectorAll("[data-ui^=cookie-consent-]:not([data-ui=cookie-consent-cookies-policy])")) {
-    button.addEventListener("click", () => document.querySelector("[data-ui=cookie-consent]").remove())
+    button.addEventListener("click", () => document.querySelector("[data-ui=cookie-consent]").parentElement.remove())
   }
 </script>
 </body>

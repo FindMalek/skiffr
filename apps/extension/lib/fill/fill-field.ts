@@ -20,7 +20,7 @@ import {
   view,
   waitFor,
 } from "./dom"
-import { isFalsy, isTruthy, matchOption, sameValue, splitList } from "./match"
+import { isFalsy, isTruthy, matchOption, movedDialCode, sameValue, splitList } from "./match"
 import { parseNumber } from "./numbers"
 import { readField } from "./read"
 import { beginFill } from "./state"
@@ -83,7 +83,8 @@ async function fillText(field: CollectedField, text: string, options: FillFieldO
   if ("error" in adapted) return failed(field, adapted.error)
   const wanted = adapted.value
   const original = el.value
-  if (sameValue(original, wanted)) return { status: "unchanged", value: original }
+  const kept = (shown: string) => sameValue(shown, wanted) || (el.type === "tel" && movedDialCode(shown, wanted))
+  if (kept(original)) return { status: "unchanged", value: original }
 
   const commit = () => {
     fireChange(el)
@@ -94,12 +95,12 @@ async function fillText(field: CollectedField, text: string, options: FillFieldO
   fireInput(el, wanted, "insertReplacementText")
   commit()
   await settle()
-  if (!sameValue(el.value, wanted)) {
+  if (!kept(el.value)) {
     await typeInto(el, wanted)
     commit()
     await settle()
   }
-  if (!sameValue(el.value, wanted)) {
+  if (!kept(el.value)) {
     focusEl(el)
     setNativeValue(el, original)
     fireInput(el, original, "insertReplacementText")

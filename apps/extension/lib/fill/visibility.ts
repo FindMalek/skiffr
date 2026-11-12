@@ -89,12 +89,42 @@ function reachable(el: HTMLElement, rect: DOMRect, ctx: VisibilityCtx, layout: b
   return right - left >= 1 && bottom - top >= 1 ? new win.DOMRect(left, top, right - left, bottom - top) : null
 }
 
+const DIALOG = "[role=dialog],[role=alertdialog],dialog,[aria-modal=true]"
+const CONSENT_WORDS = /cookie|consent|gdpr|onetrust|cookiebot|trustarc|didomi|usercentrics|quantcast/i
+const ANSWERS = "button,[role=button],input[type=button],input[type=submit]"
+
+function namesConsent(dialog: Element): boolean {
+  const names = ["id", "class", "aria-label", "data-ui", "data-testid"].map((name) => dialog.getAttribute(name) ?? "")
+  return CONSENT_WORDS.test(names.join(" "))
+}
+
+/** The cookie dialog a hit is part of, or stands behind as its backdrop: an empty box next to the dialog. */
+function consentDialog(hit: Element): Element | null {
+  const own = hit.closest(DIALOG)
+  if (own) return namesConsent(own) ? own : null
+  if (hit.textContent?.trim() || hit.querySelector(`input,textarea,select,a,${ANSWERS}`)) return null
+  const next = Array.from(hit.parentElement?.children ?? [])
+  return next.find((sibling) => sibling !== hit && sibling.matches(DIALOG) && namesConsent(sibling)) ?? null
+}
+
+/**
+ * A cookie dialog dims the page until it is answered, and Workable's covers the first screen of the form. The fields
+ * under it are the same ones the person sees once they answer it, so it does not count as something in front of them.
+ * It has to be drawn, and offer an answer.
+ */
+function isConsentCover(hit: Element): boolean {
+  const dialog = consentDialog(hit)
+  if (!dialog?.querySelector(ANSWERS)) return false
+  const style = view(hit as HTMLElement).getComputedStyle(hit)
+  return style.opacity !== "0" && style.visibility !== "hidden" && style.display !== "none"
+}
+
 function accepts(hit: Element | null, el: HTMLElement): boolean {
   if (!hit) return false
   if (hit === el || el.contains(hit)) return true
   const label = hit.closest("label")
   if (label && (label.contains(el) || (el.id !== "" && label.getAttribute("for") === el.id))) return true
-  return false
+  return isConsentCover(hit)
 }
 
 function covered(el: HTMLElement, rect: DOMRect, ctx: VisibilityCtx): boolean {
