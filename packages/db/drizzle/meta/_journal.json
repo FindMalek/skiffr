@@ -57,6 +57,13 @@
       "when": 1794417244322,
       "tag": "0007_flashy_wolfpack",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1794479808577,
+      "tag": "0008_vengeful_thanos",
+      "breakpoints": true
     }
   ]
 }

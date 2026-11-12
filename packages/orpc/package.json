@@ -13,7 +13,8 @@
     "./proxy": "./src/proxy.ts",
     "./gmail": "./src/lib/gmail/index.ts",
     "./gmail-test": "./src/lib/gmail/test-support.ts",
-    "./gmail-mock": "./src/lib/gmail/mock-google.ts"
+    "./gmail-mock": "./src/lib/gmail/mock-google.ts",
+    "./watch": "./src/lib/watch/index.ts"
   },
   "scripts": {
     "check-types": "tsc --noEmit",

@@ -4,11 +4,14 @@ import { createDb } from "@skiffr/db"
 import { runMigrations } from "@skiffr/db/migrate"
 import { seedDemo } from "@skiffr/db/seed"
 import { loadApiEnv } from "@skiffr/env/api"
-import { advisoryLeader, createScheduler } from "@skiffr/orpc/gmail"
+import { advisoryLeader, createScheduler, LOCKS } from "@skiffr/orpc/gmail"
+import { createWatchRuntime, createWatchScheduler } from "@skiffr/orpc/watch"
 import { createStorage } from "@skiffr/storage"
 import { ensureAdmin } from "./admin"
 import { gmailFromEnv } from "./gmail-runtime"
 import { createServer } from "./server"
+
+const WATCH_TICK_MS = 5 * 60_000
 
 const env = loadApiEnv()
 const db = createDb(env.DATABASE_URL)
@@ -37,6 +40,7 @@ if (env.NODE_ENV === "production" && !extensionOrigins?.length) {
 }
 
 const gmail = gmailFromEnv(env)
+const watch = createWatchRuntime({ refreshMinutes: env.WATCH_REFRESH_MINUTES })
 
 const fetch = createServer(
   {
@@ -60,6 +64,7 @@ const fetch = createServer(
     model: resolveModel(env.AI_MODEL, env),
     embeddingModel: resolveEmbeddingModel(env),
     gmail,
+    watch,
   },
   {
     publicUrl: env.API_PUBLIC_URL,
@@ -86,12 +91,23 @@ console.info(
     : `gmail import ${gmail ? "runs from an external job" : "is not configured"}`,
 )
 
+const watcher =
+  env.WATCH_SCHEDULER === "on"
+    ? createWatchScheduler(
+        { db, runtime: watch, now: () => new Date() },
+        { leader: advisoryLeader(db, LOCKS.watch), intervalMs: WATCH_TICK_MS },
+      )
+    : null
+watcher?.start()
+console.info(`job source watcher ${watcher ? `every ${env.WATCH_REFRESH_MINUTES} min per source` : "is off"}`)
+
 let stopping = false
 for (const signal of ["SIGTERM", "SIGINT"] as const) {
   process.on(signal, async () => {
     if (stopping) return
     stopping = true
     await scheduler?.stop()
+    await watcher?.stop()
     await server.stop()
     await db.close()
     process.exit(0)

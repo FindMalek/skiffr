@@ -7,13 +7,14 @@ export interface Leader {
   release(): Promise<void>
 }
 
-const LOCK = "hashtext('skiffr:gmail-sync')"
+export const LOCKS = { gmail: "skiffr:gmail-sync", watch: "skiffr:watch" } as const
 
 /**
  * A session level `pg_try_advisory_lock` on a connection set aside for it (a pooled connection would not keep the
  * lock between calls). It frees itself when the process or its connection dies, so another replica takes over.
  */
-export function advisoryLeader(db: Db): Leader {
+export function advisoryLeader(db: Db, name: (typeof LOCKS)[keyof typeof LOCKS] = LOCKS.gmail): Leader {
+  const LOCK = `hashtext('${name}')`
   const client = db.$client
   let held: Awaited<ReturnType<typeof client.reserve>> | null = null
 

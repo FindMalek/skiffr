@@ -4,6 +4,7 @@ import type { Storage } from "@skiffr/storage"
 import type { EmbeddingModel, LanguageModel } from "ai"
 import type { GmailRuntime, TokenCache } from "./lib/gmail"
 import { bearerSecret, type TokenAuth, TokenStoreError, tokenErrorFields, verifyToken } from "./lib/tokens"
+import type { WatchRuntime } from "./lib/watch/run"
 
 /** Gmail import, present only when the Google client and the encryption key are configured. */
 export interface GmailService {
@@ -27,6 +28,8 @@ export interface Services {
   /** Null without an OpenAI key: lookup then skips the similarity step and writes skip embeddings. */
   embeddingModel: EmbeddingModel | null
   gmail?: GmailService | null
+  /** The job source watcher's network and limits; without it "Run now" is unavailable. */
+  watch?: WatchRuntime | null
 }
 
 /**
