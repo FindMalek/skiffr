@@ -94,6 +94,8 @@ export const CLASS_OVERRIDES: Readonly<Record<string, LimitClass>> = {
   "gmail.syncNow": "expensive",
   "jobSources.runNow": "expensive",
   "me.avatar": "upload",
+  "account.export": "sensitive",
+  "account.delete": "sensitive",
 }
 
 /** Every other procedure is a read when it is a GET and a write otherwise, so a new one is limited without being listed. */

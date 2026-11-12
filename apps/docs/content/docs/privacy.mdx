@@ -53,7 +53,7 @@ For every filled field the api keeps one event: the raw field label, the filled 
 
 - fields with sensitive labels or autocomplete tokens, and values that look like a card number (Luhn), an IBAN or a US social security number, are never stored or filled
 - events older than 90 days are deleted, but only inside the calls that record events or list suggestions, and 500 rows at a time. On a quiet account old events can stay until the next call
-- events, answers and tokens are removed with the user row (`on delete cascade`). The dashboard has no self-service account deletion yet, so today that is an admin or database operation
+- events, answers and tokens are removed with the user, see [Export and delete your data](#export-and-delete-your-data)
 
 ### Gmail
 
@@ -70,6 +70,26 @@ Only for addresses you add, see [Job sources](/docs/sources): the api fetches th
 ### Tokens
 
 The extension authenticates with a personal access token that starts with `skp_`. The server keeps its SHA-256 hash and a short display tail, never the token. In the extension the background worker and the options page read it. Content scripts on web pages are kept from it by `storage.local.setAccessLevel("TRUSTED_CONTEXTS")`, which needs Chrome 142 or newer (the manifest's `minimum_chrome_version`). Calls to the api are made by the background worker. A token can only call a fixed list of procedures (`TOKEN_PROCEDURES` in `packages/orpc/src/procedures.ts`): profile, answers, jobs, applications and the two ai calls. Account, auth and token management need a signed-in session. Set `EXTENSION_ORIGINS` to pin the api to your own extension id.
+
+## Export and delete your data
+
+Both are session only (a signed-in browser, never an extension token) and share one tight rate limit: five tries, then one a minute. The dashboard page for them comes later, until then call the api with your session cookie and the `x-csrf-token: orpc` header: `GET /v1/account/export` and `POST /v1/account/delete`.
+
+### Export
+
+`account.export` returns one JSON document with `version` (currently `1`; it changes when a section or field is renamed or removed), `generatedAt` and these sections: `account` (name, email, picture path), `profile`, `answers` (with `source`, use and correction counts, status and fingerprint), `jobs`, `applications`, `fieldEvents`, `siteProfiles`, `jobSources`, `gmailAccount` (address, senders, status), `gmailMessages` (ids and counts, as stored), `cvConnection` (url and chosen resume), `notes`, `tokens` (name and dates only) and `aiUsage`. Rows keep the table's column names in camelCase and each list has a fixed order, so two exports of the same data are identical apart from `generatedAt`.
+
+Left out on purpose: the user id, token hashes, display prefixes and tails, the sealed Gmail refresh token and OAuth state, the Reactive Resume key and its last digits, answer embeddings, your password hash and sessions. A test fails when a table with a user id is neither exported nor listed as left out, so a new table can't skip the decision.
+
+Limit: one document of at most 20,000 rows across all sections. A bigger account gets a `PAYLOAD_TOO_LARGE` error that says so, and the operator can hand over a database dump instead.
+
+### Delete
+
+`account.delete` takes `confirmEmail` (your account's email, typed out) and, for an account with a password, `password`. An account without one (GitHub, magic link) needs a sign in from the last 10 minutes instead. It is immediate and can't be undone, so export first.
+
+It revokes the Google grant (best effort), then deletes in one transaction every row with your user id in every table (found by walking the schema, not from a list), the user, your sessions and your extension tokens, and finally the profile pictures you uploaded. The answer says `gmailRevoked: false` when Google could not be reached, and then you should remove skiffr at myaccount.google.com/permissions yourself; `filesRemoved: false` means a picture is still in the bucket and the operator has to delete it. Running it twice, or twice at once, is fine. The last admin of an instance can't delete themselves.
+
+Limits: the log line for a deletion has the request id and the two flags above, nothing about you. Backups and database dumps taken before the deletion still hold the data until they are rotated. The signed session cookie cache lives for up to 5 minutes, so a dashboard tab may still look signed in for that long, but it finds no data and can write nothing, because every write needs your user row.
 
 ## Reporting a problem
 
