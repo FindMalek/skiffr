@@ -44,7 +44,7 @@ export const FULL_PIPELINE: PipelineSize = { applied: 40, queued: 32, skipped: 1
 
 /** The watched sources of the demo user: each one is a company on a known board, so its jobs look like that board's. */
 export const WATCHED = [
-  { label: "Brightwave", slug: "brightwave", vendor: "greenhouse" },
+  { label: "Brightmere", slug: "brightmere", vendor: "greenhouse" },
   { label: "Cobalt Peak", slug: "cobalt-peak", vendor: "lever" },
   { label: "Kestrel AI", slug: "kestrel-ai", vendor: "ashby" },
 ] as const
@@ -57,14 +57,14 @@ const COMPANIES = [
   "Paperplane Labs",
   "Tidepool Data",
   "Ironleaf",
-  "Northwind Robotics",
+  "Northvale Robotics",
   "Saltmarsh Cloud",
   "Copperline",
   "Driftwood Health",
   "Emberstone",
-  "Foxglove Finance",
+  "Foxmere Finance",
   "Gantry Logistics",
-  "Halcyon Pay",
+  "Halcyon Remit",
   "Inkwell Media",
   "Juniper Works",
   "Keystone Mobility",
@@ -131,7 +131,7 @@ const QUEUED_SOURCES = [
   "gmail:linkedin",
   "extension",
   "gmail:other",
-  "watch:Brightwave",
+  "watch:Brightmere",
   "gmail:glassdoor",
   "manual",
   "gmail:linkedin",
@@ -141,7 +141,7 @@ const QUEUED_SOURCES = [
   "gmail:linkedin",
   "extension",
   "gmail:other",
-  "watch:Brightwave",
+  "watch:Brightmere",
   "gmail:linkedin",
   "manual",
   "gmail:indeed",
@@ -154,7 +154,7 @@ const QUEUED_SOURCES = [
   "gmail:indeed",
   "extension",
   "gmail:linkedin",
-  "watch:Brightwave",
+  "watch:Brightmere",
 ]
 const APPLIED_SOURCES = [
   ...Array<string>(14).fill("extension"),
@@ -163,7 +163,7 @@ const APPLIED_SOURCES = [
   ...Array<string>(3).fill("gmail:indeed"),
   ...Array<string>(2).fill("gmail:glassdoor"),
   ...Array<string>(2).fill("gmail:other"),
-  ...Array<string>(3).fill("watch:Brightwave"),
+  ...Array<string>(3).fill("watch:Brightmere"),
   ...Array<string>(2).fill("watch:Cobalt Peak"),
 ]
 const SKIPPED_SOURCES = [
@@ -174,8 +174,8 @@ const SKIPPED_SOURCES = [
   "extension",
   "extension",
   "manual",
-  "watch:Brightwave",
-  "watch:Brightwave",
+  "watch:Brightmere",
+  "watch:Brightmere",
   "watch:Kestrel AI",
   "watch:Kestrel AI",
 ]
@@ -232,23 +232,28 @@ function vendorOf(source: string, rand: Rand): string {
   return OPEN_VENDORS[Math.floor(rand() * OPEN_VENDORS.length)]!
 }
 
-/** A link in the shape the vendor really uses, with an invented id: the canonical id and the ats come out as they would for a real posting. */
+/** The board slug on a vendor host. The vendor hosts stay real because the ats adapters and the dashboard icons key on them; the slug says it is made up. */
+export const boardSlug = (slug: string): string => `skiffr-demo-${slug}`
+
+/** A link in the shape the vendor really uses, with an invented board and id: the canonical id and the ats come out as they would for a real posting. */
 function vendorUrl(vendor: string, slug: string, rand: Rand): string {
+  const board = boardSlug(slug)
   switch (vendor) {
     case "greenhouse":
-      return `https://job-boards.greenhouse.io/${slug}/jobs/${digits(rand, 7)}`
+      return `https://job-boards.greenhouse.io/${board}/jobs/${digits(rand, 7)}`
     case "lever":
-      return `https://jobs.lever.co/${slug}/${uuid(rand)}`
+      return `https://jobs.lever.co/${board}/${uuid(rand)}`
     case "ashby":
-      return `https://jobs.ashbyhq.com/${slug}/${uuid(rand)}`
+      return `https://jobs.ashbyhq.com/${board}/${uuid(rand)}`
     case "workable":
-      return `https://apply.workable.com/${slug}/j/${hex(rand, 10).toUpperCase()}/`
+      return `https://apply.workable.com/${board}/j/${hex(rand, 10).toUpperCase()}/`
     case "linkedin":
-      return `https://www.linkedin.com/jobs/view/${digits(rand, 10)}`
+      // Ten digits starting with 9: past the ids linkedin has handed out, so no real posting matches.
+      return `https://www.linkedin.com/jobs/view/9${digits(rand, 9)}`
     case "indeed":
       return `https://www.indeed.com/viewjob?jk=${hex(rand, 16)}`
     case "glassdoor":
-      return `https://www.glassdoor.com/job-listing/j?jl=${digits(rand, 10)}`
+      return `https://www.glassdoor.com/job-listing/j?jl=9${digits(rand, 9)}`
     default:
       return `https://careers.${slug}.example.invalid/openings/${digits(rand, 5)}`
   }

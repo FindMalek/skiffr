@@ -40,8 +40,8 @@ export const DEMO_PROFILE: Profile = {
       pronouns: "they/them",
     },
     links: {
-      linkedin: "https://www.linkedin.com/in/jordan-ellis-demo",
-      github: "https://github.com/jordan-ellis-demo",
+      linkedin: "https://links.example.invalid/in/jordan-ellis",
+      github: "https://code.example.invalid/jordan-ellis",
       portfolio: "https://jordan-ellis.example.com",
       website: "https://jordan-ellis.example.com/blog",
       other: ["https://jordan-ellis.example.com/talks"],
@@ -82,7 +82,7 @@ export const DEMO_PROFILE: Profile = {
 export const SECOND_PROFILE: Profile = {
   data: {
     identity: { firstName: "Riley", lastName: "Morgan", email: SECOND_USER.email, phone: "+49 30 555 0178" },
-    links: { github: "https://github.com/riley-morgan-demo", other: [] },
+    links: { github: "https://code.example.invalid/riley-morgan", other: [] },
     workAuth: { authorizedCountries: ["Germany", "European Union"], requiresSponsorship: false },
     salary: { currency: "EUR", min: 75000, max: 95000, period: "year" },
     location: { city: "Berlin", country: "Germany", willingToRelocate: true, remotePreference: "hybrid" },
@@ -192,8 +192,8 @@ export const ANSWERS: AnswerSpec[] = [
   a("University", "text", "Northgate University", "learned", "autofill", 9, 0),
   a("Field of study", "text", "Computer Science", "learned", "autofill", 8, 0),
   a("Graduation year", "number", "2015", "learned", "autofill", 8, 0),
-  a("GitHub profile", "url", "https://github.com/jordan-ellis-demo", "confirmed", "import", 20, 0),
-  a("LinkedIn profile URL", "url", "https://www.linkedin.com/in/jordan-ellis-demo", "confirmed", "import", 23, 0),
+  a("GitHub profile", "url", "https://code.example.invalid/jordan-ellis", "confirmed", "import", 20, 0),
+  a("LinkedIn profile URL", "url", "https://links.example.invalid/in/jordan-ellis", "confirmed", "import", 23, 0),
   a("Personal website", "url", "https://jordan-ellis.example.com", "learned", "import", 10, 1),
   a("Portfolio link", "url", "https://jordan-ellis.example.com", "learned", "import", 6, 0),
   a("Languages spoken", "text", "English (native), Spanish (conversational)", "learned", "manual", 7, 0),
@@ -249,7 +249,7 @@ export const ANSWERS: AnswerSpec[] = [
     "Other",
   ]),
   a("Preferred tech stack", "text", "TypeScript, Node.js, PostgreSQL, React", "learned", "manual", 6, 1),
-  a("Link to open source contributions", "url", "https://github.com/jordan-ellis-demo", "learned", "import", 4, 0),
+  a("Link to open source contributions", "url", "https://code.example.invalid/jordan-ellis", "learned", "import", 4, 0),
   a("Preferred team size", "select", "5 to 10", "learned", "autofill", 3, 2, 0, [
     "Under 5",
     "5 to 10",
@@ -298,7 +298,7 @@ export const SECOND_ANSWERS: AnswerSpec[] = [
   a("Desired salary", "text", "EUR 85,000 per year", "confirmed", "manual", 5, 0),
   a("Are you willing to relocate?", "radio", "Yes", "learned", "autofill", 4, 0, 0, YES_NO),
   a("Current job title", "text", "Data Engineer", "confirmed", "manual", 5, 0),
-  a("GitHub profile", "url", "https://github.com/riley-morgan-demo", "learned", "import", 3, 0),
+  a("GitHub profile", "url", "https://code.example.invalid/riley-morgan", "learned", "import", 3, 0),
   a("Years of experience with Python", "number", "6", "learned", "autofill", 3, 0),
   a("Preferred work arrangement", "select", "Hybrid", "learned", "autofill", 3, 1, 0, ["Remote", "Hybrid", "On-site"]),
   a("Current compensation", "text", "Prefer not to say", "rejected", "autofill", 2, 2, 3),
@@ -386,7 +386,7 @@ export const NOTES: { title: string; body: string }[] = [
     body: "Senior backend, remote US: 150k to 185k at series B and C. Ask for the band before giving a number.",
   },
   {
-    title: "Brightwave: follow up",
+    title: "Brightmere: follow up",
     body: "Recruiter said the loop is two coding rounds and one design. Send availability by Friday.",
   },
   {

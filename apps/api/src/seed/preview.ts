@@ -21,9 +21,8 @@ import {
 } from "@skiffr/db"
 import { buildScenario, random } from "@skiffr/db/seed"
 import { sealApiKey } from "@skiffr/orpc/cv"
-import { API_KEY, RR_URL } from "@skiffr/orpc/cv-test"
 import { DEFAULT_SENDERS } from "@skiffr/orpc/gmail"
-import { eq, inArray, or } from "drizzle-orm"
+import { and, eq, inArray, ne, notInArray, or, sql } from "drizzle-orm"
 import {
   ADMIN_PROFILE,
   ADMIN_USER,
@@ -45,8 +44,12 @@ import { type LinkInput, readSeedLinks, type SeedLinks } from "./links"
 
 const SEED = 20261112
 const CHUNK = 200
+const SEED_LOCK = "skiffr:seed-preview"
 const PLACEHOLDER_REFRESH_TOKEN = "seed.not-a-real-token"
 const EXAMPLE_BASE = "https://careers.example.invalid"
+// The key and url of the mock Reactive Resume in `@skiffr/orpc/cv-test`, copied so the api never loads a test module.
+const MOCK_RR_KEY = "rr-test-key-0123456789abcdef"
+const MOCK_RR_URL = "https://rr.test"
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0]
 
@@ -64,6 +67,9 @@ export interface PreviewSeedOptions {
   /** The 32 byte key the api seals cv api keys with. Without it no cv connection is seeded. */
   cvKey?: Buffer
   cvUrl?: string
+  /** Refuse to seed when the database already holds users that are not the seed's own (and not `adminEmail`). Off in `pr-<n>` previews, where testers sign up. */
+  refuseOtherUsers?: boolean
+  adminEmail?: string
 }
 
 export interface PreviewSeedResult {
@@ -125,7 +131,7 @@ function jobSources(userId: string, base: string, now: Date, jobs: readonly Seed
   const ago = (ms: number) => new Date(now.getTime() - ms)
   const ahead = (ms: number) => new Date(now.getTime() + ms)
   const common = { userId, createdAt: ago(60 * DAY), updatedAt: ago(HOUR) }
-  const [brightwave, cobalt, kestrel] = WATCHED
+  const [brightmere, cobalt, kestrel] = WATCHED
   const healthy = (watched: (typeof WATCHED)[number], checked: number, found: number, added: number) => ({
     ...common,
     id: seedId(userId, "source", watched.label),
@@ -140,7 +146,7 @@ function jobSources(userId: string, base: string, now: Date, jobs: readonly Seed
     seenIds: seen(watched.label),
   })
   return [
-    healthy(brightwave, 40 * 60_000, 14, 3),
+    healthy(brightmere, 40 * 60_000, 14, 3),
     healthy(cobalt, 2 * HOUR, 9, 2),
     healthy(kestrel, 5 * HOUR, 22, 4),
     {
@@ -242,7 +248,7 @@ function userRow(spec: PreviewUser, now: Date, daysAgo: number): typeof user.$in
   }
 }
 
-async function setPasswords(db: Db, auth: Auth, password: string): Promise<void> {
+async function setPasswords(db: Tx, auth: Auth, password: string): Promise<void> {
   const ctx = await auth.$context
   const hash = await ctx.password.hash(password)
   for (const spec of PREVIEW_USERS) {
@@ -316,7 +322,8 @@ const noteRows = (userId: string, source: readonly { title: string; body: string
 /**
  * Fills the database with the preview dataset: three accounts (`demo`, `admin`, `second`, one password) and, for the demo
  * user, a complete product state. Deterministic and relative to `now`. A database that already has the demo user is left
- * alone (only the password is reset to the given one); `reset` wipes the preview users first. Never touches other users.
+ * alone (only the password is reset to the given one); `reset` wipes the preview users (by id) first.
+ * Never touches other users: a real account on a preview email stops the seed, with or without reset.
  * The caller decides whether seeding is allowed here (`assertPreviewSeedAllowed`).
  */
 export async function seedPreview(db: Db, auth: Auth, options: PreviewSeedOptions): Promise<PreviewSeedResult> {
@@ -326,26 +333,13 @@ export async function seedPreview(db: Db, auth: Auth, options: PreviewSeedOption
   const scenario = buildScenario(now, { ownerId: ADMIN_USER.id })
   const scenarioIds = scenario.users.map((row) => row.id!)
   const ids = [...PREVIEW_USERS.map((spec) => spec.id), ...scenarioIds]
-  const emails = PREVIEW_USERS.map((spec) => spec.email)
+  const emails = [...PREVIEW_USERS.map((spec) => spec.email), ...scenario.users.map((row) => row.email)]
   const skipped: string[] = []
   const link: LinkInput = {
     dashboardUrl: options.dashboardUrl,
     password: options.password,
     playgroundUrl: options.playgroundUrl,
     extensionToken: tokenSecret(DEMO_USER.id, "Chrome on laptop"),
-  }
-
-  const present = await db
-    .select({ id: user.id, email: user.email })
-    .from(user)
-    .where(or(inArray(user.id, ids), inArray(user.email, emails)))
-  const stranger = present.find((row) => emails.includes(row.email) && !ids.includes(row.id))
-  if (stranger && !options.reset) {
-    throw new SeedConflictError(`${stranger.email} belongs to a real account. Run the seed with reset to replace it.`)
-  }
-  if (present.some((row) => row.id === DEMO_USER.id) && !options.reset) {
-    await setPasswords(db, auth, options.password)
-    return { seeded: false, links: await readSeedLinks(db, link), skipped }
   }
 
   const accounts = await accountRows(auth, options.password, now)
@@ -367,8 +361,41 @@ export async function seedPreview(db: Db, auth: Auth, options: PreviewSeedOption
   const tokens = [DEMO_USER, SECOND_USER, ADMIN_USER].map((spec) => tokensOf(spec.id, now, spec.id === DEMO_USER.id))
   if (!options.cvKey) skipped.push("cv connection (set CV_ENCRYPTION_KEY)")
 
-  await db.transaction(async (tx) => {
-    await tx.delete(user).where(or(inArray(user.id, ids), inArray(user.email, emails)))
+  const seeded = await db.transaction(async (tx) => {
+    // One seeder at a time, and the checks below read what the previous one committed.
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${SEED_LOCK}))`)
+    const present = await tx
+      .select({ id: user.id, email: user.email })
+      .from(user)
+      .where(or(inArray(user.id, ids), inArray(user.email, emails)))
+    const stranger = present.find((row) => emails.includes(row.email) && !ids.includes(row.id))
+    if (stranger) {
+      throw new SeedConflictError(
+        `${stranger.email} belongs to a real account. The seed never replaces it, not even with reset: change that account's email first.`,
+      )
+    }
+    if (present.some((row) => row.id === DEMO_USER.id) && !options.reset) {
+      await setPasswords(tx, auth, options.password)
+      return false
+    }
+    if (options.refuseOtherUsers) {
+      const [other] = await tx
+        .select({ id: user.id })
+        .from(user)
+        .where(
+          and(
+            notInArray(user.id, ids),
+            options.adminEmail ? ne(user.email, options.adminEmail.toLowerCase()) : undefined,
+          ),
+        )
+        .limit(1)
+      if (other) {
+        throw new SeedConflictError(
+          "The database already has accounts that are not preview users. SEED=preview only runs on an empty database or in a pr-<n> preview.",
+        )
+      }
+    }
+    await tx.delete(user).where(inArray(user.id, ids))
     await tx
       .insert(user)
       .values([
@@ -403,9 +430,9 @@ export async function seedPreview(db: Db, auth: Auth, options: PreviewSeedOption
       await tx.insert(cvConnection).values({
         id: seedId(DEMO_USER.id, "cv"),
         userId: DEMO_USER.id,
-        baseUrl: options.cvUrl ?? RR_URL,
-        apiKeyEnc: sealApiKey(options.cvKey, API_KEY, DEMO_USER.id),
-        keyLast4: API_KEY.slice(-4),
+        baseUrl: options.cvUrl ?? MOCK_RR_URL,
+        apiKeyEnc: sealApiKey(options.cvKey, MOCK_RR_KEY, DEMO_USER.id),
+        keyLast4: MOCK_RR_KEY.slice(-4),
         baseResumeId: "base-1",
         baseResumeName: "Master CV",
         createdAt: new Date(now.getTime() - 40 * DAY),
@@ -424,7 +451,8 @@ export async function seedPreview(db: Db, auth: Auth, options: PreviewSeedOption
         ),
         ...scenario.notes,
       ])
+    return true
   })
 
-  return { seeded: true, links: await readSeedLinks(db, link), skipped }
+  return { seeded, links: await readSeedLinks(db, link), skipped }
 }

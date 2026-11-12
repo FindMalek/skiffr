@@ -17,9 +17,11 @@ import {
   gmailAccount,
   job,
   jobSource,
+  notes,
   siteProfile,
   user,
 } from "@skiffr/db"
+import { buildScenario } from "@skiffr/db/seed"
 import { loadApiEnv } from "@skiffr/env/api"
 import { appRouter, type Context } from "@skiffr/orpc"
 import { API_KEY, CV_KEY, type MockRr, mockCvRuntime, startMockRr } from "@skiffr/orpc/cv-test"
@@ -316,7 +318,7 @@ test("a rerun changes nothing, and reset gives back the same rows with fresh dat
   expect((await newest()).getTime()).toBeGreaterThan(newestBefore.getTime())
 }, 60_000)
 
-test("a real account on a preview email is never replaced without reset", async () => {
+async function withFreshDb<T>(run: (db: Db, auth: Auth) => Promise<T>): Promise<T> {
   const other = await connectDb([])
   try {
     const authOther = createAuth({
@@ -326,20 +328,99 @@ test("a real account on a preview email is never replaced without reset", async 
       trustedOrigins: [DASHBOARD],
       secureCookies: false,
     })
-    await other.db.insert(user).values({
-      id: "real",
-      name: "Real",
-      email: "demo@skiffr.test",
-      emailVerified: true,
-      createdAt: NOW,
-      updatedAt: NOW,
-    })
-    await expect(seedPreview(other.db, authOther, options)).rejects.toBeInstanceOf(SeedConflictError)
-    expect((await other.db.select().from(user)).map((row) => row.id)).toEqual(["real"])
+    return await run(other.db, authOther)
   } finally {
     await other.drop()
   }
+}
+
+const PRECIOUS = "00000000-0000-4000-8000-000000000001"
+
+const realUser = (id: string, email: string) => ({
+  id,
+  name: "Real",
+  email,
+  emailVerified: true,
+  createdAt: NOW,
+  updatedAt: NOW,
 })
+
+test("a real account on a seed email stops the seed, with or without reset, and keeps its data", async () => {
+  await withFreshDb(async (other, authOther) => {
+    await other.insert(user).values(realUser("real", "demo@skiffr.test"))
+    await other.insert(notes).values({ id: PRECIOUS, userId: "real", title: "mine", body: "keep" })
+    for (const reset of [false, true]) {
+      await expect(seedPreview(other, authOther, { ...options, reset })).rejects.toBeInstanceOf(SeedConflictError)
+      expect((await other.select().from(user)).map((row) => row.id)).toEqual(["real"])
+      expect((await other.select().from(notes)).map((row) => row.id)).toEqual([PRECIOUS])
+    }
+  })
+})
+
+test("a real account on a sample user email stops the seed with a conflict, not a raw sql error", async () => {
+  await withFreshDb(async (other, authOther) => {
+    const sample = buildScenario(NOW, { ownerId: "x" }).users[0]!.email
+    await other.insert(user).values(realUser("real", sample))
+    await expect(seedPreview(other, authOther, options)).rejects.toBeInstanceOf(SeedConflictError)
+    expect((await other.select().from(user)).map((row) => row.id)).toEqual(["real"])
+  })
+})
+
+test("reset removes only the seed's own rows, a real user with the same postings keeps everything", async () => {
+  await withFreshDb(async (other, authOther) => {
+    await seedPreview(other, authOther, options)
+    const [sample] = await other.select().from(job).where(eq(job.userId, DEMO_USER.id)).limit(1)
+    await other.insert(user).values(realUser("real", "someone@example.com"))
+    await other.insert(job).values({ ...sample!, id: crypto.randomUUID(), userId: "real" })
+    await other.insert(notes).values({ id: PRECIOUS, userId: "real", title: "mine", body: "keep" })
+    await seedPreview(other, authOther, { ...options, reset: true })
+    expect((await other.select().from(job).where(eq(job.userId, "real"))).map((row) => row.canonicalId)).toEqual([
+      sample!.canonicalId,
+    ])
+    expect((await other.select().from(notes).where(eq(notes.userId, "real"))).length).toBe(1)
+    expect((await other.select().from(user).where(eq(user.id, "real"))).length).toBe(1)
+  })
+})
+
+test("two seeds at once leave one dataset", async () => {
+  await withFreshDb(async (other, authOther) => {
+    const results = await Promise.all([seedPreview(other, authOther, options), seedPreview(other, authOther, options)])
+    expect(results.filter((result) => result.seeded)).toHaveLength(1)
+  })
+}, 30_000)
+
+test("outside a preview the seed refuses a database that has other users, except the env admin", async () => {
+  await withFreshDb(async (other, authOther) => {
+    const guarded = { ...options, refuseOtherUsers: true, adminEmail: "Boss@example.com" }
+    await other.insert(user).values(realUser("boss", "boss@example.com"))
+    expect((await seedPreview(other, authOther, guarded)).seeded).toBe(true)
+    await other.insert(user).values(realUser("real", "someone@example.com"))
+    await seedPreview(other, authOther, guarded)
+    await expect(seedPreview(other, authOther, { ...guarded, reset: true })).rejects.toBeInstanceOf(SeedConflictError)
+  })
+  await withFreshDb(async (other, authOther) => {
+    await other.insert(user).values(realUser("real", "someone@example.com"))
+    await expect(seedPreview(other, authOther, { ...options, refuseOtherUsers: true })).rejects.toBeInstanceOf(
+      SeedConflictError,
+    )
+    expect((await other.select().from(user)).map((row) => row.id)).toEqual(["real"])
+  })
+})
+
+test("the entry point honors SEED_RESET and only lets testers share a pr preview database", async () => {
+  const env = (extra: Record<string, string>) =>
+    loadApiEnv({ DATABASE_URL: "postgres://unused", BETTER_AUTH_SECRET: "s".repeat(40), SEED: "preview", ...extra })
+  await withFreshDb(async (other, authOther) => {
+    await other.insert(user).values(realUser("real", "someone@example.com"))
+    await expect(runPreviewSeed(other, authOther, env({ DEPLOY_ENV: "local" }))).rejects.toBeInstanceOf(
+      SeedConflictError,
+    )
+    const preview = { DEPLOY_ENV: "pr-9", NODE_ENV: "production" }
+    expect((await runPreviewSeed(other, authOther, env(preview))).seeded).toBe(true)
+    expect((await runPreviewSeed(other, authOther, env(preview))).seeded).toBe(false)
+    expect((await runPreviewSeed(other, authOther, env({ ...preview, SEED_RESET: "on" }))).seeded).toBe(true)
+  })
+}, 30_000)
 
 test("the entry point reads the env, refuses production before touching the database and writes the links file", async () => {
   const env = (extra: Record<string, string>) =>
@@ -380,15 +461,50 @@ test("the entry point reads the env, refuses production before touching the data
   }
 }, 30_000)
 
-test("production is refused, previews and local runs are allowed", () => {
-  expect(() => assertPreviewSeedAllowed({ NODE_ENV: "production", DEPLOY_ENV: "production" })).toThrow(SeedRefusedError)
-  expect(() =>
-    assertPreviewSeedAllowed({ NODE_ENV: "production", DEPLOY_ENV: "production", SEED_ALLOW_PRODUCTION_BUILD: "yes" }),
-  ).toThrow(SeedRefusedError)
-  expect(() => assertPreviewSeedAllowed({ NODE_ENV: "production", DEPLOY_ENV: "local" })).toThrow(SeedRefusedError)
-  expect(() => assertPreviewSeedAllowed({ NODE_ENV: "production", DEPLOY_ENV: "pr-42" })).not.toThrow()
-  expect(() =>
-    assertPreviewSeedAllowed({ NODE_ENV: "production", DEPLOY_ENV: "local", SEED_ALLOW_PRODUCTION_BUILD: "yes" }),
-  ).not.toThrow()
-  expect(() => assertPreviewSeedAllowed({ NODE_ENV: "development", DEPLOY_ENV: "local" })).not.toThrow()
+test("only an exact local or pr-<n> deploy env may seed, whatever else is set", () => {
+  const allowed = (env: Parameters<typeof assertPreviewSeedAllowed>[0]) => {
+    try {
+      assertPreviewSeedAllowed(env)
+      return true
+    } catch (error) {
+      if (error instanceof SeedRefusedError) return false
+      throw error
+    }
+  }
+  const deployEnvs = [
+    undefined,
+    "",
+    "production",
+    "Production",
+    " production ",
+    "production\n",
+    "prod",
+    "staging",
+    "Local",
+    " local",
+    "pr-",
+    "pr-0",
+    "pr-01",
+    "pr-1a",
+    "pr-1\n",
+    "PR-1",
+    " pr-1",
+    "pr--1",
+  ]
+  for (const NODE_ENV of ["development", "test", "production", undefined]) {
+    for (const SEED_ALLOW_PRODUCTION_BUILD of [undefined, "yes"]) {
+      for (const DEPLOY_ENV of deployEnvs) {
+        expect(allowed({ NODE_ENV, DEPLOY_ENV, SEED_ALLOW_PRODUCTION_BUILD })).toBe(false)
+      }
+    }
+  }
+  for (const NODE_ENV of ["development", "test", "production", undefined]) {
+    expect(allowed({ NODE_ENV, DEPLOY_ENV: "pr-42" })).toBe(true)
+    expect(allowed({ NODE_ENV, DEPLOY_ENV: "pr-1" })).toBe(true)
+  }
+  expect(allowed({ NODE_ENV: "development", DEPLOY_ENV: "local" })).toBe(true)
+  expect(allowed({ NODE_ENV: "test", DEPLOY_ENV: "local" })).toBe(true)
+  expect(allowed({ NODE_ENV: undefined, DEPLOY_ENV: "local" })).toBe(false)
+  expect(allowed({ NODE_ENV: "production", DEPLOY_ENV: "local" })).toBe(false)
+  expect(allowed({ NODE_ENV: "production", DEPLOY_ENV: "local", SEED_ALLOW_PRODUCTION_BUILD: "yes" })).toBe(true)
 })

@@ -4,7 +4,7 @@ import type { Db } from "@skiffr/db"
 import type { ApiEnv } from "@skiffr/env/api"
 import { parseKey } from "@skiffr/orpc/gmail"
 import { DEFAULT_DEMO_PASSWORD } from "./fixtures"
-import { assertPreviewSeedAllowed } from "./guard"
+import { assertPreviewSeedAllowed, isPreviewDeploy } from "./guard"
 import { type PreviewSeedResult, seedPreview } from "./preview"
 
 export interface RunOptions {
@@ -24,7 +24,9 @@ export async function runPreviewSeed(
   const result = await seedPreview(db, auth, {
     password: env.SEED_DEMO_PASSWORD ?? DEFAULT_DEMO_PASSWORD,
     dashboardUrl: env.DASHBOARD_URL,
-    reset: options.reset ?? env.SEED_RESET === "on",
+    reset: options.reset || env.SEED_RESET === "on",
+    refuseOtherUsers: !isPreviewDeploy(env),
+    adminEmail: env.ADMIN_EMAIL,
     playgroundUrl: env.PLAYGROUND_URL,
     cvKey: env.CV_ENCRYPTION_KEY ? parseKey(env.CV_ENCRYPTION_KEY, "CV_ENCRYPTION_KEY") : undefined,
     cvUrl: env.SEED_CV_URL,

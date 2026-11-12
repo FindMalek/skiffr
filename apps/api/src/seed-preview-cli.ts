@@ -2,6 +2,7 @@ import { createAuth } from "@skiffr/auth"
 import { createDb } from "@skiffr/db"
 import { runMigrations } from "@skiffr/db/migrate"
 import { loadApiEnv } from "@skiffr/env/api"
+import { assertPreviewSeedAllowed } from "./seed/guard"
 import { seedLinksMarkdown } from "./seed/links"
 import { runPreviewSeed } from "./seed/run"
 
@@ -14,6 +15,8 @@ const flag = (name: string) => args.includes(name)
 const out = args.includes("--out") ? args[args.indexOf("--out") + 1] : undefined
 
 const env = loadApiEnv()
+// Before the database is opened: a refused run must not even migrate the target.
+assertPreviewSeedAllowed(env)
 const db = createDb(env.DATABASE_URL)
 try {
   await runMigrations(db)

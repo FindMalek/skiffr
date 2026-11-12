@@ -15,7 +15,7 @@ const count = (fallback: number, max = 2_147_483_647) =>
 const schema = z.object({
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
   PORT: z.coerce.number().default(3001),
-  /** "production", "pr-<n>" for previews, or "local". */
+  /** "production", "pr-<n>" for previews, or "local". The preview seed only runs for exactly `local` or `pr-<n>`. */
   DEPLOY_ENV: z.string().default("local"),
   DATABASE_URL: z.string().min(1),
   /** `demo` seeds the notes example into an empty database, `preview` the full demo dataset (previews and local dev only, see the seeding docs). */
@@ -30,7 +30,7 @@ const schema = z.object({
   SEED_CV_URL: z.url().optional(),
   /** Base url of the playground app: queued seeded jobs and their site profiles point at it. Unset uses example.invalid hosts. */
   PLAYGROUND_URL: z.url().optional(),
-  /** Lets `SEED=preview` run on a production build (NODE_ENV=production) outside a pr-<n> preview. `DEPLOY_ENV=production` is never allowed. */
+  /** Lets `SEED=preview` run on a production build (NODE_ENV=production) when `DEPLOY_ENV` is `local`. Any other `DEPLOY_ENV` than `local` or `pr-<n>` is refused regardless. */
   SEED_ALLOW_PRODUCTION_BUILD: z.enum(["yes"]).optional(),
 
   /** Public origins: the api's own, and the two apps that proxy to it. */

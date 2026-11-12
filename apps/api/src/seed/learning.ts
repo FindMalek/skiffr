@@ -129,10 +129,10 @@ export function buildSiteProfiles(userId: string, baseUrl: string, now: Date): N
   return [
     siteProfileRow(userId, host, STANDARD_FORM, now, 7, 1),
     siteProfileRow(userId, host, short, now, 2, 6),
-    siteProfileRow(userId, "job-boards.greenhouse.io/brightwave", STANDARD_FORM, now, 4, 3),
-    siteProfileRow(userId, "jobs.lever.co/cobalt-peak", STANDARD_FORM.slice(0, 11), now, 3, 9),
-    siteProfileRow(userId, "jobs.ashbyhq.com/kestrel-ai", short, now, 2, 14),
-    siteProfileRow(userId, "apply.workable.com/fernhill-systems", STANDARD_FORM, now, 1, 27),
+    siteProfileRow(userId, "job-boards.greenhouse.io/skiffr-demo-brightmere", STANDARD_FORM, now, 4, 3),
+    siteProfileRow(userId, "jobs.lever.co/skiffr-demo-cobalt-peak", STANDARD_FORM.slice(0, 11), now, 3, 9),
+    siteProfileRow(userId, "jobs.ashbyhq.com/skiffr-demo-kestrel-ai", short, now, 2, 14),
+    siteProfileRow(userId, "apply.workable.com/skiffr-demo-fernhill-systems", STANDARD_FORM, now, 1, 27),
   ]
 }
 
