@@ -1,0 +1,60 @@
+---
+title: Observability
+description: Optional error reports, analytics, logs and model call traces, and what each one is allowed to send.
+---
+
+Everything here is off until its variable is set. An instance without any of it behaves as before, makes no request to a third party and has no extra dependency on the hot path. Web, docs and dashboard still load `/analytics.js` from their own origin, which is an empty comment while Umami is unset. Privacy is the promise of the product, so each sink sends from an allowlist: a field label, a form value, resume or job text, an email or a token has no key to travel under.
+
+## What to use
+
+| Tool | Decision | Why |
+| --- | --- | --- |
+| GlitchTip | adopt | Sentry compatible errors, already running. The api, web and dashboard report by error class, stack and ids |
+| Umami | adopt | page views for web, docs and dashboard, no cookie, honours Do Not Track. Plus one counted api event |
+| OpenObserve | adopt | one place for request logs, metrics (health, schedulers, rate limits, model budget) and model call traces over OTLP |
+| Langfuse | defer | not running on the box, and self hosting is six containers (web, worker, postgres, redis, clickhouse, S3). Two structured output calls and a validator do not need prompt management yet. Model call traces are standard OTLP, so pointing them at Langfuse later is a change of endpoint when the evals of issue #41 need datasets |
+| Braintrust | skip | a hosted service that would receive prompts made of personal data, and it overlaps OpenObserve plus Langfuse |
+| Mastra | skip | an agent framework for orchestration skiffr does not have: it calls a model with a schema, twice |
+| Sentry SDK | skip | `@sentry/bun` pulls in `@sentry/node` and its OpenTelemetry instrumentation and collects request context and breadcrumbs, to be scrubbed afterwards. The api builds the envelope itself from allowlisted fields, so there is nothing to scrub |
+
+## What leaves the process
+
+`packages/observability` is the only code that sends anything. Its attribute allowlist (`ATTRIBUTES` in `src/scrub.ts`) is the whole list: method, route, status, duration, request id, job name, outcome, counts, account and source ids (a row id of a mailbox or a job source, not a user id), error class, code and status, limit class, model id and token counts. A value must also look like an identifier (no spaces, no `@`, at most 80 characters), so a sentence is dropped even under a listed key.
+
+- Errors: class name, a stack of function, file and line, the code and status, and the tags above. Never the message (only the fixed sentences written in this repo), the cause, request, headers, body, cookies or breadcrumbs.
+- Request logs and metrics: method, route, status, time. The route comes from the router, never from the url a client typed: the rpc path of a procedure (`/rpc/answers/update`), its rest template (`/v1/answers/:id`), a fixed name such as `/health`, or `other`. A record id, a file key or a probe of random urls can't add a label. Each metric keeps at most 300 label sets and folds the rest into one `overflow` series, so a flood on one can't hide `skiffr.db.up` or the scheduler metrics.
+- Model calls: model id, provider, token counts, finish reason, latency, outcome (`ok`, `budget`, `error`) and error class. Prompts and answers are added to the span only with `AI_TRACE_CAPTURE_CONTENT=true`, because they hold the applicant's data. Leave it off unless the collector is yours and you are debugging.
+- Gmail and watcher failures: counted by kind in `skiffr.sync.failures`. Only `internal`, an error in our own code, is reported as an error. `upstream` (a Google 5xx, a response too large, a 4xx from Google), an expired grant, a rate limit or a dead careers page is Google's, the user's or the site's, and shows only as a metric.
+- Umami: page views without query string, hash or referrer, record ids in the path rewritten to `:id`, nothing at all with Do Not Track or Global Privacy Control on. The api sends one event, `ai_budget_exhausted`, with no props that identify anyone.
+
+`src/privacy.test.ts` feeds an error and attributes full of form values, an email, a resume line and a token through every sink and fails if any of it reaches the collector. It runs in `pnpm test`.
+
+## Metrics
+
+`skiffr.http.requests`, `skiffr.http.duration_ms`, `skiffr.db.up`, `skiffr.scheduler.runs`, `skiffr.scheduler.duration_ms`, `skiffr.scheduler.items`, `skiffr.scheduler.last_success_seconds` (per job: `gmail`, `watch`), `skiffr.sync.failures`, `skiffr.rate_limit.rejected`, `skiffr.ai.calls`, `skiffr.ai.tokens`, `skiffr.ai.duration_ms`. `skiffr.db.up` is set each time `/health` is called, so it needs a poller (the container healthcheck is one). Every request is also a log record, queued 500 at a time per 15 second flush with the oldest dropped first, so above about 30 requests per second some lines are lost, never the metrics. Alert on `last_success_seconds` going stale and on `skiffr.db.up` of 0.
+
+## Setting it up
+
+1. GlitchTip: create a project for the api (and one each for web and dashboard). Copy each dsn.
+2. Umami: add a website per app (web, docs, dashboard, api) and copy the website ids.
+3. OpenObserve: create a user for ingestion only and build `authorization=Basic <base64 of email:password>,stream-name=skiffr`. If OpenObserve is private to your tailnet, point the api at the address it has inside the Docker network (`http://openobserve:5080/api/default` on Dokploy), not the public hostname.
+4. Keep the values in your secrets manager and put them in the app's environment in Dokploy, never in the repo. `scripts/dokploy-bootstrap.mjs --env-file` adds missing keys to the apps and never overwrites one that is set, see [deploy](/docs/deploy).
+5. Check: the api logs `observability: errors, otlp, umami` at start. Test a dsn with
+   `printf '%s\n%s\n%s' '{}' '{"type":"event"}' '{"message":"smoke test"}' | curl -X POST "https://<glitchtip host>/api/<project id>/envelope/" -H "X-Sentry-Auth: Sentry sentry_version=7, sentry_key=<key>" --data-binary @-`
+   and look for the `skiffr` stream in OpenObserve after a few requests.
+
+| Key | App | What it is |
+| --- | --- | --- |
+| `GLITCHTIP_DSN` | api, web, dashboard | the project's dsn |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | api | OTLP/HTTP base up to the org |
+| `OTEL_EXPORTER_OTLP_HEADERS` | api | `key=value,key=value`, a secret |
+| `AI_TRACE_CAPTURE_CONTENT` | api | `true` adds prompts and answers to model spans, default `false` |
+| `UMAMI_URL`, `UMAMI_WEBSITE_ID` | all four | read at request time, so one image serves any site id. Web, docs and dashboard load `/analytics.js`, which does nothing when they are unset |
+
+In the bootstrap env file the per app values are `UMAMI_<APP>_WEBSITE_ID` and `GLITCHTIP_WEB_DSN`, `GLITCHTIP_DASHBOARD_DSN`.
+
+## Not done
+
+- Browser side errors (web, dashboard): a browser SDK adds weight and reads the page. Server side render and route errors are reported.
+- The extension has no third party tracker and none is planned. If wanted, an opt-in "send anonymous error reports" toggle, off by default, would post only the error class and extension version to your own api, which forwards it here. It is designed, not built.
+- Langfuse, see the table. Request traces and spans for the schedulers: logs and metrics cover them for now.

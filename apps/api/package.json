@@ -15,6 +15,7 @@
     "@skiffr/auth": "workspace:*",
     "@skiffr/db": "workspace:*",
     "@skiffr/env": "workspace:*",
+    "@skiffr/observability": "workspace:*",
     "@skiffr/orpc": "workspace:*",
     "@skiffr/storage": "workspace:*",
     "@orpc/openapi": "catalog:",
