@@ -166,7 +166,7 @@ One root `.env` feeds every app, `.env.example` lists every key. The ones that m
 
 ## Self-hosting
 
-skiffr is built to run on your own server: the api, the Next apps and a Postgres with the `vector` extension, one Dockerfile per app. The Dokploy, Docker and Vercel steps, including the pgvector image and why you must not swap an existing database image in place, are in [`apps/docs/content/docs/deploy.mdx`](apps/docs/content/docs/deploy.mdx) (also served by `apps/docs` at `/docs/deploy`).
+skiffr is built to run on your own server: the api, the Next apps and a Postgres with the `vector` extension, one Dockerfile per app. The Dokploy, Docker and Vercel steps, including the pgvector image and why you must not swap an existing database image in place, are in [`apps/docs/content/docs/deploy.mdx`](apps/docs/content/docs/deploy.mdx) (also served by `apps/docs` at `/docs/deploy`). The Dokploy deploy workflow and its one-shot bootstrap (`scripts/dokploy-bootstrap.mjs`) are in the same page.
 
 ## Privacy
 
