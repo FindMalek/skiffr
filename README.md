@@ -127,6 +127,7 @@ pnpm dev --filter='!extension'
 | `apps/api` | http://localhost:3001 |
 | `apps/dashboard` | http://localhost:3002 |
 | `apps/docs` | http://localhost:3003 |
+| `apps/playground` | http://playground.localhost:3004 |
 
 Sign in to the dashboard with `ADMIN_EMAIL` and `ADMIN_PASSWORD`, save your profile, and create a token on the Extension page. `pnpm dev` without the filter also starts the extension dev server (`wxt`), which opens a development browser with hot reload.
 

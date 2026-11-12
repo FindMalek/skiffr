@@ -77,7 +77,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, state: State): 
 }
 
 /** Needs only the `openssl` binary: no prompt, no home directory, every file in a temp dir that is removed again. */
-function throwawayCertificate(): { key: string; cert: string } {
+export function throwawayCertificate(): { key: string; cert: string } {
   const dir = mkdtempSync(join(tmpdir(), "skiffr-e2e-cert-"))
   try {
     const keyFile = join(dir, "key.pem")

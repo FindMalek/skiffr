@@ -4,6 +4,8 @@
     "setup",
     "extension",
     "snapshots",
+    "playground",
+    "drift",
     "dashboard",
     "environment",
     "structure",

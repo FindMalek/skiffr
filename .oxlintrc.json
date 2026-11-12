@@ -9,6 +9,7 @@
     "packages/ui/src/brand/**",
     "packages/notification/**",
     "apps/email/**",
+    "apps/playground/src/client/**",
     ".agents/**",
     ".claude/**",
     ".opencode/**",

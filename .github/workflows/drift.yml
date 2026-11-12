@@ -1,0 +1,108 @@
+name: drift
+
+# Runs after the real-site smoke job: compares its summary with the committed baselines, writes a drift report,
+# keeps one tracking issue with the label `drift` up to date, sends metrics to the optional observability exporters
+# and takes a sanitized snapshot of every changed page as an artifact (never committed).
+# Skipped until the repository variable DRIFT_ENABLED is "true". Needs no secrets; the exporters are optional:
+# variables or secrets OPENOBSERVE_URL, OPENOBSERVE_AUTH, UMAMI_URL, UMAMI_WEBSITE_ID, GLITCHTIP_DSN. Unset ones are skipped.
+# The keep's OpenObserve (o2.findmalek.engineer) is tailnet only, so a github hosted runner cannot reach it:
+# set OPENOBSERVE_URL only on a tailnet runner or behind a public ingest proxy.
+
+on:
+  workflow_run:
+    workflows: [smoke]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: id of the smoke run whose artifact to read
+        required: true
+
+concurrency:
+  group: drift
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+  actions: read
+
+env:
+  TURBO_TELEMETRY_DISABLED: "1"
+  SMOKE_RUN_ID: ${{ github.event.workflow_run.id || inputs.run_id }}
+
+jobs:
+  drift:
+    if: vars.DRIFT_ENABLED == 'true' && (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion != 'cancelled')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      OPENOBSERVE_URL: ${{ secrets.OPENOBSERVE_URL || vars.OPENOBSERVE_URL }}
+      OPENOBSERVE_AUTH: ${{ secrets.OPENOBSERVE_AUTH }}
+      UMAMI_URL: ${{ vars.UMAMI_URL }}
+      UMAMI_WEBSITE_ID: ${{ vars.UMAMI_WEBSITE_ID }}
+      GLITCHTIP_DSN: ${{ secrets.GLITCHTIP_DSN }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+      - uses: actions/download-artifact@v8
+        id: smoke
+        continue-on-error: true
+        with:
+          name: smoke-${{ env.SMOKE_RUN_ID }}
+          path: ${{ runner.temp }}/smoke
+          run-id: ${{ env.SMOKE_RUN_ID }}
+          github-token: ${{ github.token }}
+      - name: Find the previous report
+        id: previous
+        shell: bash
+        run: |
+          # the report of the latest earlier run that has one (a run that found drift ends red, so no filter on success)
+          for run in $(gh run list --workflow drift.yml --status completed --limit 5 --json databaseId --jq '.[].databaseId'); do
+            gh run download "$run" --name "drift-$run" --dir "$RUNNER_TEMP/previous" 2>/dev/null && break
+          done
+          if [ -f "$RUNNER_TEMP/previous/drift-report.json" ]; then echo "file=$RUNNER_TEMP/previous/drift-report.json" >> "$GITHUB_OUTPUT"; fi
+      - id: playwright
+        if: steps.smoke.outcome == 'success'
+        run: echo "version=$(pnpm --filter e2e exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v6
+        if: steps.smoke.outcome == 'success'
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+      - name: Install chromium for the snapshots
+        if: steps.smoke.outcome == 'success'
+        run: pnpm --filter e2e exec playwright install --with-deps chromium
+      - name: Write the drift report
+        id: report
+        if: steps.smoke.outcome == 'success'
+        shell: bash
+        run: |
+          set +e
+          args=(report
+            --summary "$RUNNER_TEMP/smoke/summary.json"
+            --baselines apps/e2e/smoke/baselines
+            --targets apps/e2e/smoke/targets.json
+            --out "$RUNNER_TEMP/drift"
+            --repo "$GITHUB_REPOSITORY"
+            --github --export --snapshots)
+          if [ -n "${{ steps.previous.outputs.file }}" ]; then args+=(--previous "${{ steps.previous.outputs.file }}"); fi
+          pnpm --filter drift drift "${args[@]}"
+          echo "code=$?" >> "$GITHUB_OUTPUT"
+          exit 0
+      - name: Show the report
+        if: always() && steps.smoke.outcome == 'success'
+        shell: bash
+        run: |
+          if [ -f "$RUNNER_TEMP/drift/drift-report.md" ]; then cat "$RUNNER_TEMP/drift/drift-report.md" >> "$GITHUB_STEP_SUMMARY"; fi
+      - uses: actions/upload-artifact@v7
+        if: always() && steps.smoke.outcome == 'success'
+        with:
+          name: drift-${{ github.run_id }}
+          path: ${{ runner.temp }}/drift
+          retention-days: 30
+          if-no-files-found: ignore
+      - name: Fail on drift
+        if: steps.report.outputs.code == '1'
+        run: exit 1
