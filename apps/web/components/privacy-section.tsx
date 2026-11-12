@@ -2,11 +2,11 @@ import { docsHref } from "@/lib/seo"
 
 const POINTS = [
   {
-    title: "Your data stays on your server",
-    text: "Profile, answers and tokens are in your own Postgres. The extension is built to talk only to the api you point it at, and has no analytics.",
+    title: "Your data lives in your own Postgres",
+    text: "Profile, answers, queue and tokens are in your own database, behind your own api. The extension is built to talk only to the api you point it at, and has no analytics. Only the slice below goes to a model provider, and only if you set a key.",
   },
   {
-    title: "The model sees a small slice",
+    title: "The model sees a small slice, if you set a key",
     text: "Field labels, your profile key names, and values for a short allowlist such as name, city, links and skills. Email, phone, address, pay and ids are never sent.",
   },
   {
@@ -22,6 +22,14 @@ const POINTS = [
     text: "Labels for secrets, cards, bank and government ids, birth dates and equal opportunity data are skipped, and so are values that look like a card number, an IBAN or a US social security number.",
   },
   {
+    title: "Gmail is opt-in and narrow",
+    text: "It reads only unread alerts from senders you watch, stores title, company and link, and marks processed mail read, archived and labelled. Mail is never deleted or sent. The refresh token is encrypted.",
+  },
+  {
+    title: "The watcher fetches public pages only",
+    text: "Addresses that resolve to private, loopback or cloud metadata ranges are refused, redirects are re-checked, and size and time are capped.",
+  },
+  {
     title: "The learning log is bounded",
     text: "It keeps raw labels and the filled and final values per user. Events older than 90 days are deleted when learning is next used, and they go with your account.",
   },
@@ -35,8 +43,8 @@ export function PrivacySection() {
           Privacy first
         </h2>
         <p className="mt-3 max-w-2xl text-muted-foreground">
-          These are the rules the code follows. The extension does not fill pages yet, so none of this has reached a
-          real application.
+          These are the rules the code follows. The extension fills pages and records your edits after a fill. The
+          learning rules below decide what is kept.
         </p>
         <dl className="mt-8 grid gap-x-10 gap-y-6 md:grid-cols-2">
           {POINTS.map(({ title, text }) => (

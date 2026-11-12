@@ -1,0 +1,31 @@
+---
+title: The dashboard
+description: Profile, answers, queue and stats.
+---
+
+Sign in with `ADMIN_EMAIL` and `ADMIN_PASSWORD` from your `.env`. The sidebar has these pages.
+
+| Page | What it does |
+| --- | --- |
+| Overview | where you are |
+| Queue | jobs you want to apply to |
+| Stats | what you applied to and what came back |
+| Notes | a notes board |
+| Answers | your answer bank |
+| Extension | create and revoke extension tokens |
+| Gmail | import job alert emails, see [Gmail job emails](/docs/gmail) |
+| Sources | watch careers pages and feeds, see [Job sources](/docs/sources) |
+| Settings | your profile and account |
+| Users | admins only: manage the accounts on this server |
+
+## Answers
+
+The answer bank holds what skiffr fills for a question. Add, edit and delete answers, and see how often each was used and corrected. The suggestions panel proposes which learned answers to keep or drop, see [how skiffr learns](/docs/learning). Nothing is changed without you resolving it.
+
+## Queue
+
+Paste a job link, with an optional title and company, or let [Gmail](/docs/gmail) and [Sources](/docs/sources) fill it. Filter by status (queued, applied, skipped) and source, search by company or role, and use **Open next** to go through the queue in order. Mark a job applied or skipped, or restore it to the queue. The same posting is queued once, whatever way it arrived. You always press submit yourself.
+
+## Stats
+
+Applications per day and week, the queue funnel, replies by the furthest stage reached, breakdowns by source, ATS, match score and role, time to apply, and an autofill section: fields skiffr filled and whether you left, corrected or cleared them. Pick a range at the top. Percentages only show from 5 applications or filled fields, before that they would be noise. The autofill section counts the fields recorded after a skiffr fill, so it fills up as you use the extension. Fields skiffr did not touch are not counted.

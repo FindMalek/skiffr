@@ -7,9 +7,10 @@ description: Apps, packages and the rules between them.
 skiffr/
 ├─ apps/
 │  ├─ web/          landing page, next
-│  ├─ dashboard/    login and app shell, next
+│  ├─ dashboard/    profile, answers, queue, stats, next
 │  ├─ api/          orpc on bun
 │  ├─ extension/    chrome extension, wxt and react
+│  ├─ e2e/          playwright suite for the extension
 │  └─ docs/         this site, fumadocs on next
 ├─ packages/
 │  ├─ ui/           shadcn components and theme tokens
@@ -19,6 +20,7 @@ skiffr/
 │  ├─ ai/           field mapping and answer drafts, vercel ai sdk
 │  ├─ auth/         better-auth setup
 │  ├─ env/          zod-validated env
+│  ├─ storage/      s3 compatible storage
 │  └─ config/       shared tsconfig
 ├─ docker/          local postgres compose file
 └─ turbo.json
@@ -26,7 +28,7 @@ skiffr/
 
 ## Rules
 
-- `apps/api` is the only app that touches the database, auth and providers. `web` and `dashboard` call it through `@skiffr/orpc`, so secrets and data access live in one place
+- `apps/api` is the only app that touches the database, auth and providers. `web`, `dashboard` and the extension call it through `@skiffr/orpc`, so secrets and data access live in one place
 - anything used by more than one app or package goes in `@skiffr/common`: schemas and their types, constants, small utils. Don't redeclare a type in an app when one exists there
 - the theme lives in `packages/ui/src/styles/theme.css`, use its tokens instead of raw colors
 - the database schema is in `packages/db/src/schema`, change it and run `pnpm db:generate` to get a migration, never write one by hand

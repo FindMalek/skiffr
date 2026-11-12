@@ -4,20 +4,20 @@ import { MockForm } from "./mock-form"
 const STEPS = [
   {
     title: "Detect",
-    state: "Planned, in review",
-    text: "A page that looks like a job application would show a small toast asking whether to fill it. Saying no would keep it quiet on that page.",
+    state: "Works",
+    text: "A page that looks like a job application shows a small toast asking whether to fill it. Saying no keeps it quiet, and you can switch it off for a site.",
     art: <MockForm step="detect" />,
   },
   {
     title: "Fill",
-    state: "Engine built, not connected",
-    text: "Your profile and saved answers would be put into the form the way a person types them, so React and Vue forms accept them. Passwords and hidden fields are skipped, honeypots ignored, and the form is never submitted.",
+    state: "Works",
+    text: "Your profile and saved answers are put into the form the way a person types them, so React and Vue forms accept them. Fields it is unsure about are outlined for you. Passwords and hidden fields are skipped, honeypots ignored, and the form is never submitted.",
     art: <MockForm step="fill" />,
   },
   {
     title: "Learn",
-    state: "API built, extension side planned",
-    text: "A fix you make would be logged as a correction, and the better answer used first next time. skiffr would also tell you which learned answers are worth keeping.",
+    state: "Works, with limits",
+    text: "After a skiffr fill, the fixes you make are logged as corrections when you submit or leave the page, and the better answer is used first next time. skiffr also tells you which learned answers are worth keeping. Sensitive fields are never recorded.",
     art: <LoopIllustration />,
   },
 ]
@@ -27,10 +27,10 @@ export function HowItWorks() {
     <section aria-labelledby="how-title" className="border-t">
       <div className="mx-auto w-full max-w-6xl px-4 py-16 sm:px-6">
         <h2 id="how-title" className="font-heading font-semibold text-3xl tracking-tight">
-          How it is meant to work
+          How it works
         </h2>
         <p className="mt-3 max-w-2xl text-muted-foreground">
-          This is the design, not what runs in a browser today. The drawings are illustrations, not screenshots.
+          Detect, fill and learn all run in the extension today. The drawings are illustrations, not screenshots.
         </p>
         <ol className="mt-10 grid gap-8 md:grid-cols-3">
           {STEPS.map(({ title, state, text, art }, index) => (
