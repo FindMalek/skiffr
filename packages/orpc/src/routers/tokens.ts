@@ -1,14 +1,22 @@
 import { ORPCError } from "@orpc/server"
-import { TOKEN_ACTIVE_MAX, TOKEN_HISTORY_DAYS, TOKEN_LIST_MAX } from "@skiffr/common/constants"
+import {
+  EXTENSION_MIN_VERSION,
+  EXTENSION_STALE_HOURS,
+  TOKEN_ACTIVE_MAX,
+  TOKEN_HISTORY_DAYS,
+  TOKEN_LIST_MAX,
+} from "@skiffr/common/constants"
 import {
   apiTokenInputSchema,
   apiTokenSchema,
   createdApiTokenSchema,
+  extensionStatusSchema,
   okSchema,
   whoamiSchema,
 } from "@skiffr/common/schemas"
-import { apiToken } from "@skiffr/db"
-import { and, count, desc, eq, gt, gte, isNull, or, type SQL, sql } from "drizzle-orm"
+import { isOlderVersion } from "@skiffr/common/utils"
+import { apiToken, fieldEvent } from "@skiffr/db"
+import { and, count, desc, eq, gt, gte, isNotNull, isNull, max, or, type SQL, sql } from "drizzle-orm"
 import { z } from "zod"
 import { mine, orNotFound } from "../lib/owned"
 import { generateToken, guardTokenDb } from "../lib/tokens"
@@ -23,6 +31,8 @@ const publicColumns = {
   last4: apiToken.last4,
   createdAt: apiToken.createdAt,
   lastUsedAt: apiToken.lastUsedAt,
+  client: apiToken.client,
+  clientVersion: apiToken.clientVersion,
   expiresAt: apiToken.expiresAt,
   revokedAt: apiToken.revokedAt,
 }
@@ -144,5 +154,51 @@ export const extensionRouter = {
             expiresAt: context.token.expiresAt,
           }
         : null,
+      minExtensionVersion: EXTENSION_MIN_VERSION,
     })),
+
+  status: protectedProcedure
+    .route({
+      method: "GET",
+      path: "/extension/status",
+      summary: "Whether the extension has been seen lately, which version, and when it last filled",
+      tags: ["extension"],
+    })
+    .output(extensionStatusSchema)
+    .handler(async ({ context }) => {
+      const now = context.now()
+      // The freshest active token that has been used. An older extension without the header counts as seen, version unknown.
+      const [seen] = await guardTokenDb("status", () =>
+        context.db
+          .select({ lastSeenAt: apiToken.lastUsedAt, client: apiToken.client, clientVersion: apiToken.clientVersion })
+          .from(apiToken)
+          .where(and(eq(apiToken.userId, context.user.id), isActive(now), isNotNull(apiToken.lastUsedAt)))
+          .orderBy(desc(apiToken.lastUsedAt))
+          .limit(1),
+      )
+      const [fill] = await context.db
+        .select({ at: max(fieldEvent.createdAt) })
+        .from(fieldEvent)
+        .where(eq(fieldEvent.userId, context.user.id))
+      const lastSeenAt = seen?.lastSeenAt ?? null
+      const staleBefore = now.getTime() - EXTENSION_STALE_HOURS * 60 * 60 * 1000
+      const clientVersion = seen?.clientVersion ?? null
+      return {
+        state: lastSeenAt
+          ? lastSeenAt.getTime() >= staleBefore
+            ? ("connected" as const)
+            : ("stale" as const)
+          : ("never" as const),
+        lastSeenAt,
+        client: seen?.client ?? null,
+        clientVersion,
+        minExtensionVersion: EXTENSION_MIN_VERSION,
+        version: clientVersion
+          ? isOlderVersion(clientVersion, EXTENSION_MIN_VERSION)
+            ? ("update-needed" as const)
+            : ("ok" as const)
+          : ("unknown" as const),
+        lastFillAt: fill?.at ?? null,
+      }
+    }),
 }

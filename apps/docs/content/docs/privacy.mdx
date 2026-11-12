@@ -71,6 +71,12 @@ Only for addresses you add, see [Job sources](/docs/sources): the api fetches th
 
 The extension authenticates with a personal access token that starts with `skp_`. The server keeps its SHA-256 hash and a short display tail, never the token. In the extension the background worker and the options page read it. Content scripts on web pages are kept from it by `storage.local.setAccessLevel("TRUSTED_CONTEXTS")`, which needs Chrome 142 or newer (the manifest's `minimum_chrome_version`). Calls to the api are made by the background worker. A token can only call a fixed list of procedures (`TOKEN_PROCEDURES` in `packages/orpc/src/procedures.ts`): profile, answers, jobs, applications and the two ai calls. Account, auth and token management need a signed-in session. Set `EXTENSION_ORIGINS` to pin the api to your own extension id.
 
+### Connection check
+
+Every call the extension makes carries one header, `X-Skiffr-Client: extension-chrome/0.3.1`: the browser family and the extension version, nothing else (no user agent, no page, no form). The api keeps the latest value on the token you used, so the dashboard can say which version is connected and when it was last seen, and `tokens.list` returns it. When the background worker wakes and a token is set, it also makes one cheap `extension.whoami` call, at most once every 15 minutes, so the extension shows as connected on a day without a fill. That call is best effort and never delays or blocks a fill. An older extension without the header works as before, its version is just unknown.
+
+The same call returns the oldest extension version this api serves (`EXTENSION_MIN_VERSION`). An older extension shows "update needed" next to **Test connection**. There is no timer: a worker that never wakes sends nothing, so the dashboard can show a connected extension as stale after 24 hours.
+
 ## Reporting a problem
 
 Report vulnerabilities privately through GitHub, see `SECURITY.md` in the repo root.

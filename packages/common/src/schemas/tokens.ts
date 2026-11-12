@@ -8,6 +8,9 @@ export const apiTokenSchema = z.object({
   last4: z.string(),
   createdAt: z.date(),
   lastUsedAt: z.date().nullable(),
+  /** Name and version the client sent last (`extension-chrome`, `0.3.1`), null when it never sent them. */
+  client: z.string().nullable(),
+  clientVersion: z.string().nullable(),
   expiresAt: z.date().nullable(),
   revokedAt: z.date().nullable(),
 })
@@ -30,7 +33,23 @@ export const createdApiTokenSchema = apiTokenSchema.extend({ secret: z.string() 
 export const whoamiSchema = z.object({
   user: z.object({ name: z.string(), email: z.string() }),
   token: apiTokenSchema.pick({ name: true, prefix: true, last4: true, expiresAt: true }).nullable(),
+  /** The api's side of the version handshake: the extension shows "update needed" when it is older than this. */
+  minExtensionVersion: z.string(),
+})
+
+export const extensionStatusSchema = z.object({
+  /** `never`: no token has been used by a skiffr client yet. `stale`: not seen for `EXTENSION_STALE_HOURS`. */
+  state: z.enum(["connected", "stale", "never"]),
+  lastSeenAt: z.date().nullable(),
+  client: z.string().nullable(),
+  clientVersion: z.string().nullable(),
+  minExtensionVersion: z.string(),
+  /** `unknown` when the extension never reported a version (it predates the header). */
+  version: z.enum(["ok", "update-needed", "unknown"]),
+  /** When the extension last recorded a fill (a field event), not when it last called the api. */
+  lastFillAt: z.date().nullable(),
 })
 
 export type ApiToken = z.infer<typeof apiTokenSchema>
+export type ExtensionStatus = z.infer<typeof extensionStatusSchema>
 export type Whoami = z.infer<typeof whoamiSchema>
