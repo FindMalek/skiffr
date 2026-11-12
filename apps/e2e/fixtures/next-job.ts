@@ -53,19 +53,47 @@ export const offered = (s: ToastSnapshot): boolean =>
 /** The title with the invisible isolates around the job text taken out. */
 export const plain = (text: string | null | undefined): string => (text ?? "").replace(/[⁨⁩]/g, "")
 
-/** What a page can measure of the toast: its host element, never what is inside the closed root. */
-export function hostBox(page: Page) {
-  return page.evaluate(() => {
+export interface HitProbe {
+  /** Points of a fine grid over the host box where a page's hit test lands on the toast host. */
+  hits: number
+  /** The first row, from the top of the host, where the toast takes clicks. */
+  topRow: number | null
+  box: { width: number; height: number }
+  /** What a ResizeObserver and an IntersectionObserver on the host report once the toast has settled. */
+  resize: { width: number; height: number } | null
+  intersection: { width: number; height: number } | null
+}
+
+/**
+ * Everything a page can learn about the size of the toast without reading it: hit testing a fine grid over the host
+ * box (the host only takes clicks where the toast is), the host's own box, and observers on the host.
+ */
+export function probeToast(page: Page): Promise<HitProbe | null> {
+  return page.evaluate(async () => {
     const host = [...document.documentElement.children].find((el) => el.tagName.startsWith("X-"))
     if (!host) return null
+    let resize: { width: number; height: number } | null = null
+    let intersection: { width: number; height: number } | null = null
+    new ResizeObserver((entries) => {
+      const rect = entries.at(-1)?.contentRect
+      if (rect) resize = { width: rect.width, height: rect.height }
+    }).observe(host)
+    new IntersectionObserver((entries) => {
+      const rect = entries.at(-1)?.intersectionRect
+      if (rect) intersection = { width: rect.width, height: rect.height }
+    }).observe(host)
+    await new Promise((resolve) => setTimeout(resolve, 400))
     const box = host.getBoundingClientRect()
-    return {
-      width: box.width,
-      height: box.height,
-      scrollHeight: host.scrollHeight,
-      scrollWidth: host.scrollWidth,
-      clientHeight: host.clientHeight,
-      offsetHeight: (host as HTMLElement).offsetHeight,
+    let hits = 0
+    let topRow: number | null = null
+    for (let y = Math.ceil(box.top) + 1; y < box.bottom; y += 2) {
+      for (let x = Math.ceil(box.left) + 4; x < box.right; x += 12) {
+        if (document.elementFromPoint(x, y) === host) {
+          hits++
+          topRow ??= y - box.top
+        }
+      }
     }
+    return { hits, topRow, box: { width: box.width, height: box.height }, resize, intersection }
   })
 }

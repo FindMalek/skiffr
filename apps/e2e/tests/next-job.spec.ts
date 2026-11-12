@@ -3,7 +3,6 @@ import { expect, test } from "../fixtures/extension.ts"
 import {
   APPLICATIONS_PATH,
   filledAndSubmitted,
-  hostBox,
   JOBS_PATH,
   keepPageOnSubmit,
   offered,
@@ -98,13 +97,13 @@ test("a toast nobody answered goes away and its offer is gone", async ({
   fixtureServer,
   mockApi,
 }) => {
-  test.setTimeout(120_000)
+  test.setTimeout(180_000)
   const { current, next } = queueFor(fixtureServer.origin)
   mockApi.setQueue([current, next])
   await connect(serviceWorker, mockApi)
   const { toast } = await filledAndSubmitted(context, fixtureServer.origin)
   await toast.waitFor(offered)
-  await toast.waitFor((s) => s.buttons.length === 0, 45_000)
+  await toast.waitFor((s) => s.buttons.length === 0, 90_000)
 
   const stored = await serviceWorker.evaluate(() => chrome.storage.session.get("nextJobOffers"))
   expect((stored.nextJobOffers as { offers: unknown[] }).offers).toEqual([])
@@ -258,33 +257,4 @@ test("the offer is not shown on another site, and a late list does not follow th
   await page.waitForTimeout(2_500)
   expect(offered(await toast.snapshot())).toBe(false)
   expect(mockApi.applications).toEqual([])
-})
-
-test("the toast box is the same size whatever it says", async ({ context, serviceWorker, fixtureServer, mockApi }) => {
-  const { current, next } = queueFor(fixtureServer.origin)
-  const long = {
-    ...next,
-    title: "Senior Staff Principal Distinguished Engineer, Platform Reliability and Tooling",
-    company: "Globex International Holdings Worldwide",
-  }
-  mockApi.setQueue([current, long])
-  await connect(serviceWorker, mockApi)
-  const { page, toast } = await openApplication(context, fixtureServer.origin)
-  // the toast slides in over a moment, which the page would see as scrollable overflow: measure once it settled
-  await toast.waitFor((s) => s.title !== null && s.title !== "")
-  await page.waitForTimeout(400)
-  const ask = await hostBox(page)
-  await toast.click("yes")
-  await toast.waitFor((s) => s.title !== null && FILLED.test(s.title))
-  await page.waitForTimeout(400)
-  const filled = await hostBox(page)
-  await keepPageOnSubmit(page)
-  await page.locator(FIELDS.submit).click()
-  await toast.waitFor(offered)
-  await page.waitForTimeout(400)
-  const offer = await hostBox(page)
-
-  expect(ask).not.toBeNull()
-  expect(filled).toEqual(ask)
-  expect(offer).toEqual(ask)
 })

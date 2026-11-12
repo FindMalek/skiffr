@@ -196,6 +196,27 @@ test("the host box is the same whatever the toast says, and only the toast takes
   }
   const short = styleOf("Nothing to fill")
   expect(styleOf("a long job title ".repeat(20))).toBe(short)
-  expect(short).toContain("height: 360px")
+  expect(short).toContain("height: 240px")
   expect(short).toContain("pointer-events: none")
+})
+
+test("a toast has one fixed size per kind, whatever it says", async () => {
+  const { doc, view } = setup()
+  const kindOf = () => hosts(doc)[0]?.shadowRoot?.querySelector(".toast")?.className ?? ""
+  view.show()
+  expect(kindOf()).toContain("ask")
+  view.showMessage({ text: "Filling your application…", busy: true })
+  expect(kindOf()).toContain("ask")
+  view.showMessage({ text: "Nothing to fill" })
+  const result = kindOf()
+  expect(result).toContain("result")
+  view.showMessage({ text: "skiffr no longer accepts this connection. ".repeat(6), actions: ["settings"] })
+  expect(kindOf()).toBe(result)
+  view.showMessage({ text: "Next in your queue", actions: ["open-next"], size: "offer" })
+  expect(kindOf()).toContain("offer")
+  expect(kindOf()).not.toContain("result")
+  view.hide()
+  view.show()
+  expect(kindOf()).toContain("ask")
+  view.hide()
 })

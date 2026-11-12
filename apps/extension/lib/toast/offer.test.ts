@@ -11,6 +11,8 @@ test("both parts are offered with the not now and don't ask choices", () => {
   const message = offerMessage({ matched, next })
   expect(plain(message?.text)).toBe("Submitted Backend Engineer at Acme? Next in your queue: Staff Engineer at Globex.")
   expect(message?.actions).toEqual(["open-next", "mark-applied", "not-now", "stop-next"])
+  expect(message?.size).toBe("offer")
+  expect(offerMessage({ matched: null, next: null }, "marked")?.size).toBeUndefined()
 })
 
 test("a page outside the queue only offers the next job", () => {

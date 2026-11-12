@@ -130,7 +130,7 @@ test("a submit offers the next job and the one just submitted, found by its cano
     {
       type: "next-offer",
       offerId: OFFER_ID,
-      siteKey: "job-boards.greenhouse.io/acme",
+      scope: "job-boards.greenhouse.io/acme",
       matched: { title: "Engineer 1", company: "Co 1" },
       next: { title: "Engineer 2", company: "Co 2" },
     },
@@ -442,4 +442,24 @@ test("an offer nobody answered for ten minutes is gone, even for a new worker", 
   const same = await offered({ time })
   time.now += 601_000
   expect(await same.handler.handle(decision("open"), sender())).toEqual({ ok: false, code: "invalid" })
+})
+
+test("on a shared host where tenants are paths, another tenant's page never gets the offer", async () => {
+  const mine = "https://sites.google.com/view/acme-careers/jobs/1"
+  const { handler, calls } = setup({ jobs: [job(1, mine), job(2, "https://example.com/careers/2")], top: () => mine })
+  await handler.handle(submitted({ siteKey: "sites.google.com" }), sender({ url: mine }))
+  expect(calls.offers[0]?.scope).toBe("sites.google.com/view/acme-careers")
+  await probe(handler, sender({ url: "https://sites.google.com/view/other-company/thanks" }))
+  expect(calls.offers).toHaveLength(1)
+  await probe(handler, sender({ url: mine }))
+  expect(calls.offers).toHaveLength(1)
+  expect(await handler.handle(decision("mark"), sender({ url: mine }))).toEqual({ ok: false, code: "invalid" })
+})
+
+test("the same tenant on a shared host still gets the replay", async () => {
+  const mine = "https://sites.google.com/view/acme-careers/jobs/1"
+  const { handler, calls } = setup({ jobs: [job(1, mine), job(2, "https://example.com/careers/2")], top: () => mine })
+  await handler.handle(submitted({ siteKey: "sites.google.com" }), sender({ url: mine }))
+  await probe(handler, sender({ url: "https://sites.google.com/view/acme-careers/thanks" }))
+  expect(calls.offers).toHaveLength(2)
 })

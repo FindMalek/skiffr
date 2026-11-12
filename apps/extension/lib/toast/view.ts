@@ -8,6 +8,8 @@ export type ToastMessage = {
   busy?: boolean
   /** Close after this long instead of the usual spell. */
   dismissMs?: number
+  /** The next job offer has the most to say, so it gets the biggest box. Every other message is one fixed size. */
+  size?: "offer"
   /** The person closed it, or it timed out. Not called when another message replaces it or the page hides it. */
   onClose?: () => void
 }
@@ -39,6 +41,10 @@ const LINK_ACTIONS: ReadonlySet<ToastAction> = new Set(["stop-next"])
 
 const AUTO_DISMISS_MS = 20_000
 const MAX_REMOUNTS = 20
+/** A toast has one of three fixed heights, whatever it says: the box a page can hit test or observe must not tell how long the text is (long text is cut with an ellipsis). */
+type Kind = "ask" | "result" | "offer"
+const KINDS: readonly Kind[] = ["ask", "result", "offer"]
+
 /** The host box never depends on what the toast says: a page can measure its host element, not what is inside the closed root. */
 const HOST_STYLE: Record<string, string> = {
   all: "initial",
@@ -50,7 +56,7 @@ const HOST_STYLE: Record<string, string> = {
   "justify-content": "flex-end",
   width: "320px",
   "max-width": "calc(100vw - 32px)",
-  height: "360px",
+  height: "240px",
   "max-height": "calc(100vh - 32px)",
   // the host is only a frame: clicks outside the toast reach the page
   "pointer-events": "none",
@@ -98,6 +104,7 @@ export function createToastView(doc: Document, handlers: ToastHandlers): ToastVi
   let primary: (() => void) | null = handlers.onYes
   let onEscape: () => void = handlers.onNo
   let onClose: (() => void) | undefined
+  let kind: Kind = "ask"
 
   function arm(): void {
     clearTimeout(timer)
@@ -112,7 +119,7 @@ export function createToastView(doc: Document, handlers: ToastHandlers): ToastVi
     style.textContent = TOAST_CSS
 
     const toast = doc.createElement("div")
-    toast.className = "toast"
+    toast.className = `toast ${kind}`
     toast.setAttribute("role", "dialog")
     toast.setAttribute("aria-label", "skiffr autofill")
     toast.tabIndex = -1
@@ -219,6 +226,11 @@ export function createToastView(doc: Document, handlers: ToastHandlers): ToastVi
     watch(root)
   }
 
+  function applyKind(): void {
+    toastEl?.classList.remove(...KINDS)
+    toastEl?.classList.add(kind)
+  }
+
   function dismiss(): void {
     fromKeyboard = false
     const closed = onClose
@@ -236,7 +248,9 @@ export function createToastView(doc: Document, handlers: ToastHandlers): ToastVi
       mount()
       arm()
     },
-    showMessage({ text, actions = [], busy = false, dismissMs: spell = MESSAGE_DISMISS_MS, onClose: closeHook }) {
+    showMessage({ text, actions = [], busy = false, size, dismissMs: spell = MESSAGE_DISMISS_MS, onClose: closeHook }) {
+      kind = size ?? (busy ? "ask" : "result")
+      applyKind()
       dismissMs = busy ? 0 : spell
       onClose = closeHook
       onDismiss = () => dismiss()
@@ -265,6 +279,7 @@ export function createToastView(doc: Document, handlers: ToastHandlers): ToastVi
     hide() {
       clearTimeout(timer)
       onClose = undefined
+      kind = "ask"
       currentTitle = ASK_TITLE
       dismissMs = AUTO_DISMISS_MS
       onDismiss = handlers.onTimeout

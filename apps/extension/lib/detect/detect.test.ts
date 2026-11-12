@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { Window } from "happy-dom"
-import { isTrustedFrameUrl, matchAts, siteKey } from "./ats"
+import { isTrustedFrameUrl, matchAts, offerScope, siteKey } from "./ats"
 import { detectApplicationForm } from "./score"
 
 const FIXTURES = join(import.meta.dir, "../../test/fixtures")
@@ -144,4 +144,13 @@ test("child frames are trusted only on the top origin or a known ats host", () =
   expect(isTrustedFrameUrl(top, "http://127.0.0.1:8802/attacker")).toBe(false)
   expect(isTrustedFrameUrl(top, "https://greenhouse.io.evil.example/x")).toBe(false)
   expect(isTrustedFrameUrl(top, "about:blank")).toBe(false)
+})
+
+test("an offer scope is the site key, plus the tenant path on a shared host that has no tenant in its key", () => {
+  expect(offerScope("https://job-boards.greenhouse.io/acme/jobs/1")).toBe("job-boards.greenhouse.io/acme")
+  expect(offerScope("https://careers.example.com/jobs/1")).toBe("careers.example.com")
+  expect(offerScope("https://sites.google.com/view/Acme/jobs")).toBe("sites.google.com/view/acme")
+  expect(offerScope("https://forms.office.com/r/abc123")).toBe("forms.office.com/r/abc123")
+  expect(offerScope("https://www.notion.so/")).toBe("www.notion.so")
+  expect(offerScope("not a url")).toBeNull()
 })

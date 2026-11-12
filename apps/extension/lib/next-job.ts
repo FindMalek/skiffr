@@ -1,7 +1,7 @@
 import { ORPCError } from "@orpc/client"
 import { atsFromCanonicalId, canonicalizeJob, displayText, safeHref } from "@skiffr/common"
 import { z } from "zod"
-import { siteKey } from "./detect/ats"
+import { offerScope, siteKey } from "./detect/ats"
 import type { FrameStorage } from "./detect/frames"
 import { createRateLimiter } from "./detect/rate-limit"
 import { NEXT_JOBS_MAX, NEXT_LIMIT, NEXT_OFFER_MAX_MS, NEXT_REPLAY_MS, NEXT_TIMEOUT_MS } from "./fill-config"
@@ -54,8 +54,10 @@ const offerSchema = z.object({
   tabId: z.number().int(),
   at: z.number(),
   expiresAt: z.number(),
-  /** The site the submit happened on: the only site this offer may be shown or answered on. */
+  /** The site key of the submit, for "don't ask on this site". */
   site: z.string(),
+  /** Where the submit happened (`offerScope`): the only place this offer may be shown or answered. */
+  scope: z.string(),
   matched: queuedJobSchema.nullable(),
   next: queuedJobSchema.nullable(),
   /** Checked when the offer was made: the only address this offer can open. */
@@ -126,7 +128,7 @@ export function createNextJobHandler(deps: NextJobDeps): NextJobHandler {
     deps.offer(offer.tabId, {
       type: "next-offer",
       offerId: offer.id,
-      siteKey: offer.site,
+      scope: offer.scope,
       matched: brief(offer.matched),
       next: brief(offer.next),
     })
@@ -156,7 +158,8 @@ export function createNextJobHandler(deps: NextJobDeps): NextJobHandler {
     }
     const pageUrl = await pageUrlOf(tabId, sender)
     const site = pageUrl ? siteKey(pageUrl) : null
-    if (!pageUrl || !site) return { ok: false, code: "invalid" }
+    const scope = pageUrl ? offerScope(pageUrl) : null
+    if (!pageUrl || !site || !scope) return { ok: false, code: "invalid" }
     await load()
     const pageId = canonicalizeJob(pageUrl).canonicalId
     if (asked.get(tabId)?.includes(pageId) || busy.has(tabId)) return { ok: true }
@@ -174,13 +177,14 @@ export function createNextJobHandler(deps: NextJobDeps): NextJobHandler {
       if (!matched && !next) return { ok: true }
       // the list can take a while: an offer for the page the person left is not made
       const current = await deps.topUrl(tabId)
-      if (current && siteKey(current) !== site) return { ok: true }
+      if (current && offerScope(current) !== scope) return { ok: true }
       const offer: Offer = {
         id: newId(),
         tabId,
         at: now(),
         expiresAt: now() + NEXT_OFFER_MAX_MS,
         site,
+        scope,
         matched,
         next,
         href: next ? safeHref(next.url) : null,
@@ -221,7 +225,7 @@ export function createNextJobHandler(deps: NextJobDeps): NextJobHandler {
     if (!parsed.success || sender.frameId !== 0 || !offer || offer.id !== parsed.data.offerId) {
       return { ok: false, code: "invalid" }
     }
-    if (now() > offer.expiresAt || siteKey(sender.url as string) !== offer.site) {
+    if (now() > offer.expiresAt || offerScope(sender.url as string) !== offer.scope) {
       await drop(tabId)
       return { ok: false, code: "invalid" }
     }
@@ -263,7 +267,7 @@ export function createNextJobHandler(deps: NextJobDeps): NextJobHandler {
     await load()
     const offer = offers.get(tabId)
     if (!offer || offer.replayed) return
-    if (siteKey(url) !== offer.site || now() > offer.expiresAt) return drop(tabId)
+    if (offerScope(url) !== offer.scope || now() > offer.expiresAt) return drop(tabId)
     if (now() - offer.at > NEXT_REPLAY_MS) return
     offer.replayed = true
     await save()

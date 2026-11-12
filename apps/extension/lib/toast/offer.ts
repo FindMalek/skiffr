@@ -3,6 +3,7 @@ import type { JobBrief } from "../messages"
 import type { ToastAction, ToastMessage } from "./view"
 
 export type NextOffer = { matched: JobBrief | null; next: JobBrief | null }
+export const EXPIRED_MESSAGE: ToastMessage = { text: "This offer has expired." }
 export type OfferNote = "open-failed" | "mark-failed" | "opened" | "marked"
 
 /** First strong isolate to pop directional isolate: a title in another script keeps its own order inside the sentence. The worker already turned any such character in a title into a visible code. */
@@ -34,5 +35,5 @@ export function offerMessage({ matched, next }: NextOffer, note?: OfferNote): To
   const ask = matched ? `Submitted ${label(matched)}? ` : ""
   // after a choice a missing next job may have just been opened, so it is not said to be absent
   const queue = next ? `Next in your queue: ${label(next)}.` : note ? "" : "Your queue has nothing else."
-  return { text: `${lead}${ask}${queue}`.trim(), actions, dismissMs: NEXT_TOAST_MS }
+  return { text: `${lead}${ask}${queue}`.trim(), actions, size: "offer", dismissMs: NEXT_TOAST_MS }
 }

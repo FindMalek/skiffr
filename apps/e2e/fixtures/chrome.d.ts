@@ -9,7 +9,8 @@ declare namespace chrome {
     function set(items: Record<string, unknown>): Promise<void>
   }
   namespace storage.session {
-    function get(key: string): Promise<Record<string, unknown>>
+    function get(key: string | null): Promise<Record<string, unknown>>
+    function set(items: Record<string, unknown>): Promise<void>
   }
   namespace tabs {
     interface Tab {

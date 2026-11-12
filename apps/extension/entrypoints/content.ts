@@ -1,6 +1,6 @@
 import { browser } from "wxt/browser"
 import { defineContentScript } from "wxt/utils/define-content-script"
-import { siteKey } from "@/lib/detect/ats"
+import { offerScope, siteKey } from "@/lib/detect/ats"
 import { createRateLimiter } from "@/lib/detect/rate-limit"
 import { createFormWatcher } from "@/lib/detect/watch"
 import { noteFill } from "@/lib/dev-hook"
@@ -29,7 +29,7 @@ import {
   type SiteDisabledMessage,
   type SiteDisabledResponse,
 } from "@/lib/messages"
-import { type NextOffer, type OfferNote, offerMessage } from "@/lib/toast/offer"
+import { EXPIRED_MESSAGE, type NextOffer, type OfferNote, offerMessage } from "@/lib/toast/offer"
 import { type FillTally, resultMessage } from "@/lib/toast/result"
 import { INITIAL_TOAST_STATE, reduceToast, type ToastEvent } from "@/lib/toast/state"
 import { createToastView } from "@/lib/toast/view"
@@ -111,16 +111,19 @@ export default defineContentScript({
     // the next job offer of the worker: what is left to choose, and nothing the page could turn into an address
     let offer: (NextOffer & { id: string; until: number }) | null = null
 
-    function answerOffer(action: NextDecisionMessage["action"]): Promise<boolean> {
-      if (!offer) return Promise.resolve(false)
+    /** "invalid": the worker has no such offer any more (it ran out, or the tab left the place it was made for). */
+    function answerOffer(action: NextDecisionMessage["action"]): Promise<"ok" | "invalid" | "failed"> {
+      if (!offer) return Promise.resolve("failed")
       const message: NextDecisionMessage = { type: "next-decision", offerId: offer.id, action }
       return browser.runtime
         .sendMessage(message)
-        .then((reply: unknown) => {
+        .then((reply: unknown): "ok" | "invalid" | "failed" => {
           const parsed = nextJobResponseSchema.safeParse(reply)
-          return parsed.success && parsed.data.ok
+          if (!parsed.success) return "failed"
+          if (parsed.data.ok) return "ok"
+          return parsed.data.code === "invalid" ? "invalid" : "failed"
         })
-        .catch(() => false)
+        .catch(() => "failed")
     }
 
     function showOffer(note?: OfferNote): void {
@@ -137,8 +140,15 @@ export default defineContentScript({
 
     async function decide(action: "open" | "mark"): Promise<void> {
       if (!offer) return
-      const done = await answerOffer(action)
+      const answer = await answerOffer(action)
       if (!offer) return
+      if (answer === "invalid") {
+        // its choices would all fail now: say so instead of leaving them up
+        offer = null
+        view.showMessage(EXPIRED_MESSAGE)
+        return
+      }
+      const done = answer === "ok"
       if (done) offer = action === "open" ? { ...offer, next: null } : { ...offer, matched: null }
       if (action === "open") showOffer(done ? "opened" : "open-failed")
       else showOffer(done ? "marked" : "mark-failed")
@@ -146,7 +156,7 @@ export default defineContentScript({
 
     function onNextOffer(message: NextOfferMessage): void {
       // the offer was made for the page that was submitted: a page on another site never shows it
-      if (message.siteKey !== siteKey(location.href)) return
+      if (message.scope !== offerScope(location.href)) return
       offer = {
         id: message.offerId,
         matched: message.matched,

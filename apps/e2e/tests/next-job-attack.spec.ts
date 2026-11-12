@@ -1,7 +1,7 @@
 import type { Page } from "@playwright/test"
-import { connect, FIELDS } from "../fixtures/application.ts"
+import { connect, FIELDS, openApplication } from "../fixtures/application.ts"
 import { expect, test } from "../fixtures/extension.ts"
-import { APPLICATIONS_PATH, filled, JOBS_PATH, offered, queueFor } from "../fixtures/next-job.ts"
+import { APPLICATIONS_PATH, filled, JOBS_PATH, offered, probeToast, queueFor } from "../fixtures/next-job.ts"
 
 test.beforeEach(({ mockApi, fixtureServer }) => {
   mockApi.reset()
@@ -206,4 +206,127 @@ test("an extension page, which is not a content script, gets no answer to a deci
   expect(mockApi.applications).toEqual([])
   expect(asked(mockApi.requests)).toBe(before)
   expect(mockApi.requests.some((r) => r.path === APPLICATIONS_PATH)).toBe(false)
+})
+
+test("a page that triggers the offer cannot tell how long the job text is, by hit testing or observers", async ({
+  context,
+  serviceWorker,
+  fixtureServer,
+  mockApi,
+}) => {
+  const { current, next } = queueFor(fixtureServer.origin)
+  const long = {
+    ...next,
+    title: "Senior Staff Principal Distinguished Engineer, Platform Reliability and Developer Tooling",
+    company: "Globex International Holdings Worldwide Incorporated",
+  }
+  await connect(serviceWorker, mockApi)
+
+  const probes = []
+  for (const queued of [next, long]) {
+    mockApi.reset()
+    mockApi.setQueue([current, queued])
+    const { page, toast } = await filled(context, fixtureServer.origin)
+    await page.locator(FORM).click()
+    await toast.waitFor(offered)
+    probes.push(await probeToast(page))
+    await page.close()
+  }
+  const [short, tall] = probes
+  expect(short?.hits).toBeGreaterThan(0)
+  expect(tall).toEqual(short)
+})
+
+test("nor from the ask and the fill result: whatever the result says, the toast takes clicks in the same place", async ({
+  context,
+  serviceWorker,
+  fixtureServer,
+  mockApi,
+}) => {
+  const results = []
+  for (const down of [false, true]) {
+    mockApi.reset()
+    // a token the api refuses ends in the longest result text there is
+    await connect(serviceWorker, mockApi, down ? "skp_wrong_token" : undefined)
+    const { page, toast } = await openApplication(context, fixtureServer.origin)
+    const ask = await probeToast(page)
+    await toast.click("yes")
+    await toast.waitFor((s) => s.title !== null && s.title !== "" && !/Filling/.test(s.title))
+    results.push({ ask, result: await probeToast(page) })
+    await page.close()
+  }
+  const [fine, broken] = results
+  expect(fine?.ask?.hits).toBeGreaterThan(0)
+  expect(broken?.ask).toEqual(fine?.ask)
+  expect(fine?.result?.hits).toBeGreaterThan(0)
+  expect(broken?.result).toEqual(fine?.result)
+})
+
+test("the content script world cannot read the extension's storage either: the token and the pending offers stay in the worker", async ({
+  context,
+  serviceWorker,
+  extensionId,
+  fixtureServer,
+  mockApi,
+}) => {
+  const { current, next } = queueFor(fixtureServer.origin)
+  mockApi.setQueue([current, next])
+  await connect(serviceWorker, mockApi)
+  const { page, toast } = await filled(context, fixtureServer.origin)
+  await page.locator(FORM).click()
+  await toast.waitFor(offered)
+
+  const cdp = await context.newCDPSession(page)
+  const isolated: number[] = []
+  cdp.on("Runtime.executionContextCreated", ({ context: created }) => {
+    const aux = created.auxData as { type?: string } | undefined
+    if (aux?.type === "isolated" && created.origin.startsWith(`chrome-extension://${extensionId}`)) {
+      isolated.push(created.id)
+    }
+  })
+  await cdp.send("Runtime.enable")
+  await page.waitForTimeout(300)
+  expect(isolated.length).toBeGreaterThan(0)
+
+  for (const area of ["session", "local"]) {
+    const read = await cdp.send("Runtime.evaluate", {
+      contextId: isolated[0],
+      awaitPromise: true,
+      returnByValue: true,
+      expression: `(async () => { try { await chrome.storage.${area}.get(null); return "read" } catch (error) { return "threw: " + error.message } })()`,
+    })
+    expect(read.result.value).toMatch(/^threw/)
+  }
+})
+
+test("a toast whose offer ran out says so instead of keeping choices that fail", async ({
+  context,
+  serviceWorker,
+  fixtureServer,
+  mockApi,
+  optionsPage,
+}) => {
+  const { current, next } = queueFor(fixtureServer.origin)
+  mockApi.setQueue([current, next])
+  await connect(serviceWorker, mockApi)
+  const { page, toast } = await filled(context, fixtureServer.origin)
+  await page.locator(FORM).click()
+  await toast.waitFor(offered)
+
+  // the worker is stopped and the offer in session storage is past its time, as after ten idle minutes
+  const cdp = await context.newCDPSession(page)
+  await cdp.send("ServiceWorker.enable")
+  await cdp.send("ServiceWorker.stopAllWorkers")
+  await optionsPage.evaluate(async () => {
+    const stored = (await chrome.storage.session.get("nextJobOffers")) as {
+      nextJobOffers: { offers: { expiresAt: number }[] }
+    }
+    for (const offer of stored.nextJobOffers.offers) offer.expiresAt = 1
+    await chrome.storage.session.set(stored)
+  })
+
+  await toast.click("mark-applied")
+  const shown = await toast.waitFor((s) => s.title === "This offer has expired.")
+  expect(shown.buttons.map((b) => b.action)).toEqual(["close"])
+  expect(mockApi.applications).toEqual([])
 })
