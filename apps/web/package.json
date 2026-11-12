@@ -21,7 +21,8 @@
     "next-themes": "catalog:",
     "react": "catalog:",
     "react-dom": "catalog:",
-    "server-only": "catalog:"
+    "server-only": "catalog:",
+    "@skiffr/observability": "workspace:*"
   },
   "devDependencies": {
     "@skiffr/config": "workspace:*",
