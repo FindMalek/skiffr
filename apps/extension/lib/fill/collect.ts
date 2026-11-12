@@ -15,6 +15,7 @@ import {
   isRendered,
   parentOf,
   textOf,
+  view,
   walkElements,
 } from "./dom"
 import { type HeadingMemo, isSensitiveControl } from "./sensitive"
@@ -324,6 +325,8 @@ function buildField(
   const section = sectionOf(el, ctx)
   const label = section && own && section.length <= SECTION_MAX && !same(own, section) ? `${section}: ${own}` : own
   const name = input.name || el.id || undefined
+  // a question drawn only by CSS cannot be read, so nothing about it is sent: it is left to the person
+  if (filter && !found && drawnByCss(el, ctx)) return { field: null, members }
   if (
     filter &&
     isSensitiveControl(
@@ -369,6 +372,23 @@ function buildField(
       .slice(0, AI_OPTIONS_MAX),
   }
   return { field: { id: "", kind, el: usable[0] as HTMLElement, choices, descriptor, info }, members }
+}
+
+const GENERATED = /^(none|normal|""|'')?$/
+
+/** A label with no text of its own whose words are drawn by CSS (`::before`, `::after`): the page asks something we cannot read. */
+function drawnByCss(el: HTMLElement, ctx: Ctx): boolean {
+  return labelsFor(el, ctx).some((label) => {
+    if (textOf(label)) return false
+    try {
+      const win = view(label)
+      return ["::before", "::after"].some(
+        (pseudo) => !GENERATED.test(win.getComputedStyle(label, pseudo).content.trim()),
+      )
+    } catch {
+      return false
+    }
+  })
 }
 
 /** The field a single control belongs to, without the visibility and trap filters. */

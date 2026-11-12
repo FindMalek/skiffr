@@ -288,7 +288,9 @@ export async function fillCombobox(
   try {
     const options = () => {
       const linked = readListOptions(el)
-      return isList ? linked : [...linked, ...inserted.options().filter((option) => !linked.includes(option))]
+      const all = isList ? linked : [...linked, ...inserted.options().filter((option) => !linked.includes(option))]
+      // a link that goes somewhere is not a choice
+      return all.filter((option) => option.closest("a[href]") === null)
     }
     const pickOption = (ranked = false): HTMLElement | null => {
       const list = options()

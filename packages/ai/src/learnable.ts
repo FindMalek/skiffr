@@ -25,6 +25,45 @@ const kindKey = (type: string | undefined) =>
     .replace(/[^\p{L}]/gu, "")
     .toLowerCase()
 
+/** Look-alike letters from other scripts that a page could use to spell a word the lists know. */
+const CONFUSABLES: Record<string, string> = {
+  а: "a",
+  е: "e",
+  о: "o",
+  р: "p",
+  с: "c",
+  х: "x",
+  у: "y",
+  і: "i",
+  ѕ: "s",
+  ј: "j",
+  ԁ: "d",
+  һ: "h",
+  ո: "n",
+  ɡ: "g",
+}
+
+/**
+ * The form a label is matched in: lowercase, no accents, punctuation or format characters (a zero width space inside a
+ * word is gone), look-alike letters folded to latin, and the arabic letters that only differ by dots or hamza folded
+ * (ة to ه, ى to ي; hamza and diacritics are already dropped with the accents). The lists are folded the same way.
+ */
+function foldConfusables(text: string): string {
+  return text
+    .normalize("NFKC")
+    .replace(/\p{Cf}/gu, "")
+    .replace(/[\u0400-\u04ff\u0500-\u052f\u0531-\u0587\u0250-\u02af]/gu, (char) => CONFUSABLES[char] ?? char)
+}
+
+function clean(text: string): string {
+  return normalizeLabel(
+    foldConfusables(text)
+      .replace(/\u0649/g, "\u064a")
+      .replace(/\u0629/g, "\u0647")
+      .replace(/\u0640/g, ""),
+  )
+}
+
 /** The broad control a type belongs to, `null` for types that are never learned. Case, spaces and zero-width characters can't dodge it. */
 export function controlKind(type: string | undefined): ControlKind | null {
   return KINDS[kindKey(type)] ?? null
@@ -120,8 +159,237 @@ const CONSENT_PHRASES = [
   "سياسة",
 ]
 
-/** Protected and personal categories beyond the equal opportunity lists above. */
+/** Consent and agreement in the other four languages, with the forms a form is likely to use. */
+const CONSENT_MORE_PHRASES = [
+  // fr
+  "je consens",
+  "consens a",
+  "j autorise",
+  "j atteste",
+  "j ai pris connaissance",
+  "lu et approuve",
+  "mentions legales",
+  "rgpd",
+  "cgu",
+  "cgv",
+  "conditions d utilisation",
+  "politique de confidentialite",
+  "protection des donnees",
+  // de
+  "ich willige ein",
+  "willige ein",
+  "stimme zu",
+  "ich habe gelesen",
+  "gelesen und",
+  "dsgvo",
+  "bestatige",
+  "akzeptiere",
+  "haftungsausschluss",
+  // es
+  "consiento",
+  "estoy de acuerdo",
+  "aviso legal",
+  "politica de privacidad",
+  "he leido y",
+  "autorizo",
+  "doy mi consentimiento",
+  "rgpd",
+  // ar
+  "اقر",
+  "اوافق",
+  "وافقت",
+  "اتعهد",
+  "اصرح",
+  "اؤكد",
+  "قرات",
+  "احيط علما",
+  "الاقرار",
+  "الاحكام",
+  "الشروط",
+  "الخصوصيه",
+  "حمايه البيانات",
+  "سياسه",
+  "الموافقه",
+  "موافقه",
+]
+
+/** Protected and personal categories beyond the equal opportunity lists above, in en fr de es ar. */
 const IDENTITY_PHRASES = [
+  // gender, sex, salutation
+  "sex",
+  "sexe",
+  "sexo",
+  "geschlecht",
+  "anrede",
+  "salutation",
+  "civilite",
+  "الجنس",
+  "جنس",
+  "النوع الاجتماعي",
+  "نوع اجتماعي",
+  "الهويه الجنسيه",
+  "ذكر",
+  "انثي",
+  // pronouns
+  "pronoms",
+  "pronomen",
+  "pronombres",
+  "ضمائر",
+  "الضمائر",
+  "ضمير",
+  // race, ethnicity, origin
+  "race",
+  "racial",
+  "ethnic origin",
+  "racial origin",
+  "country of origin",
+  "place of origin",
+  "ethnie",
+  "ethnicite",
+  "origine",
+  "origine ethnique",
+  "herkunft",
+  "ethnische herkunft",
+  "origen",
+  "origen etnico",
+  "etnia",
+  "raza",
+  "العرق",
+  "عرق",
+  "عرقي",
+  "الاصل العرقي",
+  "الاصل",
+  "اثني",
+  "skin tone",
+  "skin colour",
+  "skin color",
+  "person of color",
+  "people of color",
+  "person of colour",
+  "people of colour",
+  "poc",
+  "underrepresented",
+  "under represented",
+  "minority",
+  "minorities",
+  "caste",
+  // age, birth
+  "age",
+  "how old",
+  "years old",
+  "old are you",
+  "alter",
+  "alters",
+  "lebensalter",
+  "jahrgang",
+  "edad",
+  "السن",
+  "عمر",
+  "birthplace",
+  "birth place",
+  "place of birth",
+  "lieu de naissance",
+  "naissance",
+  "geburtsort",
+  "geburtsjahr",
+  "lugar de nacimiento",
+  "nacimiento",
+  "مكان الميلاد",
+  // nationality, citizenship as a status
+  "nationalitat",
+  "nacionalidad",
+  "جنسيه",
+  "الجنسيه",
+  // disability
+  "disabled",
+  "impairment",
+  "special needs",
+  "handicap",
+  "handicape",
+  "situation de handicap",
+  "invalidite",
+  "behindert",
+  "schwerbehindert",
+  "discapacidad",
+  "minusvalia",
+  "invalidez",
+  "اعاقه",
+  "الاعاقه",
+  "احتياجات خاصه",
+  // veteran, military
+  "veteran",
+  "veterans",
+  "veterano",
+  "military",
+  "armed forces",
+  "army",
+  "active duty",
+  "reservist",
+  "ancien combattant",
+  "anciens combattants",
+  "service militaire",
+  "militaire",
+  "armee",
+  "bundeswehr",
+  "wehrdienst",
+  "zivildienst",
+  "militar",
+  "fuerzas armadas",
+  "servicio militar",
+  "محارب",
+  "المحارب",
+  "عسكري",
+  "خدمه عسكريه",
+  "الجيش",
+  // religion, belief
+  "religion",
+  "religieux",
+  "religios",
+  "konfession",
+  "glaube",
+  "creencias",
+  "الدين",
+  "دين",
+  "الديانه",
+  "ديانه",
+  "معتقد",
+  // sexual orientation, identity
+  "sexual preference",
+  "sexual preferences",
+  "lgbt",
+  "lgbtq",
+  "lgbtqia",
+  "lgbtq2s",
+  "queer",
+  "gay",
+  "lesbian",
+  "orientation sexuelle",
+  "sexuelle orientierung",
+  "orientierung",
+  "orientacion sexual",
+  "ميول جنسيه",
+  "الميول الجنسيه",
+  "توجه جنسي",
+  // marital, family
+  "marital",
+  "civil status",
+  "family status",
+  "parental status",
+  "pregnant",
+  "pregnancy",
+  "enceinte",
+  "schwanger",
+  "embarazada",
+  "حامل",
+  "etat civil",
+  "situation familiale",
+  "familienstand",
+  "estado civil",
+  "الحاله الاجتماعيه",
+  "الحاله العائليه",
+  "government benefits",
+  "social benefits",
+  // other
   "age",
   "edad",
   "العمر",
@@ -134,9 +402,6 @@ const IDENTITY_PHRASES = [
   "nacionalidad",
   "staatsangehorigkeit",
   "national origin",
-  "الجنسية",
-  "النوع الاجتماعي",
-  "الهوية الجنسية",
   "eeo",
   "eeoc",
   "best describes you",
@@ -150,18 +415,125 @@ const IDENTITY_PHRASES = [
 /** Beginnings of words: `certif` is certify, certified and certification. Matched where a word starts. */
 const STEMS = [
   "consent",
+  "consens",
+  "consient",
   "agree",
   "acknowledg",
-  "certif",
-  "declar",
+  "certify",
+  "certified",
+  "declare",
+  "declaration",
   "arbitrat",
   "self identif",
   "equal employment",
   "equal opportunit",
   "subscri",
+  "pronom",
   "pronoun",
+  "veteran",
+  "pregnan",
+  "underrepresent",
+  "lgbt",
+  "sexual orient",
+  "sexual prefer",
+  "disabilit",
+  "ethnic",
+  "religio",
+  "nationalit",
+  "willig",
+  "zustimm",
+  "einverstanden",
 ]
-const STEM_PATTERN = new RegExp(`(^| )(${STEMS.map(normalizeLabel).join("|")})`)
+const STEM_PATTERN = new RegExp(`(^| )(${STEMS.map(clean).join("|")})`)
+
+/** Long stems that are matched inside a word: german compounds (Datenschutzerklärung, Schwerbehinderung) and the like. */
+const INSIDE = [
+  "datenschutz",
+  "behinderung",
+  "einwillig",
+  "einverstanden",
+  "zustimmung",
+  "nutzungsbedingung",
+  "geschaftsbedingung",
+  "staatsangehor",
+  "geschlecht",
+  "geburts",
+  "konfession",
+  "weltanschauung",
+  "schwanger",
+  "herkunft",
+  "diskriminier",
+  // arabic: stems match inside a word, so the definite article and prefixes do not matter
+  "عرقي",
+  "اثني",
+  "ميلاد",
+  "جنسيه",
+  "اعاقه",
+  "خصوصيه",
+  "موافقه",
+  "اقرار",
+  "احكام",
+  "شروط",
+  "سياسه",
+  "حمايه البيانات",
+  "خدمه عسكريه",
+  "عسكري",
+  "معتقد",
+  "ديانه",
+  "احتياجات خاصه",
+  "ميول جنسيه",
+  "توجه جنسي",
+  "نوع اجتماعي",
+  "هويه جنسيه",
+  "حاله اجتماعيه",
+  "حاله عائليه",
+  "ضمائر",
+].map(clean)
+
+/** Short arabic words, matched as whole words with the article or a one letter prefix: `دين` (religion) is also inside `مدينة` (city). */
+const ARABIC_WORDS = new RegExp(
+  `(^| )(ال|لل|بال|وال|فال|ل|ب|و)?(${[
+    "جنس",
+    "عرق",
+    "سن",
+    "عمر",
+    "دين",
+    "ذكر",
+    "انثي",
+    "حامل",
+    "جيش",
+    "محارب",
+    "ضمير",
+    "اصل",
+    "اقر",
+    "اصرح",
+    "اتعهد",
+    "اوافق",
+    "وافقت",
+    "اؤكد",
+  ]
+    .map(clean)
+    .join("|")})( |$)`,
+)
+
+/** Labels that are private only as a whole: the arabic "type" is also a word in "job type". */
+const BARE_PRIVATE = new Set(["النوع", "نوع", "genre", "alter", "sex"].map(clean))
+
+/** Letters of long words that stay in view when a page spaces them out or swaps a digit in (G e n d e r, G3nder). */
+const SQUASH_STEMS = [
+  "gender",
+  "pronoun",
+  "ethnic",
+  "religio",
+  "veteran",
+  "disabilit",
+  "pregnan",
+  "transgender",
+  "nationalit",
+  "consent",
+  "sexualorient",
+  "maritalstatus",
+]
 
 /** Section headings under which every question is private: the equal opportunity, self identification and diversity blocks. */
 const SECTION_STEMS = [
@@ -181,8 +553,18 @@ const SECTION_STEMS = [
   "arbitrat",
   "gdpr",
   "data protection",
+  "diversite",
+  "vielfalt",
+  "diversidad",
+  "chancengleichheit",
+  "egalite des chances",
+  "igualdad de oportunidades",
+  "datenschutz",
+  "التنوع",
+  "تكافو الفرص",
+  "المساواه",
 ]
-const SECTION_PATTERN = new RegExp(`(^| )(${SECTION_STEMS.map(normalizeLabel).join("|")})`)
+const SECTION_PATTERN = new RegExp(`(^| )(${SECTION_STEMS.map(clean).join("|")})`)
 
 /** What a row of choices gives away about the question: the answers of a demographic or protected category. */
 const OPTION_PATTERN = new RegExp(
@@ -218,8 +600,18 @@ const OPTION_PATTERN = new RegExp(
     "pas de reponse",
     "keine angabe",
     "prefiero no",
+    "je prefere ne pas",
+    "ich mochte keine angabe",
+    "lieber nicht",
+    "prefiero no decir",
+    "ancien combattant",
+    "veterano",
+    "افضل عدم",
+    "لا اريد",
+    "ذكر",
+    "انثي",
   ]
-    .map(normalizeLabel)
+    .map(clean)
     .join("|")})`,
 )
 
@@ -537,8 +929,9 @@ const PHRASES = [
   "trade union",
   "salary history",
   ...CONSENT_PHRASES,
+  ...CONSENT_MORE_PHRASES,
   ...IDENTITY_PHRASES,
-].map((phrase) => ` ${normalizeLabel(phrase)} `)
+].map((phrase) => ` ${clean(phrase)} `)
 
 /** Whole labels that are private only when they stand alone: `Visa expiry date` and `Country code` are something else. */
 const BARE_LABELS = new Set([
@@ -652,24 +1045,45 @@ function ownLabels(label: string): string[] {
 export function isLearnableField(field: { label: string; type?: string; autocomplete?: string }): boolean {
   if (!controlKind(field.type)) return false
   if (field.autocomplete && SENSITIVE_AUTOCOMPLETE.test(field.autocomplete)) return false
-  const label = normalizeLabel(field.label)
+  const label = clean(field.label)
   if (label.length === 0 || ownLabels(field.label).some((own) => BARE_LABELS.has(own))) return false
+  if (ownLabels(field.label).some((own) => BARE_PRIVATE.has(clean(own)))) return false
   const padded = ` ${label} `
   if (PHRASES.some((phrase) => padded.includes(phrase)) || STEM_PATTERN.test(label) || isPinSecret(padded)) return false
-  const squashed = squash(field.label)
-  return !SQUASHED.some((word) => squashed.includes(word))
+  if (INSIDE.some((stem) => label.includes(stem)) || ARABIC_WORDS.test(label) || isCitizenshipStatus(label))
+    return false
+  const squashed = squash(foldConfusables(field.label))
+  return !SQUASHED.some((word) => squashed.includes(word)) && !SQUASH_STEMS.some((stem) => squashed.includes(stem))
+}
+
+/** Citizenship is a protected status, except where it is plainly the work authorization question. */
+function isCitizenshipStatus(label: string): boolean {
+  return (
+    /\bcitizen/.test(label) &&
+    !/\b(authori[sz]|eligible|right to work|work permit|permit to work|visa|sponsor)/.test(label)
+  )
 }
 
 /** A section heading (equal opportunity, self identification, diversity, consent) under which every question is private. */
 export function isSensitiveSection(heading: string): boolean {
-  return SECTION_PATTERN.test(normalizeLabel(heading))
+  return SECTION_PATTERN.test(clean(heading))
 }
 
 /** Answers that only a demographic or protected category question has: Male and Female, "Decline to self identify", "Hispanic". */
 export function isDemographicOptions(options: readonly string[]): boolean {
-  const texts = options.map(normalizeLabel)
+  const texts = options.map(clean)
   if (texts.some((text) => OPTION_PATTERN.test(text))) return true
-  return (texts.includes("male") && texts.includes("female")) || (texts.includes("man") && texts.includes("woman"))
+  const both = (a: string, b: string) => texts.includes(a) && texts.includes(b)
+  return (
+    both("male", "female") ||
+    both("man", "woman") ||
+    both("homme", "femme") ||
+    both("mann", "frau") ||
+    both("mannlich", "weiblich") ||
+    both("hombre", "mujer") ||
+    both("masculin", "feminin") ||
+    both("masculino", "femenino")
+  )
 }
 
 export type QuestionText = {

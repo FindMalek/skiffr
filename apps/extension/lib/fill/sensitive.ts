@@ -64,6 +64,19 @@ export function textsAround(el: HTMLElement): string[] {
   return out
 }
 
+/** What the page says about a control in the elements it points to with `aria-describedby`: not its label, but part of the question. */
+export function describedBy(el: HTMLElement): string[] {
+  const root = el.getRootNode() as Document | ShadowRoot
+  return (el.getAttribute("aria-describedby") ?? "")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 5)
+    .map((id) => root.getElementById?.(id))
+    .filter((node): node is HTMLElement => Boolean(node))
+    .map((node) => textOf(node))
+    .filter((text) => text !== "" && text.length <= CONTEXT_MAX)
+}
+
 export type ControlWords = {
   /** Every label the generic collector and the page gave the control. */
   labels: (string | undefined)[]
@@ -75,7 +88,9 @@ export type ControlWords = {
 /** The central guard: a question about consent, a protected category or an answer only the person gives is never read, on any site. */
 export function isSensitiveControl(el: HTMLElement, words: ControlWords, memo: HeadingMemo): boolean {
   const sections = sectionsAbove(el, memo)
-  const labels = [...words.labels, ...textsAround(el)].filter((label): label is string => Boolean(label))
+  const labels = [...words.labels, ...textsAround(el), ...describedBy(el)].filter((label): label is string =>
+    Boolean(label),
+  )
   const shared = { name: words.name, autocomplete: words.autocomplete, options: words.options, sections }
   return (
     isSensitiveQuestion({ ...shared, label: labels[0] }) ||

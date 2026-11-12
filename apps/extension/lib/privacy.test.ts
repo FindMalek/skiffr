@@ -193,3 +193,88 @@ describe("matching an option never guesses between near equals", () => {
     expect(matchOption("Lisbon", texts("Lisbon, Portugal", "Lisbon, OH"), { ranked: true })?.index).toBe(0)
   })
 })
+
+describe("round two: wording, descriptions and drawn labels", () => {
+  const BLOCKED = [
+    "Pronoms",
+    "Je consens au traitement de mes données",
+    "Statut d'ancien combattant",
+    "Pronomen",
+    "Ich willige ein",
+    "Ich habe die Datenschutzerklärung gelesen",
+    "Schwerbehinderung",
+    "Alter",
+    "Herkunft",
+    "Anrede",
+    "Veterano",
+    "العرق",
+    "الأصل العرقي",
+    "النوع",
+    "Are you a person of color?",
+    "Do you belong to an underrepresented group?",
+    "LGBTQIA+",
+    "Sexual preference",
+    "Military status",
+    "Are you a member of the armed forces?",
+    "How old are you?",
+    "Are you pregnant?",
+    "Caste",
+    "Place of birth",
+    "Country of citizenship",
+  ]
+  const KEPT = [
+    "Certifications",
+    "Experience with declarative UI",
+    "Are you authorized to work in the United States?",
+    "Are you a US citizen or authorized to work in the US?",
+    "Do you require visa sponsorship?",
+    "Job type",
+    "نوع الوظيفة",
+    "Gewünschtes Gehalt",
+    "Puesto deseado",
+  ]
+
+  test("every word the lists know is kept out of the form on any site, and the ordinary ones stay", () => {
+    const rows = (list: string[]) =>
+      list.map((label, i) => `<label for="f${i}">${label}</label><input id="f${i}">`).join("")
+    expect(labels(mount(`<form>${rows(BLOCKED)}</form>`).document)).toEqual([])
+    expect(labels(mount(`<form>${rows(KEPT)}</form>`).document)).toEqual(KEPT)
+  })
+
+  test("a question that only a description gives away is not read", () => {
+    const { document } = mount(`<form>
+      <div><input aria-describedby="d"></div>
+      <div><input aria-describedby="e"></div>
+      <span id="d" hidden>Your gender</span><span id="e" hidden>We will call you in the morning</span>
+    </form>`)
+    expect(collectFields(document)).toHaveLength(1)
+  })
+
+  test("a label drawn only by CSS is not read, and a field with a real label next to it is", () => {
+    const { document, window } = mount(`<form>
+      <label for="a"></label><input id="a" name="q_1">
+      <label for="b">Notice period</label><input id="b">
+    </form>`)
+    const original = window.getComputedStyle.bind(window) as unknown as (
+      el: Element,
+      pseudo?: string,
+    ) => CSSStyleDeclaration
+    window.getComputedStyle = ((el: Element, pseudo?: string) =>
+      pseudo === "::before" && el.getAttribute("for") === "a"
+        ? ({ content: '"Your question"' } as CSSStyleDeclaration)
+        : original(el, pseudo)) as unknown as typeof window.getComputedStyle
+    expect(labels(document)).toEqual(["Notice period"])
+  })
+
+  test("a link inside a list is not an option the engine clicks", async () => {
+    const { document, window } = mount(`<form>
+      <label for="c">Work mode</label><input id="c" role="combobox" aria-expanded="true" aria-controls="l">
+      <div id="l" role="listbox"><a href="/elsewhere" role="option">Remote</a></div></form>`)
+    let navigated = 0
+    document.querySelector("a")?.addEventListener("click", () => navigated++)
+    void window
+    const field = collectFields(document)[0] as NonNullable<ReturnType<typeof collectFields>[number]>
+    expect((await fillCollected(field, "Remote")).status).toBe("failed")
+    expect(navigated).toBe(0)
+  })
+})

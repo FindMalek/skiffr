@@ -819,3 +819,148 @@ test("a question is private by the shape of its answers or by its section, whate
   expect(isSensitiveQuestion({ label: "Anything", name: "job_application[gender]" })).toBe(true)
   expect(isSensitiveQuestion({ label: "Anything", autocomplete: "bday" })).toBe(true)
 })
+
+const BLOCKED_BY_CATEGORY: Record<string, string[]> = {
+  consent: [
+    "Je consens au traitement de mes données",
+    "Consentement",
+    "J'accepte les conditions générales",
+    "J'autorise le traitement de mes données",
+    "Ich willige ein",
+    "Ich habe die Datenschutzerklärung gelesen",
+    "Datenschutzerklärung",
+    "Einwilligung zur Datenverarbeitung",
+    "Ich stimme zu",
+    "Estoy de acuerdo con los términos",
+    "Doy mi consentimiento",
+    "Política de privacidad",
+    "أوافق على الشروط",
+    "أقر بصحة البيانات",
+    "الموافقة على سياسة الخصوصية",
+    "اوافق",
+  ],
+  pronouns: ["Pronoms", "Pronomen", "Pronombres", "Pronouns", "الضمائر"],
+  "gender, sex, salutation": [
+    "Genre",
+    "Geschlecht",
+    "Anrede",
+    "Civilité",
+    "Género",
+    "Sexo",
+    "النوع",
+    "النوع الاجتماعي",
+    "الجنس",
+  ],
+  "race, ethnicity, origin": [
+    "Race",
+    "Origine ethnique",
+    "Ethnische Herkunft",
+    "Herkunft",
+    "Origen étnico",
+    "Raza",
+    "العرق",
+    "الأصل العرقي",
+    "الاصل العرقي",
+    "Are you a person of color?",
+    "Do you belong to an underrepresented group?",
+    "Skin tone",
+    "Country of origin",
+    "Caste",
+  ],
+  "age and birth": [
+    "Alter",
+    "Edad",
+    "Âge",
+    "How old are you?",
+    "Place of birth",
+    "Lieu de naissance",
+    "Geburtsort",
+    "Lugar de nacimiento",
+    "تاريخ الميلاد",
+    "مكان الميلاد",
+    "العمر",
+  ],
+  "nationality and citizenship": [
+    "Nationalité",
+    "Staatsangehörigkeit",
+    "Nacionalidad",
+    "الجنسية",
+    "Country of citizenship",
+    "Citizenship status",
+    "Are you a U.S. citizen?",
+  ],
+  disability: ["Schwerbehinderung", "Behinderung", "Situation de handicap", "Discapacidad", "الإعاقة", "Impairment"],
+  "veteran and military": [
+    "Statut d'ancien combattant",
+    "Veterano",
+    "Veteran status",
+    "Military status",
+    "Are you a member of the armed forces?",
+    "Wehrdienst",
+    "Servicio militar",
+    "الخدمة العسكرية",
+    "المحارب القديم",
+  ],
+  "religion and belief": ["Religion", "Konfession", "Religión", "الديانة", "المعتقد"],
+  "orientation, family, health": [
+    "LGBTQIA+",
+    "LGBTQ",
+    "Sexual preference",
+    "Sexual orientation",
+    "Orientation sexuelle",
+    "Sexuelle Orientierung",
+    "Orientación sexual",
+    "الميول الجنسية",
+    "Parental status",
+    "Marital status",
+    "Familienstand",
+    "Estado civil",
+    "الحالة الاجتماعية",
+    "Are you pregnant?",
+    "Schwanger",
+    "Do you receive government benefits?",
+  ],
+}
+
+test("the claimed languages and categories are all kept out, accents or none", () => {
+  for (const [category, labels] of Object.entries(BLOCKED_BY_CATEGORY)) {
+    for (const label of labels) {
+      expect(isSensitiveQuestion({ label }), `${category}: ${label}`).toBe(true)
+      expect(isLearnableField({ label, type: "text" }), `${category}: ${label}`).toBe(false)
+      const stripped = label.normalize("NFKD").replace(/\p{M}/gu, "")
+      expect(isSensitiveQuestion({ label: stripped }), `${category}: ${stripped}`).toBe(true)
+    }
+  }
+})
+
+test("spacing, digits, format characters and look-alike letters do not spell around the lists", () => {
+  for (const label of ["Gen​der", "G e n d e r", "G3nder", "Gеnder", "Prоnouns", "Ethn1c origin", "Ｇender"]) {
+    expect(isSensitiveQuestion({ label }), label).toBe(true)
+  }
+})
+
+test("ordinary questions in the same languages stay readable", () => {
+  for (const label of [
+    "Certifications",
+    "Experience with declarative UI",
+    "Notice period",
+    "Years of experience",
+    "Country code",
+    "Are you authorized to work in the United States?",
+    "Are you a US citizen or authorized to work in the US?",
+    "Do you require visa sponsorship?",
+    "Job type",
+    "نوع الوظيفة",
+    "Poste souhaité",
+    "Gewünschtes Gehalt",
+    "Puesto deseado",
+    "Date de disponibilité",
+    "Verfügbar ab",
+    "Salario esperado",
+    "الراتب المتوقع",
+    "Message",
+    "Languages",
+  ]) {
+    expect(isSensitiveQuestion({ label }), label).toBe(false)
+  }
+})
