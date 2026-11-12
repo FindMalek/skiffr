@@ -12,11 +12,25 @@ export interface Scheduler {
 
 const JITTER = 0.2
 
-/** The in-process schedule: every interval, plus or minus a fifth so replicas and restarts don't line up. */
-export function createScheduler(
-  deps: SyncDeps,
-  options: { leader: Leader; intervalMs: number; random?: () => number },
-): Scheduler {
+export interface LoopOptions {
+  leader: Leader
+  intervalMs: number
+  random?: () => number
+  onError?: (error: unknown) => void
+}
+
+/** The mailboxes' schedule. */
+export const createScheduler = (deps: SyncDeps, options: LoopOptions): Scheduler =>
+  createLoop(async (stopped) => (await syncDue(deps, stopped)).length, {
+    onError: (error) => logSyncFailure("scheduler", error),
+    ...options,
+  })
+
+/**
+ * The in-process schedule, shared by every background connector: `work` runs every interval, plus or minus a fifth so
+ * replicas and restarts don't line up, and only on the replica that leads.
+ */
+export function createLoop(work: (stopped: () => boolean) => Promise<number>, options: LoopOptions): Scheduler {
   const random = options.random ?? Math.random
   let stopped = false
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -25,9 +39,9 @@ export function createScheduler(
   const run = async (): Promise<number> => {
     try {
       if (stopped || !(await options.leader.tryAcquire())) return 0
-      return (await syncDue(deps, () => stopped)).length
+      return await work(() => stopped)
     } catch (error) {
-      logSyncFailure("scheduler", error)
+      options.onError?.(error)
       return 0
     }
   }
@@ -50,7 +64,7 @@ export function createScheduler(
   return {
     tick,
     start() {
-      // The first pass waits a little, so a restart loop doesn't read mail on every boot.
+      // The first pass waits a little, so a restart loop doesn't fetch on every boot.
       if (!timer && !stopped) schedule(Math.min(options.intervalMs, 30_000) * (0.5 + random()))
     },
     async stop() {

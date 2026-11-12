@@ -191,6 +191,14 @@ test("an invalid or non-http link is refused before anything is sent, and a doub
   expect(host.querySelector("#job-url-result")?.textContent).toContain("Nothing was added")
 })
 
+async function until(check: () => boolean) {
+  for (let i = 0; i < 100 && !check(); i++) {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+  }
+}
+
 const openNext = () =>
   [...host.querySelectorAll("header button")].find((b) => b.textContent?.startsWith("Open next")) as HTMLButtonElement
 
@@ -207,6 +215,7 @@ test("Open next asks the server when it is pressed and opens what it answers, no
   expect(next).toHaveBeenCalledTimes(1)
   expect(opened).toHaveBeenCalledTimes(1)
   expect(opened.mock.calls[0]).toEqual([job(2).url, "_blank", "noopener,noreferrer"])
+  await until(() => Boolean(openNext().textContent?.includes("Role 2")))
   expect(openNext().textContent).toContain("Role 2")
 
   next.mockImplementation(async () => null as never)

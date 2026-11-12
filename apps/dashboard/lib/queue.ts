@@ -143,7 +143,7 @@ const PROVIDER_LABEL: Record<string, string> = {
 }
 
 /**
- * Known sources get a plain name; `gmail:<provider>` reads "Gmail · LinkedIn". Anything else is shown as it was stored:
+ * Known sources get a plain name; `gmail:<provider>` reads "Gmail · LinkedIn" and `watch:<label>` "Watched · <label>". Anything else is shown as it was stored:
  * the caller renders it as text (neutralized and clipped), never as markup.
  */
 export function sourceLabel(source: string): string {
@@ -151,6 +151,8 @@ export function sourceLabel(source: string): string {
   if (known) return known
   const match = /^gmail:(.+)$/.exec(source)
   if (match) return `Gmail · ${PROVIDER_LABEL[match[1]!] ?? match[1]}`
+  const watched = /^watch:(.+)$/.exec(source)
+  if (watched) return `Watched · ${watched[1]}`
   return source
 }
 
