@@ -4,8 +4,10 @@ import { createDb } from "@skiffr/db"
 import { runMigrations } from "@skiffr/db/migrate"
 import { seedDemo } from "@skiffr/db/seed"
 import { loadApiEnv } from "@skiffr/env/api"
+import { advisoryLeader, createScheduler } from "@skiffr/orpc/gmail"
 import { createStorage } from "@skiffr/storage"
 import { ensureAdmin } from "./admin"
+import { gmailFromEnv } from "./gmail-runtime"
 import { createServer } from "./server"
 
 const env = loadApiEnv()
@@ -34,6 +36,8 @@ if (env.NODE_ENV === "production" && !extensionOrigins?.length) {
   console.warn("EXTENSION_ORIGINS is not set: any chrome-extension:// origin may call /rpc and /v1 with a token")
 }
 
+const gmail = gmailFromEnv(env)
+
 const fetch = createServer(
   {
     db,
@@ -55,12 +59,41 @@ const fetch = createServer(
     }),
     model: resolveModel(env.AI_MODEL, env),
     embeddingModel: resolveEmbeddingModel(env),
+    gmail,
   },
   {
     publicUrl: env.API_PUBLIC_URL,
+    dashboardUrl: env.DASHBOARD_URL,
     extensionOrigins,
   },
 )
 
 const server = Bun.serve({ port: env.PORT, hostname: "0.0.0.0", fetch })
 console.info(`api on :${server.port} (${env.DEPLOY_ENV})`)
+
+// Mail is read in this process, by one replica at a time (an advisory lock picks it). Without the Google client nothing runs.
+const scheduler =
+  gmail && env.GMAIL_SCHEDULER === "on"
+    ? createScheduler(
+        { db, runtime: gmail.runtime, now: () => new Date(), tokens: gmail.tokens },
+        { leader: advisoryLeader(db), intervalMs: gmail.runtime.syncIntervalMinutes * 60_000 },
+      )
+    : null
+scheduler?.start()
+console.info(
+  scheduler
+    ? `gmail import every ${gmail?.runtime.syncIntervalMinutes} min`
+    : `gmail import ${gmail ? "runs from an external job" : "is not configured"}`,
+)
+
+let stopping = false
+for (const signal of ["SIGTERM", "SIGINT"] as const) {
+  process.on(signal, async () => {
+    if (stopping) return
+    stopping = true
+    await scheduler?.stop()
+    await server.stop()
+    await db.close()
+    process.exit(0)
+  })
+}

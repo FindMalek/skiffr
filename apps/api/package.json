@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "bun --watch --env-file=../../.env src/index.ts",
     "start": "bun src/index.ts",
+    "gmail:sync": "bun src/gmail-sync-cli.ts",
     "check-types": "tsc --noEmit",
     "test": "bun test"
   },

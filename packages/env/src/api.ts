@@ -36,11 +36,44 @@ const schema = z.object({
   S3_ACCESS_KEY_ID: optional,
   S3_SECRET_ACCESS_KEY: optional,
 
+  /**
+   * Gmail job-email import. Off until the Google OAuth client and the key are all set (see the gmail docs page).
+   * The key seals refresh tokens: 32 random bytes, base64 (`openssl rand -base64 32`).
+   */
+  GOOGLE_CLIENT_ID: optional,
+  GOOGLE_CLIENT_SECRET: optional,
+  GMAIL_ENCRYPTION_KEY: optional,
+  /** Defaults to `<DASHBOARD_URL>/api/gmail/callback`, so the session cookie rides along. Must match the Google client. */
+  GOOGLE_REDIRECT_URI: z.url().optional(),
+  /** `off` keeps the api from reading mail itself, for running `bun src/gmail-sync-cli.ts` as an external scheduled job. */
+  GMAIL_SCHEDULER: z.enum(["on", "off"]).default("on"),
+  GMAIL_SYNC_INTERVAL_MINUTES: z.coerce.number().int().min(1).max(1440).default(15),
+
   AI_MODEL: z.string().default("groq:openai/gpt-oss-120b"),
   GROQ_API_KEY: optional,
   OPENAI_API_KEY: optional,
   ANTHROPIC_API_KEY: optional,
 })
 
-export type ApiEnv = z.infer<typeof schema>
-export const loadApiEnv = (source?: Record<string, string | undefined>) => parseEnv(schema, source)
+const GMAIL_KEYS = ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GMAIL_ENCRYPTION_KEY"] as const
+
+const isRandomKey = (value: string) =>
+  /^[A-Za-z0-9+/]{43}=$/.test(value) && new Set(Buffer.from(value, "base64")).size >= 8
+
+const apiSchema = schema.superRefine((env, ctx) => {
+  const set = GMAIL_KEYS.filter((key) => env[key])
+  if (set.length > 0 && set.length < GMAIL_KEYS.length) {
+    for (const key of GMAIL_KEYS.filter((key) => !env[key]))
+      ctx.addIssue({ code: "custom", path: [key], message: `required once ${set.join(" or ")} is set (gmail import)` })
+  }
+  if (env.GMAIL_ENCRYPTION_KEY && !isRandomKey(env.GMAIL_ENCRYPTION_KEY)) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["GMAIL_ENCRYPTION_KEY"],
+      message: "must be 32 random bytes, base64 encoded (openssl rand -base64 32)",
+    })
+  }
+})
+
+export type ApiEnv = z.infer<typeof apiSchema>
+export const loadApiEnv = (source?: Record<string, string | undefined>) => parseEnv(apiSchema, source)
