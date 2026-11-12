@@ -54,7 +54,7 @@ export function Hero() {
             <h2 className="font-medium text-sm">Coming</h2>
             <p className="mt-3 flex gap-2 text-sm">
               <ClockIcon aria-hidden className="mt-0.5 size-4 shrink-0" />
-              Learning from your edits in the browser. The api side is built, the extension side is in review.
+              ATS adapters and CV tailoring. Learning from your edits already works, with the limits in the docs.
             </p>
           </div>
         </div>

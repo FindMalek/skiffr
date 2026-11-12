@@ -13,7 +13,7 @@
 
 skiffr is an open-source Chrome extension for job applications. It spots an application form, asks, fills it from your own profile and answer bank, and never submits anything for you. A dashboard keeps your profile, answers and a queue of jobs to apply to. You host the api and the database yourself: your profile, answers, queue and tokens live in your own Postgres, and only a small listed slice goes to a model provider, and only if you set a key.
 
-> **Early development.** There is no release and no Chrome Web Store listing yet: you build the extension or load a CI build by hand (see [quick start](#quick-start)). The extension does not record your edits yet, so it does not learn from corrections. That part is in review in [#67](https://github.com/FindMalek/skiffr/pull/67).
+> **Early development.** There is no release and no Chrome Web Store listing yet: you build the extension or load a CI build by hand (see [quick start](#quick-start)). The extension learns from your edits, with the limits listed under [how it works](#how-it-works).
 
 <p align="center">
   <img alt="The toast asking to autofill an application" width="49%" src="https://raw.githubusercontent.com/FindMalek/skiffr/pr-screenshots/59/57-toast-ask.png" />
@@ -31,7 +31,8 @@ skiffr is an open-source Chrome extension for job applications. It spots an appl
 
 - Detects an application form (Greenhouse, Lever, Ashby, Workable, Workday and others, also inside iframes) and shows a small toast: yes, no, or "don't ask on this site". `Ctrl+Shift+F` (`Cmd+Shift+F` on macOS) fills the current page without the toast.
 - Fills the form the way a person types, so React and Vue forms accept it: inputs, selects, comboboxes, checkboxes, radios, shadow DOM, same-origin iframes. Honeypots are skipped.
-- Answers each field from the best source it has: a saved answer for the same question, then a language model that maps the field to a key of your profile. Once edits are recorded ([#67](https://github.com/FindMalek/skiffr/pull/67), in review), what you filled on this very form before comes first. Fields the model is unsure about are filled and outlined in amber for you to check.
+- Answers each field from the best source it has: what you filled on this very form before, then a saved answer for the same question, then a language model that maps the field to a key of your profile. Fields the model is unsure about are filled and outlined in amber for you to check.
+- Learns from your edits: after a skiffr fill it records what you corrected, cleared or left as filled, so the next form starts from your answers. Sensitive fields are never recorded.
 - Never submits a form, never clicks submit, next or apply, never touches password or hidden inputs.
 
 **In the dashboard**
@@ -67,10 +68,18 @@ flowchart LR
   B -->|yes, or Ctrl/Cmd+Shift+F| C[Fill engine]
   P[(Your profile<br/>and answer bank)] --> C
   M[Language model<br/>optional] --> C
-  C -->|fields filled, uncertain ones outlined| D[You review and submit]
+  C -->|fields filled, uncertain ones outlined| D[You review, edit and submit]
+  D -->|edits recorded| L[(Learned answers)]
+  L --> C
 ```
 
-Learning from your edits closes this loop: the edit is logged as a correction and the better answer is used first next time. The api side is on `main`, the extension side is in review ([#67](https://github.com/FindMalek/skiffr/pull/67)).
+Learning from your edits closes this loop: the edit is logged as a correction and the better answer is used first next time. Limits of the learning step today:
+
+- It only records after a skiffr fill, and fields that already had a value at fill time are not recorded.
+- It sends when you submit the form, when you leave the page or the tab goes to the background, or after 5 minutes without an edit, at most 3 batches per session. A hidden tab cannot send, so closing a background tab or quitting the browser loses that batch.
+- Forms with more than 60 learnable fields only record the first 60.
+- Sensitive fields and values are filtered in the content script and again in the worker, so they never reach your api.
+- Cross-origin iframes are not recorded yet.
 
 ## Architecture
 
@@ -181,7 +190,6 @@ Everyone is expected to follow the [code of conduct](CODE_OF_CONDUCT.md).
 
 The board has the full list: [github.com/users/FindMalek/projects/25](https://github.com/users/FindMalek/projects/25). What is next:
 
-- Record your edits in the extension so it learns from corrections ([#58](https://github.com/FindMalek/skiffr/issues/58), in review)
 - ATS adapters for Greenhouse, Lever, Ashby and Workable ([#6](https://github.com/FindMalek/skiffr/issues/6))
 - Learned HTTP replay recipes ([#18](https://github.com/FindMalek/skiffr/issues/18))
 - CV tailoring through Reactive Resume, as edits that never invent facts ([#17](https://github.com/FindMalek/skiffr/issues/17))

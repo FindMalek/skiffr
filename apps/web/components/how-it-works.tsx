@@ -16,8 +16,8 @@ const STEPS = [
   },
   {
     title: "Learn",
-    state: "API built, extension side in review",
-    text: "A fix you make will be logged as a correction, and the better answer used first next time. skiffr will also tell you which learned answers are worth keeping.",
+    state: "Works, with limits",
+    text: "After a skiffr fill, the fixes you make are logged as corrections when you submit or leave the page, and the better answer is used first next time. skiffr also tells you which learned answers are worth keeping. Sensitive fields are never recorded.",
     art: <LoopIllustration />,
   },
 ]
@@ -30,8 +30,7 @@ export function HowItWorks() {
           How it works
         </h2>
         <p className="mt-3 max-w-2xl text-muted-foreground">
-          Detect and fill run in the extension today. The learning step is still being connected. The drawings are
-          illustrations, not screenshots.
+          Detect, fill and learn all run in the extension today. The drawings are illustrations, not screenshots.
         </p>
         <ol className="mt-10 grid gap-8 md:grid-cols-3">
           {STEPS.map(({ title, state, text, art }, index) => (

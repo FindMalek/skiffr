@@ -5,7 +5,7 @@ description: Exactly what leaves your machine, and where it goes.
 
 skiffr is self-hosted. Your profile, answers and tokens are in your own Postgres, behind your own api. There are no analytics, and the extension is built to talk to no server except the api you configured.
 
-The extension detects forms and fills them, and calls your api for that. It does not record your edits yet, so the correction log below is what the api accepts, not something the extension sends today.
+The extension detects forms and fills them, and calls your api for that. After a fill it also sends the edits you make to your api, see below.
 
 ## Data flow
 
@@ -20,7 +20,7 @@ web page -> extension -> your api -> your Postgres
 
 | To | What | When |
 | --- | --- | --- |
-| your api | field labels, names, placeholders, types and option texts of the form, your token. Once edits are recorded, also the filled and final values of fields you correct (up to 2000 characters each) | when you fill |
+| your api | field labels, names, placeholders, types and option texts of the form, your token. After a fill, also the filled and final values of the fields you edit (the extension cuts values at 301 characters, the api accepts up to 2000) | when you fill, and when you submit or leave the page |
 | language model provider | the same field descriptors, your profile key names, and the values of an allowlist of profile keys | when a field needs mapping or an answer is drafted |
 | embeddings provider | the normalized question label | only with `OPENAI_API_KEY`, and only for learning |
 | nobody | form submissions | never |

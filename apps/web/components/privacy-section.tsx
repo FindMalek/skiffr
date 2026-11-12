@@ -43,8 +43,8 @@ export function PrivacySection() {
           Privacy first
         </h2>
         <p className="mt-3 max-w-2xl text-muted-foreground">
-          These are the rules the code follows. The extension fills pages today. The learning rules live in the api, and
-          the extension does not feed it your edits yet.
+          These are the rules the code follows. The extension fills pages and records your edits after a fill. The
+          learning rules below decide what is kept.
         </p>
         <dl className="mt-8 grid gap-x-10 gap-y-6 md:grid-cols-2">
           {POINTS.map(({ title, text }) => (

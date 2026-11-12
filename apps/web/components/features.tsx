@@ -12,7 +12,6 @@ import {
   RefreshCwIcon,
   ServerIcon,
   ShieldCheckIcon,
-  UserRoundIcon,
   ZapIcon,
 } from "lucide-react"
 
@@ -30,9 +29,9 @@ const TODAY: Feature[] = [
     text: "Sets React and Vue controlled inputs, selects and comboboxes, through shadow DOM and same-origin iframes, and skips honeypots. Uncertain fields are outlined for you to check.",
   },
   {
-    icon: UserRoundIcon,
-    title: "Your profile, your database",
-    text: "Edit your profile in the dashboard. It lives in your own Postgres, behind your own api.",
+    icon: RefreshCwIcon,
+    title: "Learns from your edits",
+    text: "After a fill, what you corrected or cleared is recorded and used first next time. Sensitive fields are never recorded.",
   },
   {
     icon: BookMarkedIcon,
@@ -82,8 +81,8 @@ const TODAY: Feature[] = [
 ]
 
 const NEXT: Feature[] = [
-  { icon: RefreshCwIcon, title: "Learning from your edits", text: "In review. The api side is built." },
   { icon: MousePointerClickIcon, title: "ATS adapters", text: "Planned." },
+  { icon: RefreshCwIcon, title: "Learned HTTP replay", text: "Planned." },
   { icon: FileTextIcon, title: "CV tailoring", text: "Planned. Edits only, never invented facts." },
 ]
 

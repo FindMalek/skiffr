@@ -4,7 +4,7 @@ description: Lookup order, what is learned, what never is, and how skiffr advise
 ---
 
 <Callout>
-The correction log, the lookup and the suggestions are on `main` ([#49](https://github.com/FindMalek/skiffr/pull/49)) and covered by tests on real Postgres. The extension already calls the lookup when it fills, so answers you saved in the answer bank are used. It does not send your edits back yet ([#58](https://github.com/FindMalek/skiffr/issues/58)), so nothing is learned from them until that lands.
+The correction log, the lookup and the suggestions are on `main` ([#49](https://github.com/FindMalek/skiffr/pull/49)) and covered by tests on real Postgres. The extension calls the lookup when it fills, and records your edits after a fill ([#67](https://github.com/FindMalek/skiffr/pull/67)), so what you correct is learned. The limits are at the end of this page.
 </Callout>
 
 skiffr fills a form, you fix what is wrong, and the fixes become answers. The target is fewer corrections per application over time.
@@ -64,3 +64,20 @@ You resolve each one. Nothing is deleted or rewritten without that.
 ## Retention
 
 Each filled field is logged as an event: raw label, the value that was filled and the value you left (up to 2000 characters each), per user. Events older than 90 days are deleted, but only when the extension records new events or asks for suggestions, and at most 500 per call. An account that goes quiet keeps its old events until the next call. Events are deleted with the user (cascade), see [privacy](/docs/privacy).
+
+## What the extension records
+
+After a skiffr fill the extension watches the form. It sends one batch of events (corrected, cleared, left as filled) to your api through the background worker:
+
+- when you submit the form, when you leave the page or the tab goes to the background, or after 5 minutes without an edit
+- at most 3 batches per session, a later one only carries what changed
+- sensitive fields and values are filtered in the content script and again in the worker, so they are never sent
+
+Limits today:
+
+- only after a skiffr fill, and fields that already had a value at fill time are not recorded
+- forms with more than 60 learnable fields only record the first 60
+- a hidden tab cannot send, so closing a background tab or quitting the browser loses that batch
+- the session ends after delivery of the last batch, later edits are not recorded
+- fields in cross-origin iframes are not recorded
+- some harmless labels are blocked because the filter fails closed, for example a label that is just `Code`
