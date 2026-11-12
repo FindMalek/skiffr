@@ -1,23 +1,34 @@
+/* Monochrome series: position and length first, then luminance, then the hatch (--viz-4 lines, see viz-hatch).
+   Adjacent marks differ by luminance and are separated by a 1px --background gap or the hatch, never by hue.
+   --viz-1..3 are the categorical order, --viz-seq and --viz-o1..o4 the ordinal ramp (o1 lowest, o4 highest). */
 @utility viz {
-  --viz-1: #2a78d6;
-  --viz-2: #eb6834;
-  --viz-3: #1baf7a;
-  --viz-seq: #2a78d6;
-  --viz-o1: #86b6ef;
-  --viz-o2: #5598e7;
-  --viz-o3: #2a78d6;
-  --viz-o4: #1c5cab;
+  --viz-1: oklch(0.145 0 0);
+  --viz-2: oklch(0.5 0 0);
+  --viz-3: oklch(0.74 0 0);
+  --viz-4: oklch(0.5 0 0);
+  --viz-seq: oklch(0.3 0 0);
+  --viz-o1: oklch(0.74 0 0);
+  --viz-o2: oklch(0.6 0 0);
+  --viz-o3: oklch(0.46 0 0);
+  --viz-o4: oklch(0.3 0 0);
 
   .dark & {
-    --viz-1: #3987e5;
-    --viz-2: #d95926;
-    --viz-3: #199e70;
-    --viz-seq: #3987e5;
-    --viz-o1: #1c5cab;
-    --viz-o2: #2a78d6;
-    --viz-o3: #5598e7;
-    --viz-o4: #86b6ef;
+    --viz-1: oklch(0.985 0 0);
+    --viz-2: oklch(0.65 0 0);
+    --viz-3: oklch(0.45 0 0);
+    --viz-4: oklch(0.65 0 0);
+    --viz-seq: oklch(0.85 0 0);
+    --viz-o1: oklch(0.45 0 0);
+    --viz-o2: oklch(0.58 0 0);
+    --viz-o3: oklch(0.7 0 0);
+    --viz-o4: oklch(0.85 0 0);
   }
+}
+
+/* The fourth series: 1px lines at 45deg in --viz-4 over the surface. Combine with a 1px outline in --viz-4 on small marks. */
+@utility viz-hatch {
+  background-color: transparent;
+  background-image: repeating-linear-gradient(45deg, var(--viz-4) 0 1px, transparent 1px 4px);
 }
 
 @keyframes viz-grow-y {
