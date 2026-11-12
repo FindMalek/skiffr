@@ -2,7 +2,8 @@ import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { type Browser, chromium } from "@playwright/test"
 import { build } from "esbuild"
-import { createRequestGuard, isPrivateAddress, normalizeHost, urlRefusal } from "./guard.ts"
+import { createFetcher } from "./fetcher.ts"
+import { createRequestGuard, normalizeHost, urlRefusal } from "./guard.ts"
 import { TOOL_VERSION } from "./version.ts"
 
 const DETECT_ENTRY = join(
@@ -187,7 +188,7 @@ export async function capture(browser: Browser, options: CaptureOptions): Promis
   const refusal = urlRefusal(options.url)
   if (refusal) throw new Error(refusal)
   const start = new URL(options.url)
-  const guard = createRequestGuard({ allowLocal: options.allowLocal, topHost: start.hostname })
+  const guard = createRequestGuard({ allowLocal: options.allowLocal, topUrl: options.url })
   const reason = await guard(options.url)
   if (reason) throw new Error(`refusing to snapshot: ${reason} (use --allow-local for a local test page)`)
 
@@ -199,45 +200,35 @@ export async function capture(browser: Browser, options: CaptureOptions): Promis
     permissions: [],
     locale: "en-US",
   })
+  const fetcher = createFetcher({
+    guard,
+    allowName: options.allowLocal ? normalizeHost(start.hostname) : null,
+    timeoutMs: options.timeoutMs,
+  })
   try {
     await context.addInitScript(() => {
       for (const name of ["WebTransport", "RTCPeerConnection", "webkitRTCPeerConnection", "RTCDataChannel"]) {
         Object.defineProperty(window, name, { value: undefined, configurable: true })
       }
     })
+    const blocked: string[] = []
     await context.route("**/*", async (route) => {
       const request = route.request()
       if (request.method() !== "GET" && request.method() !== "HEAD") return route.abort()
       if (request.resourceType() === "media" || request.resourceType() === "font") return route.abort()
-      if (await guard(request.url())) return route.abort()
       try {
-        return await route.fulfill({ response: await route.fetch({ maxRedirects: 0, timeout: options.timeoutMs }) })
-      } catch {
+        const page = await fetcher.fetch(new URL(request.url()), request.method(), request.headers())
+        return await route.fulfill(page)
+      } catch (error) {
+        blocked.push(error instanceof Error ? error.message : String(error))
         return route.abort()
       }
     })
-    await context.routeWebSocket(/.*/, async (socket) => {
-      if (await guard(socket.url())) return socket.close()
-      socket.connectToServer()
-    })
+    await context.routeWebSocket(/.*/, (socket) => socket.close())
     const page = await context.newPage()
-    const top = normalizeHost(start.hostname)
-    const reached: string[] = []
-    const checks: Promise<void>[] = []
-    page.on("response", (response) => {
-      checks.push(
-        response
-          .serverAddr()
-          .then((address) => {
-            const host = normalizeHost(new URL(response.url()).hostname)
-            if (address && isPrivateAddress(address.ipAddress) && !(options.allowLocal && host === top)) {
-              reached.push(`${response.url()} answered from ${address.ipAddress}`)
-            }
-          })
-          .catch(() => undefined),
-      )
+    await page.goto(options.url, { waitUntil: "domcontentloaded", timeout: options.timeoutMs }).catch((error) => {
+      throw new Error(blocked[0] ? `the page was not loaded: ${blocked[0]}` : String(error?.message ?? error))
     })
-    await page.goto(options.url, { waitUntil: "domcontentloaded", timeout: options.timeoutMs })
     const settle = async (): Promise<void> => {
       await page.waitForLoadState("networkidle", { timeout: options.timeoutMs }).catch(() => undefined)
       await page.waitForTimeout(options.settleMs)
@@ -251,8 +242,6 @@ export async function capture(browser: Browser, options: CaptureOptions): Promis
       await page.evaluate(`(() => {${await bundleDetect()}\nglobalThis.__skiffrDetect = __skiffrDetect})()`)
     const result = await page.evaluate(readApplication, options.root ?? null)
     if ("error" in result) throw new Error(result.error)
-    await Promise.all(checks)
-    if (reached.length > 0) throw new Error(`a request reached a private address, output refused: ${reached[0]}`)
     const lang = result.lang ? ` lang="${esc(result.lang).replace(/"/g, "")}"` : ""
     const dir = result.dir ? ` dir="${esc(result.dir).replace(/"/g, "")}"` : ""
     return {
@@ -262,6 +251,7 @@ export async function capture(browser: Browser, options: CaptureOptions): Promis
       fields: Object.fromEntries(Object.entries(result.fields).sort(([a], [b]) => (a < b ? -1 : 1))),
     }
   } finally {
+    fetcher.close()
     await context.close()
   }
 }

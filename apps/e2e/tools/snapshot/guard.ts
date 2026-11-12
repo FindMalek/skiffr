@@ -27,6 +27,7 @@ const V4_BLOCKED: [string, number][] = [
 /** Every v6 form that can carry or reach an internal v4 address is blocked whole: compatible, NAT64, 6to4, Teredo. Mapped ones are judged by the v4 rules, which BlockList applies to them. */
 const V6_BLOCKED: [string, number][] = [
   ["::", 96],
+  ["::ffff:0:0:0", 96],
   ["64:ff9b::", 96],
   ["64:ff9b:1::", 48],
   ["100::", 64],
@@ -105,13 +106,19 @@ export async function hostRefusal(hostname: string): Promise<string | null> {
 
 export type RequestGuard = (rawUrl: string) => Promise<string | null>
 
+const DEFAULT_PORTS: Record<string, string> = { "http:": "80", "https:": "443", "ws:": "80", "wss:": "443" }
+
+function originKey(url: URL): string {
+  return `${normalizeHost(url.hostname)}:${url.port || DEFAULT_PORTS[url.protocol] || ""}`
+}
+
 /**
- * Judges one request url: a page load, a sub request, a redirect hop or a websocket. With `allowLocal` the page's own host
- * is let through (a local test page loads its own files) and no other private host is.
+ * Judges one request url: a page load, a sub request, a redirect hop or a websocket. With `allowLocal` the page's own
+ * host and port is let through (a local test page loads its own files) and no other private address is.
  */
-export function createRequestGuard(options: { allowLocal: boolean; topHost: string }): RequestGuard {
+export function createRequestGuard(options: { allowLocal: boolean; topUrl: string }): RequestGuard {
   const verdicts = new Map<string, Promise<string | null>>()
-  const top = normalizeHost(options.topHost)
+  const top = originKey(new URL(options.topUrl))
   return async (rawUrl) => {
     let url: URL
     try {
@@ -123,7 +130,7 @@ export function createRequestGuard(options: { allowLocal: boolean; topHost: stri
     if (!NETWORK_SCHEMES.has(url.protocol)) return `${url.protocol} requests are refused`
     const host = normalizeHost(url.hostname)
     if (host === null) return `${url.hostname} is not a valid host`
-    if (options.allowLocal && host === top) return null
+    if (options.allowLocal && originKey(url) === top) return null
     const known = verdicts.get(host)
     if (known) return known
     const verdict = hostRefusal(host)

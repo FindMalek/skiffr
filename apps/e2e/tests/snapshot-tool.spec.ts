@@ -42,6 +42,8 @@ const seen: Seen[] = []
 const reached: string[] = []
 let out: string
 
+const OK = `<!doctype html><title>Ok</title><form><input name="a"><input name="b"><input name="c"></form>`
+
 const BUSY = `<!doctype html><title>Busy</title><form><input name="a"><input name="b"><input name="c"></form><script>setTimeout(() => { for (;;) {} }, 200)</script>`
 
 const probe = (
@@ -53,6 +55,7 @@ const probe = (
   fetch("http://[::ffff:7f00:1]:" + target + "/mapped").catch(() => undefined)
   fetch("http://[::ffff:127.0.0.1]:" + target + "/dotted").catch(() => undefined)
   fetch("/redirect").catch(() => undefined)
+  fetch("http://localhost:" + target + "/same-host-other-port").catch(() => undefined)
   try { new WebSocket("ws://127.0.0.1:" + target + "/socket") } catch {}
   try { new WebSocket("ws://[::ffff:7f00:1]:" + target + "/socket-mapped") } catch {}
 </script>`
@@ -72,6 +75,30 @@ test.beforeAll(async () => {
 
   server = createServer((req, res) => {
     seen.push({ method: req.method ?? "", url: req.url ?? "", userAgent: String(req.headers["user-agent"]) })
+    const url = new URL(req.url ?? "/", "http://fixture.local")
+    if (url.pathname === "/r") {
+      res.writeHead(Number(url.searchParams.get("c") ?? 302), { location: url.searchParams.get("to") ?? "/" }).end()
+      return
+    }
+    if (url.pathname === "/chain") {
+      res.writeHead(302, { location: `/r?c=301&to=${encodeURIComponent(url.searchParams.get("to") ?? "/")}` }).end()
+      return
+    }
+    if (url.pathname === "/loop") {
+      res.writeHead(302, { location: "/loop" }).end()
+      return
+    }
+    if (url.pathname === "/endless") {
+      res.writeHead(200, { "content-type": "text/html" })
+      const chunk = Buffer.alloc(1_000_000, "a")
+      const timer = setInterval(() => res.write(chunk), 1)
+      res.on("close", () => clearInterval(timer))
+      return
+    }
+    if (url.pathname === "/ok") {
+      res.writeHead(200, { "content-type": "text/html" }).end(OK)
+      return
+    }
     if (req.url === "/redirect") {
       res.writeHead(302, { location: `http://127.0.0.1:${internalPort}/redirect-hop` }).end()
       return
@@ -99,6 +126,17 @@ test.beforeEach(async () => {
 test.afterEach(async () => {
   await rm(out, { recursive: true, force: true })
 })
+
+async function runCapturing(args: string[]): Promise<{ code: number; errors: string }> {
+  const lines: string[] = []
+  const original = console.error
+  console.error = (...parts: unknown[]) => lines.push(parts.join(" "))
+  try {
+    return { code: await run(args), errors: lines.join("\n") }
+  } finally {
+    console.error = original
+  }
+}
 
 const capture = (extra: string[] = []): Promise<number> =>
   run([
@@ -320,4 +358,143 @@ test.describe("--check", () => {
       expect(await run(["--check", out])).toBe(1)
     })
   }
+})
+
+test.describe("redirects", () => {
+  test.setTimeout(180_000)
+  const args = (url: string): string[] => [
+    url,
+    "--allow-local",
+    "--root",
+    "form",
+    "--slug",
+    "r",
+    "--out",
+    out,
+    "--timeout",
+    "6000",
+    "--settle",
+    "50",
+  ]
+
+  const targets = (port: number): string[] => [
+    `http://[::ffff:7f00:1]:${port}/redirected`,
+    `http://[::ffff:127.0.0.1]:${port}/redirected`,
+    `http://[::ffff:0:7f00:1]:${port}/redirected`,
+    "http://[::ffff:a9fe:a9fe]/",
+    "http://10.0.0.1/",
+    "http://192.0.2.1/",
+    `http://[64:ff9b::7f00:1]:${port}/`,
+    `http://[2002:7f00:1::]:${port}/`,
+    "http://[fec0::1]/",
+    `http://127.0.0.1:${port}/redirected`,
+    `//[::ffff:7f00:1]:${port}/redirected`,
+    `http:\\\\[::ffff:7f00:1]:${port}/redirected`,
+    `ht\ttp://[::ffff:7f00:1]:${port}/redirected`,
+  ]
+
+  test("a main frame redirect to any private spelling is refused before it is requested", async () => {
+    for (const target of targets(internalPort)) {
+      const { code, errors } = await runCapturing(args(`${origin}/r?c=302&to=${encodeURIComponent(target)}`))
+      expect({ target, code }).toEqual({ target, code: 1 })
+      expect(errors).toContain("the page was not loaded")
+    }
+    expect(reached).toEqual([])
+  })
+
+  for (const status of [301, 307, 308]) {
+    test(`a ${status} to the internal service is refused`, async () => {
+      const target = `http://[::ffff:7f00:1]:${internalPort}/redirected`
+      expect((await runCapturing(args(`${origin}/r?c=${status}&to=${encodeURIComponent(target)}`))).code).toBe(1)
+      expect(reached).toEqual([])
+    })
+  }
+
+  test("a chain that ends on a private address is refused at its last hop", async () => {
+    const target = `http://[::ffff:7f00:1]:${internalPort}/redirected`
+    expect((await runCapturing(args(`${origin}/chain?to=${encodeURIComponent(target)}`))).code).toBe(1)
+    expect(reached).toEqual([])
+  })
+
+  test("a redirect loop ends", async () => {
+    const { code, errors } = await runCapturing(args(`${origin}/loop`))
+    expect(code).toBe(1)
+    expect(errors).toContain("redirect loop")
+  })
+
+  test("a redirect to the page's own host is followed", async () => {
+    expect((await runCapturing(args(`${origin}/r?c=302&to=${encodeURIComponent("/ok")}`))).code).toBe(0)
+    expect((await runCapturing([...args(`${origin}/chain?to=${encodeURIComponent("/ok")}`), "--force"])).code).toBe(0)
+  })
+})
+
+test("a response that never ends is cut at the size limit", async () => {
+  test.setTimeout(60_000)
+  const started = Date.now()
+  const { code, errors } = await runCapturing([
+    `${origin}/endless`,
+    "--allow-local",
+    "--root",
+    "form",
+    "--slug",
+    "endless",
+    "--out",
+    out,
+    "--timeout",
+    "20000",
+    "--settle",
+    "50",
+  ])
+  expect(code).toBe(1)
+  expect(errors).toContain("response too large")
+  expect(Date.now() - started).toBeLessThan(30_000)
+})
+
+test("the deadline error says so", async () => {
+  test.setTimeout(60_000)
+  const { code, errors } = await runCapturing([
+    `${origin}/busy`,
+    "--allow-local",
+    "--root",
+    "form",
+    "--slug",
+    "busy",
+    "--out",
+    out,
+    "--timeout",
+    "2000",
+    "--settle",
+    "100",
+  ])
+  expect(code).toBe(1)
+  expect(errors).toContain("gave up after")
+})
+
+test("a failed --force capture keeps the previous snapshot, and a symlinked index.html is never written through", async () => {
+  expect(await capture()).toBe(0)
+  const kept = await readFile(join(out, "fixture", "index.html"), "utf8")
+  const failed = await runCapturing([
+    `${origin}/endless`,
+    "--allow-local",
+    "--root",
+    "form",
+    "--slug",
+    "fixture",
+    "--out",
+    out,
+    "--force",
+    "--timeout",
+    "20000",
+    "--settle",
+    "50",
+  ])
+  expect(failed.code).toBe(1)
+  expect(await readFile(join(out, "fixture", "index.html"), "utf8")).toBe(kept)
+
+  await writeFile(join(out, "target.txt"), "original")
+  await rm(join(out, "fixture", "index.html"))
+  await symlink(join(out, "target.txt"), join(out, "fixture", "index.html"))
+  expect(await capture(["--force"])).toBe(0)
+  expect(await readFile(join(out, "target.txt"), "utf8")).toBe("original")
+  expect(await readFile(join(out, "fixture", "index.html"), "utf8")).toBe(kept)
 })

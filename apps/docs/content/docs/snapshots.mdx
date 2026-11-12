@@ -24,7 +24,7 @@ The tool opens the page in headless chromium, waits for the network to go idle p
 | `--click <selector>` | click this (any playwright selector) before taking the form, for pages that open it behind an apply button |
 | `--root <selector>` | take this element. Without it the extension's own application detection picks the form or dialog, and falls back to the form or dialog with the most fields |
 | `--slug <name>` | folder name, default is the host name (`jobs-lever-co`), never words from the path |
-| `--force` | replace an existing folder, otherwise the tool refuses to overwrite one |
+| `--force` | replace an existing folder, otherwise the tool refuses to overwrite one. The new folder is written and checked on the side first, so a failed run keeps the old one |
 | `--out <dir>` | where the folders go, default `apps/e2e/pages/snapshots` |
 | `--timeout <ms>` | per page load and click, default 30000 |
 | `--settle <ms>` | wait after the network is idle, default 1500 |
@@ -51,8 +51,10 @@ An unreadable or missing snapshots folder is an error, not a pass. The same chec
 ## Respecting the site
 
 - Public pages only. The tool refuses a start url on a loopback, private, link local, ipv6 mapped, NAT64, 6to4 or other non public address or name unless `--allow-local`. Every spelling is judged after the url parser has normalized it, and every address a name resolves to is judged too
-- The same check runs on every page load, sub request, redirect hop (redirects are followed by the tool, not the browser) and websocket the page makes. With `--allow-local` only the page's own host is let through. WebRTC and QUIC are switched off and service workers are blocked
-- Not covered: the name is resolved once for the check and again by the browser, so a name that changes its answer in between (dns rebinding) can send one blind GET to a private address. The tool then refuses the output because the response came from a private address, but the request was already sent
+- Every request the page makes (page load, sub resource, fetch, xhr) is made by the tool from node, not by chromium: the tool checks the url, follows redirects itself and checks every `Location` before it requests it (at most 10 hops, a loop is an error, only http and https), and only then hands the final response to the page. Chromium therefore never follows a redirect, and the page sees the url it first asked for, not the final one
+- The name is resolved by node when it connects, and every address it returns must be public, so a name that changes its answer between the check and the connection (dns rebinding) is refused too. With `--allow-local` only the page's own host and port is let through, no other private address is
+- Websockets are refused outright, webrtc and quic are switched off, service workers are blocked, and a response is cut at 15 MB (100 MB per page) so a page that never stops cannot fill memory
+- Not covered: this makes the page load from node's tls stack, not chromium's, so a site that fingerprints clients can answer differently.
 - It identifies itself as `skiffr-snapshot/<version>` with the repo link and nothing personal, and it starts from a fresh browser profile with no cookies
 - It only reads: any request that is not GET or HEAD is aborted, nothing is typed into the page, and the only click is the one you ask for with `--click`. If that selector is a submit button it is on you
 - It does not read robots.txt and does not crawl. One url, one load, `--delay` between several
@@ -74,6 +76,7 @@ Before it writes anything the tool loads the result in chromium with the network
 
 ## What it does not guarantee
 
+- Names inside identifiers (`id="user-jane-smith"`, `name="jane.smith"`, `class="jane-smith"`), numbers of five digits or fewer in an identifier (`candidate-12345`), a greeting like "Welcome, Jane Smith", ipv4 addresses and card numbers in text stay. Read the file
 - Visible text is kept, apart from emails, urls and long token looking strings. A name or an address written in a label or a job description stays, and so does a name in `alt`, `title` or `aria-label`, or an `@handle`. `--check` passing does not mean there is no personal data: read the file
 - A placeholder that is a two or three word capitalized name becomes `Jane Doe`, other personal looking placeholders are not detected
 - Shadow DOM content and cross origin frames are not captured, and a frame becomes an empty placeholder

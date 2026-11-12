@@ -1,5 +1,5 @@
-import { lstat, mkdir, rm, writeFile } from "node:fs/promises"
-import { join, resolve } from "node:path"
+import { lstat, mkdir, mkdtemp, rename, rm, writeFile } from "node:fs/promises"
+import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { parseArgs } from "node:util"
 import { capture, launch } from "./capture.ts"
@@ -43,14 +43,20 @@ interface Options {
 }
 
 function withDeadline<T>(work: Promise<T>, ms: number, onTimeout: () => Promise<void>): Promise<T> {
+  const gaveUp = new Error(`gave up after ${Math.round(ms / 1000)}s: the page did not finish`)
+  let timedOut = false
   let timer: NodeJS.Timeout | undefined
   const expired = new Promise<never>((_, reject) => {
     timer = setTimeout(() => {
+      timedOut = true
       const closed = Promise.race([onTimeout(), new Promise((done) => setTimeout(done, 5_000))])
-      void closed.finally(() => reject(new Error(`gave up after ${Math.round(ms / 1000)}s: the page did not finish`)))
+      void closed.finally(() => reject(gaveUp))
     }, ms)
   })
-  return Promise.race([work, expired]).finally(() => clearTimeout(timer))
+  const guarded = work.catch((error) => {
+    throw timedOut ? gaveUp : error
+  })
+  return Promise.race([guarded, expired]).finally(() => clearTimeout(timer))
 }
 
 async function snapshotOne(url: string, options: Options): Promise<void> {
@@ -92,13 +98,18 @@ async function snapshotOne(url: string, options: Options): Promise<void> {
       source: new URL(url).hostname.toLowerCase(),
       tool: `skiffr-snapshot ${TOOL_VERSION}`,
     }
-    await mkdir(folder, { recursive: true })
-    await writeFile(join(folder, "index.html"), html)
-    await writeFile(join(folder, "meta.json"), `${JSON.stringify(meta, null, 2)}\n`)
-    const problems = await checkSnapshotFolder(options.out, slug)
-    if (problems.length > 0) {
+    await mkdir(options.out, { recursive: true })
+    const staging = await mkdtemp(join(dirname(options.out), ".skiffr-snapshot-"))
+    try {
+      await mkdir(join(staging, slug))
+      await writeFile(join(staging, slug, "index.html"), html)
+      await writeFile(join(staging, slug, "meta.json"), `${JSON.stringify(meta, null, 2)}\n`)
+      const problems = await checkSnapshotFolder(staging, slug)
+      if (problems.length > 0) throw new Error(`the written snapshot failed its own check: ${problems.join("; ")}`)
       await rm(folder, { recursive: true, force: true })
-      throw new Error(`the written snapshot failed its own check: ${problems.join("; ")}`)
+      await rename(join(staging, slug), folder)
+    } finally {
+      await rm(staging, { recursive: true, force: true })
     }
     log(`${slug}: ${Object.values(fields).reduce((a, b) => a + b, 0)} controls (${selector})`)
   } finally {

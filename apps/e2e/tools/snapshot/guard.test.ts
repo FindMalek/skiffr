@@ -16,6 +16,7 @@ describe("localRefusal through the url parser", () => {
     "http://[::]/",
     "http://[::ffff:127.0.0.1]/",
     "http://[::ffff:7f00:1]/",
+    "http://[::ffff:0:7f00:1]/",
     "http://[::ffff:a9fe:a9fe]/",
     "http://[::ffff:169.254.169.254]/",
     "http://[::7f00:1]/",
@@ -96,7 +97,7 @@ describe("urlRefusal", () => {
 
 describe("createRequestGuard", () => {
   test("refuses every spelling of loopback for a page load, a sub request and a websocket", async () => {
-    const guard = createRequestGuard({ allowLocal: false, topHost: "jobs.lever.co" })
+    const guard = createRequestGuard({ allowLocal: false, topUrl: "https://jobs.lever.co/a" })
     for (const url of [
       "http://127.0.0.1:1/",
       "https://[::ffff:127.0.0.1]:1/x",
@@ -111,14 +112,15 @@ describe("createRequestGuard", () => {
   })
 
   test("a local test page may load its own host and nothing else private", async () => {
-    const guard = createRequestGuard({ allowLocal: true, topHost: "127.0.0.1" })
+    const guard = createRequestGuard({ allowLocal: true, topUrl: "http://127.0.0.1:5000/" })
     expect(await guard("http://127.0.0.1:5000/a.css")).toBeNull()
+    expect(await guard("http://127.0.0.1:5001/")).not.toBeNull()
     expect(await guard("ws://localhost:5001/")).not.toBeNull()
     expect(await guard("http://[::ffff:7f00:2]/")).not.toBeNull()
   })
 
   test("non network urls are not judged and odd schemes are refused", async () => {
-    const guard = createRequestGuard({ allowLocal: false, topHost: "jobs.lever.co" })
+    const guard = createRequestGuard({ allowLocal: false, topUrl: "https://jobs.lever.co/a" })
     expect(await guard("data:text/plain,hi")).toBeNull()
     expect(await guard("file:///etc/passwd")).not.toBeNull()
     expect(await guard("chrome://version")).not.toBeNull()
