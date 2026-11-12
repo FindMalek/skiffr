@@ -35,8 +35,8 @@ export function PrivacySection() {
           Privacy first
         </h2>
         <p className="mt-3 max-w-2xl text-muted-foreground">
-          These are the rules the code follows. The extension does not fill pages yet, so none of this has reached a
-          real application.
+          These are the rules the code follows. The extension fills pages today. The learning rules live in the api, and
+          the extension does not feed it your edits yet.
         </p>
         <dl className="mt-8 grid gap-x-10 gap-y-6 md:grid-cols-2">
           {POINTS.map(({ title, text }) => (

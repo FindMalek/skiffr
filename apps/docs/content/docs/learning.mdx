@@ -4,7 +4,7 @@ description: Lookup order, what is learned, what never is, and how skiffr advise
 ---
 
 <Callout>
-The correction log, the lookup and the suggestions are on `main` ([#49](https://github.com/FindMalek/skiffr/pull/49)) and covered by tests on real Postgres. The extension does not call them yet: until that wiring lands, nothing is learned from your edits.
+The correction log, the lookup and the suggestions are on `main` ([#49](https://github.com/FindMalek/skiffr/pull/49)) and covered by tests on real Postgres. The extension already calls the lookup when it fills, so answers you saved in the answer bank are used. It does not send your edits back yet ([#58](https://github.com/FindMalek/skiffr/issues/58)), so nothing is learned from them until that lands.
 </Callout>
 
 skiffr fills a form, you fix what is wrong, and the fixes become answers. The target is fewer corrections per application over time.
@@ -16,7 +16,7 @@ For every field the api tries, in this order, and stops at the first hit:
 1. **Exact fingerprint.** The same normalized label, the same control type and the same set of options (a hash of the option texts) as an answer you already have.
 2. **Normalized label.** The same question with different wording around it: case, punctuation and spacing are ignored.
 3. **Embedding similarity.** Questions that mean the same thing. This needs `OPENAI_API_KEY`, and it only ever produces a suggestion.
-4. **None.** The extension falls back to the language model, which maps the field to a profile key.
+4. **None.** The extension falls back to the language model, which maps the field to a profile key. Without a provider key the field is left empty.
 
 Rules that apply to every candidate:
 

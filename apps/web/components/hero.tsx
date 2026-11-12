@@ -5,11 +5,11 @@ import { docsHref, repoUrl } from "@/lib/seo"
 import { SITE } from "@/lib/site"
 
 const TODAY = [
-  "Fill engine, tested on fixture pages",
-  "API and database for your profile and answers",
-  "AI field mapping",
-  "Learning API: correction log and answer lookup",
-  "Dashboard to edit your profile and create extension tokens",
+  "Detects an application form and asks before filling",
+  "Fills it from your profile, saved answers and an optional language model",
+  "Dashboard: profile, answers, job queue and funnel stats",
+  "Job sources: Gmail alerts and watched careers pages",
+  "Self-hosted api and Postgres, with a Dokploy deploy",
 ]
 
 export function Hero() {
@@ -25,9 +25,9 @@ export function Hero() {
           </h1>
           <p className="max-w-xl text-lg text-muted-foreground leading-relaxed">
             <strong className="font-semibold text-foreground">Early development, not released yet.</strong> skiffr is an
-            open-source Chrome extension that will fill job applications from your own profile, learn from every
-            correction you make, and never submit anything for you. You host the data yourself. There is nothing to
-            install today.
+            open-source Chrome extension that fills job applications from your own profile and never submits anything
+            for you. A dashboard keeps your answers and a queue of jobs. You host the data yourself. There is no store
+            listing yet: build the extension from the repo or load a CI build.
           </p>
           <div className="flex flex-wrap items-center gap-3">
             <Button size="lg" render={<a href={repoUrl()} />} nativeButton={false}>
@@ -40,7 +40,7 @@ export function Hero() {
         </div>
         <div className="flex flex-col gap-5 border bg-card p-5 lg:col-span-2">
           <div>
-            <h2 className="font-medium text-sm">Built today, in the repo</h2>
+            <h2 className="font-medium text-sm">Works today</h2>
             <ul className="mt-3 flex flex-col gap-2 text-sm">
               {TODAY.map((item) => (
                 <li key={item} className="flex gap-2">
@@ -54,7 +54,7 @@ export function Hero() {
             <h2 className="font-medium text-sm">Coming</h2>
             <p className="mt-3 flex gap-2 text-sm">
               <ClockIcon aria-hidden className="mt-0.5 size-4 shrink-0" />
-              Connecting these in the browser: detect an application form, ask, fill it, and learn from your edits.
+              Learning from your edits in the browser. The api side is built, the extension side is in review.
             </p>
           </div>
         </div>

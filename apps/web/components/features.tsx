@@ -2,23 +2,30 @@ import {
   BookMarkedIcon,
   ChartNoAxesColumnIcon,
   FileTextIcon,
+  InboxIcon,
   KeyRoundIcon,
   ListChecksIcon,
   type LucideIcon,
   MailIcon,
-  MapIcon,
   MousePointerClickIcon,
+  RadarIcon,
   RefreshCwIcon,
   UserRoundIcon,
+  ZapIcon,
 } from "lucide-react"
 
 type Feature = { icon: LucideIcon; title: string; text: string }
 
 const TODAY: Feature[] = [
   {
+    icon: ZapIcon,
+    title: "Detect and ask",
+    text: "Recognizes application forms on common ATS sites, also in iframes, and shows a small toast. Say yes, no, or never on that site. The shortcut fills without asking.",
+  },
+  {
     icon: MousePointerClickIcon,
-    title: "Framework-safe fill engine",
-    text: "Sets React and Vue controlled inputs, selects and comboboxes, through shadow DOM and same-origin iframes, and skips honeypots. Tested on fixture pages, not connected to the extension yet.",
+    title: "Framework-safe fill",
+    text: "Sets React and Vue controlled inputs, selects and comboboxes, through shadow DOM and same-origin iframes, and skips honeypots. Uncertain fields are outlined for you to check.",
   },
   {
     icon: UserRoundIcon,
@@ -28,17 +35,32 @@ const TODAY: Feature[] = [
   {
     icon: BookMarkedIcon,
     title: "Answer bank",
-    text: "Saved answers are stored per question, with use and correction counts.",
-  },
-  {
-    icon: RefreshCwIcon,
-    title: "Learning API",
-    text: "A correction log, answer lookup and keep or drop suggestions. The extension does not send corrections yet.",
+    text: "Edit saved answers per question, with use and correction counts and keep or drop suggestions. A saved answer beats a model guess.",
   },
   {
     icon: ListChecksIcon,
     title: "Field mapping",
-    text: "A language model matches unfamiliar fields to your profile keys. It cannot invent a key, and cannot see contact details or pay.",
+    text: "Optional. A language model matches unfamiliar fields to your profile keys. It cannot invent a key, and cannot see contact details or pay.",
+  },
+  {
+    icon: InboxIcon,
+    title: "Job queue",
+    text: "Add jobs by link, work through them in order with Open next, mark them applied or skipped. You press submit yourself.",
+  },
+  {
+    icon: MailIcon,
+    title: "Gmail job alerts",
+    text: "Optional. LinkedIn, Indeed and Glassdoor alert emails become queued jobs. Needs your own Google OAuth client.",
+  },
+  {
+    icon: RadarIcon,
+    title: "Source watcher",
+    text: "Watch a careers page, a feed or a Greenhouse, Lever, Ashby or Workable board and queue new postings. Public pages only.",
+  },
+  {
+    icon: ChartNoAxesColumnIcon,
+    title: "Funnel stats",
+    text: "Applications over time, queue funnel, replies, by source, ATS and role, and how well autofill knows you.",
   },
   {
     icon: KeyRoundIcon,
@@ -48,12 +70,9 @@ const TODAY: Feature[] = [
 ]
 
 const NEXT: Feature[] = [
-  { icon: MousePointerClickIcon, title: "Form detection and toast", text: "In review." },
-  { icon: RefreshCwIcon, title: "The whole loop in the browser", text: "Planned. Detect, fill and learn, connected." },
-  { icon: MailIcon, title: "Gmail job alerts to a queue", text: "Planned." },
-  { icon: MapIcon, title: "Per-site learned field maps", text: "Planned." },
+  { icon: RefreshCwIcon, title: "Learning from your edits", text: "In review. The api side is built." },
+  { icon: MousePointerClickIcon, title: "ATS adapters", text: "Planned." },
   { icon: FileTextIcon, title: "CV tailoring", text: "Planned. Edits only, never invented facts." },
-  { icon: ChartNoAxesColumnIcon, title: "Funnel stats", text: "Planned." },
 ]
 
 function Item({ icon: Icon, title, text, muted }: Feature & { muted?: boolean }) {
@@ -73,11 +92,11 @@ export function Features() {
     <section aria-labelledby="features-title" className="border-t">
       <div className="mx-auto w-full max-w-6xl px-4 py-16 sm:px-6">
         <h2 id="features-title" className="font-heading font-semibold text-3xl tracking-tight">
-          What exists today
+          What works today
         </h2>
         <p className="mt-3 max-w-2xl text-muted-foreground">
-          skiffr is in early development. These pieces are built and tested, but they are not connected into a working
-          extension yet.
+          skiffr is in early development. This is what is on the main branch. The language model, Gmail and embeddings
+          are optional and need your own keys.
         </p>
         <ul className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {TODAY.map((feature) => (

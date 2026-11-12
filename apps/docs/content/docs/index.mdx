@@ -3,16 +3,17 @@ title: Introduction
 description: What Skiffr is made of and where to find things.
 ---
 
-skiffr is an open-source Chrome extension that will fill job applications from your own profile and learn from the corrections you make. You host the api and the database yourself. It is in early development and not released: the api, dashboard, AI field mapping, learning api and a fill engine are merged, but the extension is not connected to them yet and fills nothing. See the status table in the README.
+skiffr is an open-source Chrome extension that fills job applications from your own profile, and never submits anything for you. A dashboard keeps your profile, answers, a job queue and stats. You host the api and the database yourself. It is in early development and not released: the extension detects forms, asks and fills them today, but it does not record your edits yet, so it does not learn from corrections. The api side of learning is built.
 
 The repo is a turborepo with a landing page, a dashboard with login, an api, and the extension, wired to postgres with pgvector, auth and typed rpc. Edit these pages in `apps/docs/content/docs`, they are plain mdx.
 
 ## What is in the repo
 
 - `apps/web`: the landing page. It only talks to the api
-- `apps/dashboard`: login and the app shell. It only talks to the api
+- `apps/dashboard`: profile, answers, queue, stats, Gmail, sources and tokens. It only talks to the api
 - `apps/api`: orpc on bun. The only app that touches the database, auth and providers
 - `apps/extension`: the Chrome extension (WXT, React, Manifest V3). It calls the api with a token
+- `apps/e2e`: the Playwright suite that drives the built extension
 - `apps/docs`: this site
 - `packages/*`: shared code, see [structure](/docs/structure)
 
@@ -22,7 +23,11 @@ The repo is a turborepo with a landing page, a dashboard with login, an api, and
   <Card title="Setup" href="/docs/setup">Install, start postgres, run the apps.</Card>
   <Card title="Environment" href="/docs/environment">Every key in the root `.env`.</Card>
   <Card title="Structure" href="/docs/structure">Apps, packages and the rules between them.</Card>
-  <Card title="Deploy" href="/docs/deploy">Vercel or your own server.</Card>
+  <Card title="The extension" href="/docs/extension">Install it, connect it, what it does on a page.</Card>
+  <Card title="The dashboard" href="/docs/dashboard">Answers, queue and stats.</Card>
+  <Card title="Gmail job emails" href="/docs/gmail">Turn job alerts into queued jobs.</Card>
+  <Card title="Job sources" href="/docs/sources">Watch careers pages and feeds.</Card>
+  <Card title="Deploy" href="/docs/deploy">Vercel, Docker or Dokploy.</Card>
   <Card title="How skiffr learns" href="/docs/learning">Lookup order, what is learned, what never is.</Card>
   <Card title="Privacy and data flow" href="/docs/privacy">Exactly what leaves your machine.</Card>
 </Cards>

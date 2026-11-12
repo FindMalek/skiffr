@@ -31,13 +31,7 @@ Sign in to the dashboard with `ADMIN_EMAIL` and `ADMIN_PASSWORD` from `.env`. Th
 
 ## Load the extension
 
-The extension does not fill pages yet, so this is for development: you can check the options page and the connection to the api. It needs Chrome 142 or a Chromium browser of the same age.
-
-```bash
-pnpm --filter extension build
-```
-
-In `chrome://extensions` turn on developer mode, choose Load unpacked and pick `apps/extension/.output/chrome-mv3`. Create a token on the dashboard's Extension page, then set the api url (`http://localhost:3001`) and the token in the extension options and press test connection. `Ctrl+Shift+F` (`Cmd+Shift+F` on macOS) is registered as the fill shortcut but does nothing yet, because the fill engine is not wired to it. You can already remap it at `chrome://extensions/shortcuts`.
+Build it, load it unpacked, create a token on the dashboard's Extension page and paste it in the extension options. The steps, the CI build option and what the extension does on a page are in [the extension](/docs/extension).
 
 ## Working on one app
 

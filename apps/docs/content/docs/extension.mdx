@@ -1,0 +1,42 @@
+---
+title: The extension
+description: Install it, connect it to your api, and what it does on a page.
+---
+
+The extension is a Manifest V3 Chrome extension. There is no Chrome Web Store listing and no release yet, so you build it or take a CI build, and load it unpacked. It needs Chrome 142 or a Chromium browser of the same age.
+
+## Install
+
+Build it from the repo:
+
+```bash
+pnpm --filter extension build
+```
+
+In `chrome://extensions` turn on developer mode, choose Load unpacked and pick `apps/extension/.output/chrome-mv3`.
+
+Or take a CI build: every pull request uploads `extension-chrome-pr-<number>` and every push to `main` uploads `extension-chrome-latest`, from the [CI runs](https://github.com/FindMalek/skiffr/actions/workflows/ci.yml). GitHub login is required and artifacts expire. Unzip the download, extract the inner `extension-<version>-chrome.zip` into an empty folder and load that folder unpacked.
+
+## Connect it
+
+1. In the dashboard open **Extension** and create a token
+2. In the extension options set the api url (`http://localhost:3001` locally) and paste the token
+3. Press test connection
+
+Save your profile in the dashboard first: a fill without one stops with a message.
+
+## Use it
+
+On an application form (Greenhouse, Lever, Ashby, Workable, Workday and other common systems, also inside iframes) a toast asks "Autofill this application?":
+
+- **Yes** fills the form
+- **No** closes the toast
+- **Don't ask on this site** stops the toast on that site
+
+`Ctrl+Shift+F` (`Cmd+Shift+F` on macOS) fills the current page without the toast. Remap it at `chrome://extensions/shortcuts`.
+
+For each field the extension takes the first answer it has: what you filled on this very form before, then a saved answer for the same question, then a language model that maps the field to a key of your profile (needs a provider key, see [environment](/docs/environment)). Fields the model is unsure about are filled and outlined in amber. An answer from a similar question is never filled by itself, the empty field is outlined as a suggestion. When it is done the toast says how many fields were filled and how many are outlined.
+
+It never submits a form, never clicks submit, next or apply buttons, and never touches password or hidden inputs. You review the form and press the button.
+
+The extension does not record your edits yet, so it does not learn from corrections. That is tracked in [#58](https://github.com/FindMalek/skiffr/issues/58). What is sent where is in [privacy](/docs/privacy).
