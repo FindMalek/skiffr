@@ -1,0 +1,96 @@
+---
+title: Smoke tests
+description: A scheduled, read only run of the extension against real public application pages, to catch selector drift.
+---
+
+Boards change their markup without telling anyone. The smoke run opens a short list of real public application pages with the built extension, runs detection and a fill with a mock api and a synthetic profile, and reports what changed since the last time. It never submits anything.
+
+It lives in `apps/e2e/smoke/` and runs weekly in `.github/workflows/smoke.yml`. Pull requests never run it: the required checks only run the local tests, which use fixture pages on loopback.
+
+## Run it
+
+```bash
+pnpm --filter extension build
+pnpm --filter e2e smoke
+pnpm --filter e2e smoke --only lever-spotify
+pnpm --filter e2e smoke --update-baseline
+```
+
+| Flag | Meaning |
+| --- | --- |
+| `--only <id,id>` | run these targets only |
+| `--update-baseline` | rewrite `baselines/<id>.json` from this run. Do it on purpose, after you looked at why a target drifted |
+| `--targets <file>` | another target list, default `smoke/targets.json` |
+| `--out <dir>` | where `summary.md`, `summary.json` and the traces of failing targets go, default `smoke/results` (ignored by git) |
+| `--delay <ms>` | pause between targets, default 10000 |
+| `--timeout <ms>` | hard limit per target, default 90000 |
+| `--settle <ms>` | wait after the network is idle, default 2000 |
+| `--threshold <0-1>` | how far `filled` and `collected` may fall below the baseline, default 0.25 |
+
+The extension must be built first (or point `E2E_EXTENSION_DIR` at an unzipped build). Exit code 1 means a target drifted or errored; a gone or blocked page does not fail the run.
+
+## What a target checks
+
+For each target the runner loads the page, optionally clicks the apply button, waits for the extension's fill offer, accepts it and records:
+
+- whether the offer toast showed up (detection)
+- fields collected (sent to the mock api to be mapped, plus controls the extension filled without asking), filled and outlined (read from the result toast), and left (fields still empty afterwards)
+- sensitive fields: questions about gender, race, veterans, disability, consent, signatures and the like must not be asked about and must keep their value. The runner reads every control before and after the fill
+- console errors and the time taken
+
+A target is `drift` when the offer does not appear, `filled` is below `expect.minFilled` or fell more than the threshold against the baseline, a field listed in `expect.detect` is not handled, a sensitive field was filled or asked about, or the `click` selector matched nothing. A changed field signature (hash of the labels and types) is only a note.
+
+| Status | Meaning |
+| --- | --- |
+| `ok` | everything above held |
+| `drift` | the extension no longer does what the target expects: fix the extension or, if the site really changed, the target |
+| `gone` | the posting is dead (404, 410, redirected away, or the page says it is closed). Not drift, never fails the run: replace the target |
+| `blocked` | the host answered 429 or 403. Not retried |
+| `error` | the runner could not load the page or timed out |
+| `skipped` | `enabled` is false, or the run stopped because a host kept refusing |
+
+## Add a target
+
+Add an object to `smoke/targets.json`:
+
+```json
+{
+  "id": "lever-acme",
+  "ats": "lever",
+  "url": "https://jobs.lever.co/acme/00000000-0000-0000-0000-000000000000/apply",
+  "click": "text=Apply now",
+  "checked": "2026-11-12",
+  "expect": { "minFilled": 4, "detect": ["email"], "untouched": ["pronouns"], "toast": true }
+}
+```
+
+- `id`: lowercase letters, digits and dashes. Names the baseline file
+- `ats`: `greenhouse`, `lever`, `ashby`, `workable` or `other`
+- `url`: a public `http` or `https` page that needs no login. Loopback, private and credentialed addresses are refused when the file is read
+- `click`: only for pages that open the form behind a button. It is the one click the runner makes on the page
+- `checked`: the day you confirmed the page exists
+- `enabled`: set to `false` to park a target without deleting it
+- `readPosts`: for single page boards that draw the form with a read only POST (Ashby does, `/api/non-user-graphql?op=ApiJobPosting`). Every other write is aborted. Entries are a path and an operation name, and anything that looks like a submit, create, update, delete, save or upload is refused
+- `expect.minFilled`: the least number of fields the fill must report
+- `expect.detect`: words, each of which must appear in the label of a field the fill handled
+- `expect.untouched`: extra words that mark fields which must come out as they went in. The built in list already covers the usual diversity and consent questions
+
+Then run `pnpm --filter e2e smoke --only <id> --update-baseline`, look at `summary.md`, and commit the target and `baselines/<id>.json`. A baseline holds counts and one hash of the field labels and types. It never holds page text, the page itself or any personal data. To drop a target, delete it from the list and delete its baseline.
+
+## Politeness and safety
+
+- Every request goes through the snapshot tool's guard and fetcher: public hosts only, every redirect hop checked, the address vetted when the connection is made, size caps and a deadline. The browser never talks to the network directly
+- Only GET and HEAD leave the machine. Any other request is aborted, apart from the `readPosts` a target lists. Nothing is submitted, uploaded or typed outside the fill engine
+- The api is the mock one on loopback and the profile is synthetic. No real data and no secrets are involved
+- User agent `skiffr-smoke/<version>` with the repository link, no personal details
+- One request per host at a time, 10 seconds between targets, images, fonts, media and known trackers and analytics hosts are not loaded
+- A host that answers 429 or 403 twice stops the whole run. The target is reported `blocked` and nothing is retried
+- A trace of every target that is not ok is uploaded as a workflow artifact. Traces contain the public page, never a real profile
+
+## Terms of service
+
+Only add public application pages of boards that you may load like any visitor, and keep the run at a low frequency (weekly). Read a site's terms before adding it and drop the target if it asks automated visitors to stay away. The run is a read only check of a public page, not a way to collect data: it keeps counts and a hash, not content.
+
+## The workflow
+
+`smoke.yml` runs on a weekly schedule and by hand. It does nothing until the repository variable `SMOKE_ENABLED` is `true`. It needs no secrets, builds the extension the same way the `e2e` job does, uploads `summary.md` and the traces as an artifact, and keeps a single issue with the label `smoke` up to date: it opens it on drift, edits it in place on the next drift, and comments and closes it when a run is clean.

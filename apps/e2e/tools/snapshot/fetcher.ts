@@ -22,10 +22,12 @@ export interface Fetched {
   status: number
   headers: Record<string, string>
   body: Buffer
+  /** Where the redirects ended. */
+  url: string
 }
 
 export interface Fetcher {
-  fetch: (url: URL, method: string, headers: Record<string, string>) => Promise<Fetched>
+  fetch: (url: URL, method: string, headers: Record<string, string>, body?: Buffer) => Promise<Fetched>
   close: () => void
 }
 
@@ -66,6 +68,7 @@ export function createFetcher(options: { guard: RequestGuard; allowName: string 
     url: URL,
     method: string,
     headers: Record<string, string>,
+    payload?: Buffer,
   ): Promise<{ status: number; headers: http.IncomingHttpHeaders; body: Buffer }> {
     return new Promise((resolve, reject) => {
       const lib = url.protocol === "https:" ? https : http
@@ -73,7 +76,7 @@ export function createFetcher(options: { guard: RequestGuard; allowName: string 
         url,
         {
           method,
-          headers,
+          headers: payload ? { ...headers, "content-length": String(payload.length) } : headers,
           lookup,
           agent: agents[url.protocol as "http:" | "https:"],
           signal: AbortSignal.timeout(options.timeoutMs),
@@ -97,11 +100,16 @@ export function createFetcher(options: { guard: RequestGuard; allowName: string 
         },
       )
       req.on("error", reject)
-      req.end()
+      req.end(payload)
     })
   }
 
-  async function fetchPage(first: URL, method: string, headers: Record<string, string>): Promise<Fetched> {
+  async function fetchPage(
+    first: URL,
+    method: string,
+    headers: Record<string, string>,
+    payload?: Buffer,
+  ): Promise<Fetched> {
     const sent: Record<string, string> = { ...headers, "accept-encoding": "identity" }
     delete sent.host
     delete sent["content-length"]
@@ -114,7 +122,7 @@ export function createFetcher(options: { guard: RequestGuard; allowName: string 
       if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error(`${url.protocol} is not fetched`)
       const refusal = await options.guard(url.href)
       if (refusal) throw new Error(refusal)
-      const res = await hop(url, method, sent)
+      const res = await hop(url, method, sent, payload)
       const location = res.headers.location
       if (REDIRECTS.has(res.status) && typeof location === "string") {
         url = new URL(location, url)
@@ -124,7 +132,7 @@ export function createFetcher(options: { guard: RequestGuard; allowName: string 
       for (const [name, value] of Object.entries(res.headers)) {
         if (value !== undefined && !HOP_BY_HOP.has(name)) out[name] = Array.isArray(value) ? value.join(", ") : value
       }
-      return { status: res.status, headers: out, body: method === "HEAD" ? Buffer.alloc(0) : res.body }
+      return { status: res.status, headers: out, body: method === "HEAD" ? Buffer.alloc(0) : res.body, url: url.href }
     }
     throw new Error("too many redirects")
   }
