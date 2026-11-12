@@ -1,0 +1,72 @@
+---
+title: Form snapshots
+description: Turn a real application page into a sanitized test fixture with one command.
+---
+
+A snapshot is a copy of one application form from a public page, stripped of everything that is not the form. It lives in `apps/e2e/pages/snapshots/<slug>/` and the e2e suite runs detection and a fill against every folder there, so a new site becomes a test case by running one command.
+
+## Take one
+
+```bash
+pnpm snapshot https://job-boards.greenhouse.io/acme/jobs/123
+pnpm snapshot https://jobs.lever.co/acme/<id>/apply --slug lever-acme
+pnpm snapshot https://example.com/careers/123 --click "text=Apply now"
+```
+
+The tool opens the page in headless chromium, waits for the network to go idle plus a settle delay, optionally clicks an apply button, takes the application area, sanitizes it, and writes two files:
+
+- `index.html`: the sanitized form, one self contained page
+- `meta.json`: the source host (no path), the date, the tool version, the root selector and the number of fields by type
+
+| Flag | Meaning |
+| --- | --- |
+| `--click <selector>` | click this (any playwright selector) before taking the form, for pages that open it behind an apply button |
+| `--root <selector>` | take this element. Without it the extension's own application detection picks the form or dialog, and falls back to the form or dialog with the most fields |
+| `--slug <name>` | folder name, default is the host plus the first words of the path |
+| `--out <dir>` | where the folders go, default `apps/e2e/pages/snapshots` |
+| `--timeout <ms>` | per page load and click, default 30000 |
+| `--settle <ms>` | wait after the network is idle, default 1500 |
+| `--delay <ms>` | pause between pages when you pass several urls, default 2000 |
+| `--allow-local` | allow a loopback or private host, for the tool's own tests only |
+
+Then read `index.html` once, check the site's terms, and commit the folder. The tool prints this reminder every time.
+
+## Check
+
+```bash
+pnpm snapshot --check
+```
+
+Refuses any snapshot that still has a script, a frame, a style element, an event handler, a remote url, an email, a phone number, a hidden input with a value, or a `meta.json` that holds more than the five known keys. It also runs in the e2e suite for every folder, so CI fails on a dirty snapshot.
+
+## Respecting the site
+
+- Public pages only. The tool refuses loopback, private, link local and non public host names (also when a public name resolves to a private address, and for every request the page makes) unless `--allow-local`
+- It identifies itself as `skiffr-snapshot/<version>` with the repo link and nothing personal, and it starts from a fresh browser profile with no cookies
+- It only reads: any request that is not GET or HEAD is aborted, nothing is typed into the page, and the only click is the one you ask for with `--click`. If that selector is a submit button it is on you
+- It does not read robots.txt and does not crawl. One url, one load, `--delay` between several
+
+## What the sanitizer guarantees
+
+The output is rebuilt from the parsed page, not patched:
+
+- no `<script>`, `<noscript>`, `<style>`, `<link>`, `<meta>`, `<base>`, `<template>`, `<object>`, `<embed>`, audio, canvas or comments
+- no `<iframe>`, `<img>`, `<video>`, `<picture>` or `<svg>`: each becomes an empty `span` or `div` with `data-skiffr-placeholder`, keeping its size and its `id`, `class`, `name`, `title` and `aria-*`. Images of 2px or less (tracking pixels) are dropped
+- no inline event handler, `srcdoc`, `src`, `srcset`, `nonce`, `integrity` or `ping`
+- every `style` attribute is rebuilt from an allowlist of the properties the fill checks read (display, visibility, opacity, position, offsets, size, overflow, clip, clip-path, content-visibility, pointer-events), and the capture bakes those from the live page, so hidden and honeypot fields stay hidden without any stylesheet
+- every `href` is `#`, a path shape on `https://example.invalid`, or kept as a short `#anchor`. Query strings, fragments, `javascript:`, `data:`, `mailto:` and `tel:` are gone. Every form `action` and `formaction` is `#`
+- every hidden input has the value `x` and keeps its name. Typed or prefilled values are removed from inputs and textareas, `checked` and `selected` are reset
+- emails become `user@example.invalid`, phone numbers `000-000-0000`, tokens and long ids in text and in `data-*` become `x` or are dropped. `data-qa`, `data-testid`, `data-automation-id`, `data-field` and a few more structural ones stay. Analytics and token named `data-*` attributes are dropped
+- the output is deterministic: sorted attributes, normalized whitespace, one element per line. Sanitizing it again gives the same text
+
+Before it writes anything the tool loads the result in chromium with the network off and refuses it if the page makes a request or logs a console error, and refuses it if the sanitizer changed the number of fields.
+
+## What it does not guarantee
+
+- Visible text is kept, apart from emails, urls and long digit or token strings. A name or an address written in a label or a job description stays. Read the file
+- A placeholder that is a two or three word capitalized name becomes `Jane Doe`, other personal looking placeholders are not detected
+- Shadow DOM content and cross origin frames are not captured, and a frame becomes an empty placeholder
+- Layout that comes from stylesheets is gone: the page is unstyled apart from the baked properties. Hiding done with a transform is not baked
+- The ats adapters match on the host, so a snapshot served from the fixture server is detected by the generic rules, not the adapter of the site it came from
+- A page that needs a login, a captcha or a bot challenge cannot be taken
+- Copying a form is not permission to publish it. Check the site's terms before committing a snapshot

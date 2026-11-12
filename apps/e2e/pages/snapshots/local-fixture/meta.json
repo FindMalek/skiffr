@@ -1,0 +1,16 @@
+{
+  "capturedAt": "2026-11-12",
+  "fields": {
+    "checkbox": 1,
+    "email": 1,
+    "file": 1,
+    "hidden": 3,
+    "select": 1,
+    "tel": 1,
+    "text": 6,
+    "textarea": 1
+  },
+  "root": "#application-form",
+  "source": "127.0.0.1",
+  "tool": "skiffr-snapshot 0.1.0"
+}

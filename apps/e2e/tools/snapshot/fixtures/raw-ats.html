@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Senior Engineer at Acme - Apply</title>
+<meta name="csrf-token" content="Zm9vYmFyYmF6cXV4MTIzNDU2Nzg5MA==">
+<meta name="current-user" content="jane.doe@gmail.com">
+<meta http-equiv="refresh" content="3600;url=https://evil.invalid/">
+<base href="https://acme.invalid/">
+<link rel="preload" href="https://cdn.tracker.invalid/app.js" as="script">
+<link rel="stylesheet" href="https://cdn.tracker.invalid/app.css">
+<style>
+@import url(https://fonts.tracker.invalid/f.css);
+body { background: url(https://cdn.tracker.invalid/bg.png); font-family: sans-serif }
+.hidden { display: none }
+.hp { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden }
+.ghost { opacity: 0 }
+</style>
+<script async src="https://www.tracker.invalid/gtag/js?id=G-ABC123"></script>
+<script>
+  window.dataLayer = []
+  window.SESSION = { token: "ghp_abcdefghijklmnopqrstuvwxyz0123456789", user: "jane.doe@gmail.com" }
+</script>
+</head>
+<body onload="window.loaded = true" data-ga-page="apply">
+<!-- build 7f3a9c1e5b2d4086a1c3e5f7091b2d4f session=abcdef0123456789abcdef0123456789 -->
+<noscript><img src="https://pixel.tracker.invalid/p.gif?u=jane.doe@gmail.com" width="1" height="1"></noscript>
+<img src="https://pixel.tracker.invalid/p.gif" width="1" height="1" alt="">
+<header>
+  <img src="https://cdn.tracker.invalid/acme-logo.png" alt="Acme" width="120" height="32">
+  <svg width="24" height="24"><script>window.leak = 1</script><circle r="4"></circle></svg>
+</header>
+<div role="dialog" aria-label="Cookie consent" id="cookies">
+  <p>We use cookies.</p>
+  <form action="https://consent.tracker.invalid/save" method="post"><input type="email" name="newsletter_email" placeholder="Newsletter email"><button>Subscribe</button></form>
+  <button onclick="document.getElementById('cookies').remove()">Accept</button>
+</div>
+<main>
+  <h1>Senior Engineer</h1>
+  <p>Questions? Write to careers@acme.invalid or see <a href="https://acme.invalid/legal/terms?utm_source=jobs&session=abcdef0123456789">our terms</a>.</p>
+  <a href="javascript:void(window.track('x'))" id="apply-button" data-ga-label="apply-click">Apply for this job</a>
+  <a href="mailto:careers@acme.invalid">Email us</a>
+  <div id="app-root" class="hidden" data-job-id="4012345678" data-qa="application">
+    <form id="application-form" action="https://boards.tracker.invalid/acme/jobs/4012345678/applications?token=abc123def456" method="post" enctype="multipart/form-data" onsubmit="return window.track('submit')">
+      <input type="hidden" name="authenticity_token" value="Zm9vYmFyYmF6cXV4MTIzNDU2Nzg5MA==">
+      <input type="hidden" name="job_id" value="4012345678">
+      <input type="hidden" name="nonce" value="n-8f14e45fceea167a5a36dedd4bea2543">
+      <div class="field"><label for="first_name">First Name *</label><input id="first_name" name="first_name" type="text" value="Jane" data-qa="first-name" data-user-id="9f2c0a1b7d3e4c5a8b6d"></div>
+      <div class="field"><label for="last_name">Last Name *</label><input id="last_name" name="last_name" type="text" value="Doe" data-qa="last-name"></div>
+      <div class="field"><label for="email">Email *</label><input id="email" name="email" type="email" value="jane.doe@gmail.com" placeholder="you@company.invalid" data-qa="email"></div>
+      <div class="field"><label for="phone">Phone</label><input id="phone" name="phone" type="tel" placeholder="+1 (555) 123-4567" data-qa="phone"></div>
+      <div class="field"><label for="location">Current location</label><input id="location" name="location" type="text" placeholder="Jane Smith"></div>
+      <div class="field"><label for="resume">Resume/CV</label><input id="resume" name="resume" type="file" accept=".pdf,.doc"></div>
+      <div class="field"><label for="cover">Cover letter</label><textarea id="cover" name="cover_letter">Dear team, call me on 555 123 4567 or jane.doe@gmail.com</textarea></div>
+      <div class="field"><label for="country">Country</label><select id="country" name="country"><option value="">Select</option><option value="US" selected>United States</option><option value="DE">Germany</option></select></div>
+      <div class="field"><label><input type="checkbox" name="consent" value="yes" checked> I agree to the privacy policy</label></div>
+      <div class="hp"><label for="website">Website</label><input id="website" name="website" type="text" tabindex="-1" autocomplete="off"></div>
+      <div class="ghost"><label for="fax">Fax</label><input id="fax" name="fax" type="text"></div>
+      <div class="hidden"><input name="hidden_text" type="text"></div>
+      <iframe src="https://captcha.tracker.invalid/embed" title="reCAPTCHA" width="300" height="74" style="border:0"></iframe>
+      <button type="submit" id="submit_app" formaction="https://boards.tracker.invalid/submit">Submit application</button>
+    </form>
+  </div>
+</main>
+<script>
+  document.getElementById("apply-button").addEventListener("click", (event) => {
+    event.preventDefault()
+    document.getElementById("app-root").classList.remove("hidden")
+    document.getElementById("phone").value = "+1 555 123 4567"
+    document.getElementById("location").value = "Berlin"
+    fetch("https://api.tracker.invalid/event", { method: "POST", body: "apply" }).catch(() => undefined)
+  })
+  new Image().src = "https://pixel.tracker.invalid/p.gif?u=jane.doe@gmail.com"
+</script>
+</body>
+</html>
