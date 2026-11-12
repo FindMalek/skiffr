@@ -35,10 +35,10 @@ const outputSchema = z.object({
 })
 
 const SYSTEM = `You tailor an applicant's resume to a job posting by proposing a JSON Patch (RFC 6902) over the RESUME document.
-You may reorder, shorten and hide what is there. You may not write anything new: every piece of text you return must be copied from the resume block.
-- Headline and summary: build them only from whole sentences or clauses that already exist in the resume's headline, summary, bullets or skills, cut at a comma or full stop. You may reorder them and drop some. Never join two pieces with words of your own, never change a word, never paraphrase.
-- A number, percentage or amount must stay inside the clause it was written in, copied whole with its unit and its words. Never move a figure to another clause or entry.
-- Bullets of an entry: reorder, drop, or cut down to a stretch of that entry's own bullets. Use words from that entry only. Do not add bullets.
+You may reorder, drop and hide what is there. You may not write anything new: every piece of text you return is made only of whole clauses copied, word for word, from the resume block.
+- A clause is the part of a sentence between commas, semicolons, colons or full stops. Never cut a clause, never change a word, never join clauses with words of your own, never paraphrase.
+- Headline and summary: reorder or drop whole clauses of the existing headline and summary only.
+- Bullets of an entry: reorder or drop whole clauses of that entry's own bullets, or reorder and drop its bullets. Do not use clauses of another entry. Do not add bullets.
 - Skills: reorder the keywords of a group, or drop some. Do not move a keyword to another group. Add a keyword only if the profile block lists it as a skill.
 - Hide with hidden:true only. Never set anything to shown. Do not touch entries marked hidden.
 - Put what matches the posting first.

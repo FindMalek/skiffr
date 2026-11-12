@@ -214,7 +214,11 @@ function Ats({ before, after }: { before: CvAts; after: CvAts }) {
         </div>
       </div>
       <p className="text-muted-foreground text-xs">
-        A missing word is only worth adding if it is true for you. skiffr will not add it for you.
+        {after.score <= before.score
+          ? "Reordering and hiding can't add keywords, so the match stays the same or drops (a hidden entry's words no longer count). "
+          : "The match went up because a skill from your profile was added. "}
+        The copy is your resume reordered, trimmed and partly hidden, not rewritten, and not an ATS booster. A missing
+        word is only worth adding if it is true for you, and you do that in Reactive Resume.
       </p>
     </section>
   )

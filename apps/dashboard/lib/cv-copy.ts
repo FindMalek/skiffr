@@ -6,7 +6,8 @@ const REJECTIONS: Record<string, string> = {
   path_not_allowed: "touched a part of the resume that is never edited",
   op_not_allowed: "used an edit that is not allowed",
   bad_index: "pointed at something that does not exist",
-  invalid_value: "was not a valid edit (for example showing something hidden)",
+  invalid_value: "was not a valid edit",
+  hide_only: "tried to show something that is hidden (a copy can only hide)",
   unicode: "used hidden or look-alike characters",
   too_long: "was too long",
 }

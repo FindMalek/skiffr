@@ -127,6 +127,7 @@ export const CV_REJECTIONS = [
   "path_not_allowed",
   "bad_index",
   "invalid_value",
+  "hide_only",
   "unicode",
   "too_long",
   "invented_fact",

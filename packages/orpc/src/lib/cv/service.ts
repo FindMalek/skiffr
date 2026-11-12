@@ -66,9 +66,11 @@ export async function setBaseResume(db: Db, runtime: CvRuntime, userId: string, 
 
 /** Company and role, each cut to its share, so a very long one can't push the other out of the name. */
 export const copyNameOf = (company: string, title: string): string => {
-  const clean = (text: string) => squash(text.replace(/[\p{Cc}\p{Cf}]/gu, " "))
-  const name = `${clean(company).slice(0, 40)} - ${clean(title).slice(0, 55)}`.trim()
-  return name === "-" ? "Tailored resume" : name
+  const clean = (text: string, max: number) =>
+    squash(text.replace(/[\p{Cc}\p{Cf}]/gu, " "))
+      .slice(0, max)
+      .trim()
+  return [clean(company, 40), clean(title, 55)].filter(Boolean).join(" - ") || "Tailored resume"
 }
 
 interface Request {
@@ -135,14 +137,18 @@ export async function preview(request: Request & { model: LanguageModel; spend: 
   }
 }
 
+/** `spend` is called once the patch has passed every check, so a stale base or a patch with nothing left costs no copy. */
 export async function apply(
-  request: Request & { operations: readonly CvOperation[]; baseUpdatedAt: string },
+  request: Request & { operations: readonly CvOperation[]; baseUpdatedAt: string; spend: () => boolean },
 ): Promise<Preview & { resume: { id: string; name: string; url: string } }> {
   const result = await evaluate(request, () => request.operations)
   if (result.base.updatedAt !== request.baseUpdatedAt) throw new CvError("conflict")
   if (result.evaluation.resumeOps.length === 0) throw new CvError("bad_request")
+  if (!request.spend()) throw new CvError("rate_limited")
   const name = copyNameOf(request.job.company, request.job.title)
   const id = await result.client.copy(result.base.id, name)
+  // An instance that answers a copy with the base resume's own id would have the base patched, and trashed on failure.
+  if (id === result.base.id) throw new CvError("upstream")
   try {
     const copy = await result.client.get(id)
     await result.client.patch(copy.id, result.evaluation.resumeOps, copy.updatedAt)

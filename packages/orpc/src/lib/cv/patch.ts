@@ -12,7 +12,7 @@ import {
   type SkillView,
   sectionItems,
 } from "./resume"
-import { buildScope, hasUnicodeTrick, isCopied, normalize, type Scope, squash } from "./text"
+import { buildScope, clauseKeys, copyOf, hasUnicodeTrick, type Scope, squash } from "./text"
 
 export type Rejection = (typeof CV_REJECTIONS)[number]
 export interface Rejected {
@@ -54,10 +54,10 @@ function targetOf(path: string, op: string): Target | null {
 }
 
 /**
- * Where new text may come from, and nothing else does. The headline and the summary may copy from the visible headline,
- * summary, bullets and skills. A bullet may copy only from its own entry. A skill group may only reorder and drop its
- * own keywords, plus add what the profile lists as skills. Hidden entries, hidden sections and custom sections are
- * not in any of it: the applicant chose not to show them.
+ * Where new text may come from, and nothing else does. Text is only ever rebuilt from whole clauses. The headline and
+ * the summary may reuse the clauses of the existing headline and summary. A bullet may reuse the clauses of its own
+ * entry's bullets. A skill group may only reorder and drop its own keywords, plus add what the profile lists as
+ * skills. Hidden entries, hidden sections and custom sections are not in any of it: the applicant chose not to show them.
  */
 export interface Source {
   overall: Scope
@@ -72,32 +72,25 @@ const keyed = (list: readonly string[]) => new Map(list.map((entry) => [key(entr
 export function buildSource(view: ResumeView, profileSkills: readonly string[] = []): Source {
   const entries = new Map<number, Scope>()
   const skills = new Map<number, Map<string, string>>()
-  const units: string[] = [view.headline]
-  if (!view.summaryHidden) units.push(view.summary)
   for (const entry of view.experience) {
-    if (entry.hidden || !entry.bullets) continue
-    entries.set(entry.origin, buildScope(entry.bullets))
-    units.push(...entry.bullets)
+    if (!entry.hidden && entry.bullets) entries.set(entry.origin, buildScope(entry.bullets))
   }
-  for (const group of view.skills) {
-    if (group.hidden) continue
-    skills.set(group.origin, keyed(group.keywords))
-    units.push(...group.keywords)
-  }
-  return { overall: buildScope(units), entries, skills, profileSkills: keyed(profileSkills) }
+  for (const group of view.skills) if (!group.hidden) skills.set(group.origin, keyed(group.keywords))
+  const overall = buildScope([view.headline, ...(view.summaryHidden ? [] : [view.summary])])
+  return { overall, entries, skills, profileSkills: keyed(profileSkills) }
 }
 
 type Checked<T> = { ok: true; value: T } | { ok: false; reason: Rejection }
 const fail = (reason: Rejection): { ok: false; reason: Rejection } => ({ ok: false, reason })
 
-function checkText(value: unknown, max: number, scope: Scope, oneLine: boolean): Checked<string> {
+function checkText(value: unknown, max: number, scope: Scope, shape: "line" | "paragraphs"): Checked<string> {
   if (typeof value !== "string") return fail("invalid_value")
   if (hasUnicodeTrick(value)) return fail("unicode")
-  const folded = normalize(value)
-  const text = oneLine ? squash(folded) : folded.replace(/[ \t]+/g, " ").trim()
-  if (!text) return fail("invalid_value")
-  if (text.length > max) return fail("too_long")
-  return isCopied(text, scope) ? { ok: true, value: text } : fail("invented_fact")
+  if (!squash(value)) return fail("invalid_value")
+  if (value.length > max * 2) return fail("too_long")
+  const text = copyOf(value, scope, shape)
+  if (text === null) return fail("invented_fact")
+  return text.length > max ? fail("too_long") : { ok: true, value: text }
 }
 
 /** Keywords are stored as the applicant wrote them, so a symbol or a change of case can't come in with them. */
@@ -114,18 +107,19 @@ function checkKeywords(value: unknown, own: Map<string, string>, profile: Map<st
   return { ok: true, value: out }
 }
 
-/** Bullets may be reordered, dropped or cut down to stretches of the entry's own bullets. Never added, and never in other words. */
+/** Bullets may be reordered, dropped or rebuilt from whole clauses of the entry's own bullets. Never added, and never in other words. */
 function checkBullets(value: unknown, original: readonly string[], scope: Scope): Checked<string[]> {
   if (!Array.isArray(value) || value.some((entry) => typeof entry !== "string")) return fail("invalid_value")
   if (value.length === 0 || value.length > original.length) return fail("invalid_value")
   const next: string[] = []
   for (const entry of value as string[]) {
     if (hasUnicodeTrick(entry)) return fail("unicode")
-    const bullet = squash(entry)
-    if (!bullet) return fail("invalid_value")
-    if (bullet.length > BULLET_MAX) return fail("too_long")
+    const asked = squash(entry)
+    if (!asked) return fail("invalid_value")
+    if (asked.length > BULLET_MAX) return fail("too_long")
+    const bullet = original.includes(asked) ? asked : copyOf(asked, scope, "line")
+    if (bullet === null) return fail("invented_fact")
     if (next.includes(bullet)) return fail("invalid_value")
-    if (!original.includes(bullet) && !isCopied(bullet, scope)) return fail("invented_fact")
     next.push(bullet)
   }
   return { ok: true, value: next }
@@ -198,18 +192,24 @@ export function evaluatePatch(input: {
         refuse("path_not_allowed")
         continue
       }
-      const oneLine = target.kind === "headline"
-      const checked = checkText(op.value, oneLine ? HEADLINE_MAX : SUMMARY_MAX, source.overall, oneLine)
+      const headline = target.kind === "headline"
+      const checked = checkText(
+        headline && typeof op.value === "string" ? squash(op.value) : op.value,
+        headline ? HEADLINE_MAX : SUMMARY_MAX,
+        source.overall,
+        headline ? "line" : "paragraphs",
+      )
       if (!checked.ok) {
         refuse(checked.reason)
         continue
       }
-      if (view[target.kind] !== checked.value) {
+      const unchanged = clauseKeys(checked.value).join("|") === clauseKeys(view[target.kind]).join("|")
+      if (!unchanged) {
         view[target.kind] = checked.value
         accepted.push({ op: "replace", path: op.path, value: checked.value })
       }
     } else if (target.kind === "section") {
-      if (op.value !== true) refuse("invalid_value")
+      if (op.value !== true) refuse("hide_only")
       else if (!hasSection(view, target.name)) refuse("bad_index")
       else if (view.sections[target.name]?.hidden !== true) {
         view.sections[target.name] = { hidden: true }
@@ -235,7 +235,7 @@ export function evaluatePatch(input: {
         (entry) => entry.origin === item.origin,
       ) as SkillView | ExperienceView
       if (target.field === "hidden") {
-        if (op.value !== true) refuse("invalid_value")
+        if (op.value !== true) refuse("hide_only")
         else if (!item.hidden) {
           item.hidden = true
           accepted.push({ op: "replace", path: op.path, value: true })

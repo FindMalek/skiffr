@@ -332,12 +332,7 @@ test("hiding is one way: a model or a forged apply can't show a hidden section o
     as("ana", { model: reply(...unhide) }),
   )
   expect(preview.operations).toEqual([])
-  expect(preview.rejected.map((r) => r.reason)).toEqual([
-    "invalid_value",
-    "invalid_value",
-    "invented_fact",
-    "invented_fact",
-  ])
+  expect(preview.rejected.map((r) => r.reason)).toEqual(["hide_only", "hide_only", "invented_fact", "invented_fact"])
   expect(JSON.stringify(rr.hits)).not.toContain("Secret")
 
   await expect(
@@ -466,9 +461,56 @@ test("a key sealed for another purpose with the same server key does not open he
   expect(rr.hits.length).toBe(hits)
 })
 
+test("an empty company or role does not leave a dangling dash in the copy name", () => {
+  expect(copyNameOf("", "Dev")).toBe("Dev")
+  expect(copyNameOf("Co", " ")).toBe("Co")
+  expect(copyNameOf("", "")).toBe("Tailored resume")
+})
+
 test("a very long company or role can't push the other out of the copy name", () => {
   const name = copyNameOf("C".repeat(300), "Platform Engineer")
   expect(name.length).toBeLessThanOrEqual(100)
   expect(name.endsWith(" - Platform Engineer")).toBe(true)
   expect(copyNameOf("Initech", "R".repeat(300))).toContain("Initech - ")
+})
+
+test("a stale base or a patch with nothing left costs no copy, and an instance that answers a copy with the base id gets nothing patched or trashed", async () => {
+  const jobId = await ready("ana")
+  const preview = await call(
+    appRouter.cv.preview,
+    { jobId, description: POSTING },
+    as("ana", { model: reply(replace("/skills/0/hidden", true)) }),
+  )
+  const limited = mockCvRuntime(rr, { copiesPerHour: 1 })
+  const input = { jobId, description: POSTING, operations: preview.operations, baseUpdatedAt: preview.baseUpdatedAt }
+  const apply = (body: typeof input) => call(appRouter.cv.apply, body, as("ana", { cv: limited, model: null }))
+
+  await expect(apply({ ...input, baseUpdatedAt: "2000-01-01T00:00:00.000Z" })).rejects.toMatchObject({
+    code: "CONFLICT",
+  })
+  await expect(apply({ ...input, operations: [replace("/summary", "A PhD.")] })).rejects.toMatchObject({
+    code: "BAD_REQUEST",
+  })
+  rr.options.copyReturnsBase = true
+  const base = baseBefore()
+  await expect(apply(input)).rejects.toMatchObject({ code: "BAD_GATEWAY" })
+  expect(rr.resumes.get("base-1")).toEqual(base)
+  expect(rr.patches).toEqual([])
+  expect(rr.hits.some((hit) => hit.call.startsWith("DELETE"))).toBe(false)
+})
+
+test("the copy credit is spent only when a copy is made", async () => {
+  const jobId = await ready("ana")
+  const preview = await call(
+    appRouter.cv.preview,
+    { jobId, description: POSTING },
+    as("ana", { model: reply(replace("/skills/0/hidden", true)) }),
+  )
+  const limited = mockCvRuntime(rr, { copiesPerHour: 1 })
+  const input = { jobId, description: POSTING, operations: preview.operations, baseUpdatedAt: preview.baseUpdatedAt }
+  await expect(
+    call(appRouter.cv.apply, { ...input, baseUpdatedAt: "x" }, as("ana", { cv: limited, model: null })),
+  ).rejects.toMatchObject({ code: "CONFLICT" })
+  const applied = await call(appRouter.cv.apply, input, as("ana", { cv: limited, model: null }))
+  expect(applied.resume.id).toBe("copy-2")
 })

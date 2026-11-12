@@ -27,10 +27,10 @@ const withBullets = (data: Json, index: number, ...bullets: string[]) => {
   items(data, "experience")[index]!.description = `<ul>${bullets.map((b) => `<li><p>${b}</p></li>`).join("")}</ul>`
 }
 
-test("allowed edits pass: copied clauses, keyword order, bullet cuts, hiding, skill group order", () => {
+test("allowed edits pass: whole clauses reordered or dropped, keyword order, hiding, skill group order", () => {
   const evaluation = run(
-    replace("/headline", "TypeScript, Go"),
-    replace("/summary", "Serving 2M requests a day. Built the billing API in TypeScript and PostgreSQL."),
+    replace("/headline", "Strong in TypeScript and Go"),
+    replace("/summary", "Comfortable with Kafka. Backend engineer with 6 years building payment APIs."),
     replace("/skills/1/keywords", ["Kafka", "PostgreSQL", "Docker"]),
     replace("/experience/0/bullets", [BULLETS.acme[1], "Built the billing API in TypeScript and PostgreSQL"]),
     replace("/experience/1/hidden", true),
@@ -42,7 +42,7 @@ test("allowed edits pass: copied clauses, keyword order, bullet cuts, hiding, sk
 
   const out = patched(data, evaluation.resumeOps)
   const sections = out.sections as Record<string, { hidden: boolean; items: Array<Record<string, unknown>> }>
-  expect((out.basics as { headline: string }).headline).toBe("TypeScript, Go")
+  expect((out.basics as { headline: string }).headline).toBe("Strong in TypeScript and Go")
   expect(sections.skills?.items.map((item) => item.name)).toEqual(["Infrastructure", "Languages"])
   expect(sections.skills?.items[0]?.keywords).toEqual(["Kafka", "PostgreSQL", "Docker"])
   expect(sections.experience?.items[1]?.hidden).toBe(true)
@@ -51,13 +51,13 @@ test("allowed edits pass: copied clauses, keyword order, bullet cuts, hiding, sk
   expect(bullets?.bullets).toEqual([BULLETS.acme[1], "Built the billing API in TypeScript and PostgreSQL"])
   expect(sections.experience?.items[0]?.description).toContain(`<li><p>${BULLETS.acme[1]}</p></li>`)
   expect(htmlText((out.summary as { content: string }).content).split("\n")).toEqual([
-    "Serving 2M requests a day. Built the billing API in TypeScript and PostgreSQL.",
+    "Comfortable with Kafka. Backend engineer with 6 years building payment APIs.",
   ])
 })
 
 test("the base data is never touched by evaluating or applying a patch", () => {
   const before = structuredClone(data)
-  patched(data, run(replace("/headline", "TypeScript, Go")).resumeOps)
+  patched(data, run(replace("/headline", "Strong in TypeScript and Go")).resumeOps)
   expect(data).toEqual(before)
 })
 
@@ -74,6 +74,15 @@ const INVENTED: Array<[string, unknown]> = [
   ["a percent that was never there", replace("/summary", "Cut deploy time by 40%")],
   ["words from two clauses glued together", replace("/summary", "Backend engineer and built the billing API")],
   ["a paraphrase", replace("/summary", "Backend engineer creating payment interfaces in TypeScript and Go.")],
+  ["a clause lifted from a bullet into the summary", replace("/summary", "Serving 2M requests a day")],
+  [
+    "a clause lifted from a bullet into the headline",
+    replace("/headline", "Cut deploy time from 40 minutes to 8 with Docker and GitHub Actions"),
+  ],
+  [
+    "two entries' clauses joined",
+    replace("/summary", "Serving 2M requests a day, Wrote Go services on Kafka for order events"),
+  ],
   [
     "a reversed metric in a bullet",
     replace("/experience/0/bullets", ["Cut deploy time from 8 minutes to 40 with Docker and GitHub Actions."]),
@@ -170,7 +179,7 @@ test("hiding only goes one way: nothing can be shown again", () => {
     for (const value of [false, "false", 0, null, undefined]) {
       const evaluation = run({ op: "replace", path, value })
       expect(evaluation.resumeOps, `${path} ${String(value)}`).toEqual([])
-      expect(reasons(evaluation)).toEqual(["invalid_value"])
+      expect(reasons(evaluation)).toEqual([value === null || value === 0 ? "invalid_value" : "hide_only"])
     }
   }
   const out = patched(
@@ -236,7 +245,9 @@ test("skills only reorder and drop inside their own group, and add only what the
 })
 
 test("a headline stays on one line", () => {
-  expect(run(replace("/headline", "TypeScript,\n\nGo")).view.headline).toBe("TypeScript, Go")
+  expect(run(replace("/headline", "Strong in TypeScript and Go,\n\nComfortable with Kafka")).view.headline).toBe(
+    "Strong in TypeScript and Go, comfortable with Kafka",
+  )
 })
 
 test("one bad operation drops only itself", () => {
@@ -282,10 +293,15 @@ test.each(TRICKS)("%s is refused", (_name, headline, reason) => {
   expect(reasons(run(replace("/headline", headline)))).toEqual([reason as never])
 })
 
-test("full width digits fold to the plain number, so a copied figure still matches and is stored plain", () => {
-  const evaluation = run(replace("/summary", "Serving ２M requests a day."))
+test("full width digits fold to the plain number, so a copied figure still matches the source and changes nothing", () => {
+  const evaluation = run(
+    replace(
+      "/summary",
+      "Backend engineer with \uff16 years building payment APIs.\nStrong in TypeScript and Go, comfortable with Kafka.",
+    ),
+  )
   expect(evaluation.rejected).toEqual([])
-  expect(evaluation.view.summary).toBe("Serving 2M requests a day.")
+  expect(evaluation.operations).toEqual([])
 })
 
 test("the posting is never a source of facts: nothing in it can widen what is allowed", () => {
@@ -317,4 +333,53 @@ test("applying the compiled operations to the data is the same as the view the c
     ["Globex", false],
     ["Secret Corp", true],
   ])
+})
+
+test("a clause is never cut, so a negation or a hedge can't be dropped", () => {
+  const { run: variant } = setup((d) => {
+    withBullets(
+      d,
+      0,
+      "Did not lead the platform team",
+      "Assisted in building the reporting service, helped lead the Kafka migration",
+      "Worked with non-technical stakeholders; no experience with Kubernetes",
+    )
+    ;(d.summary as { content: string }).content =
+      "<p>Backend engineer, did not lead the migration. Supported the lead engineer on the rollout.</p>"
+  })
+  for (const cut of [
+    "lead the platform team",
+    "building the reporting service",
+    "lead the Kafka migration",
+    "technical stakeholders",
+    "experience with Kubernetes",
+    "Assisted in building",
+  ]) {
+    const evaluation = variant(replace("/experience/0/bullets", [cut]))
+    expect(reasons(evaluation), cut).toEqual(["invented_fact"])
+  }
+  for (const cut of ["lead the migration", "the lead engineer on the rollout", "experience with Kubernetes"]) {
+    expect(reasons(variant(replace("/summary", cut))), cut).toEqual(["invented_fact"])
+  }
+  // whole clauses still reorder and drop
+  const whole = variant(
+    replace("/experience/0/bullets", [
+      "helped lead the Kafka migration, Assisted in building the reporting service",
+      "Did not lead the platform team",
+    ]),
+    replace("/summary", "Supported the lead engineer on the rollout."),
+  )
+  expect(whole.rejected).toEqual([])
+  expect(whole.view.summary).toBe("Supported the lead engineer on the rollout.")
+})
+
+test("what is stored is the source's wording, never the model's symbols, case or brackets", () => {
+  const evaluation = run(
+    replace("/headline", "COMFORTABLE WITH KAFKA \u2605\u2605\u2605\u2605\u2605"),
+    replace("/summary", "<comfortable with kafka>. STRONG IN TYPESCRIPT AND GO."),
+  )
+  expect(evaluation.rejected).toEqual([])
+  expect(evaluation.view.headline).toBe("comfortable with Kafka")
+  expect(evaluation.view.summary).toBe("Comfortable with Kafka. Strong in TypeScript and Go.")
+  expect(reasons(run(replace("/summary", "Comfortable with \u2605 Kafka")))).toEqual(["invented_fact"])
 })

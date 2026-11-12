@@ -34,6 +34,8 @@ const MEDIA_TYPES: ReadonlySet<string> = new Set([
   "application/feed+json",
   "application/ld+json",
 ])
+/** The one thing a call may delete: a single resume by id. */
+const DELETE_PATH = /^\/api\/openapi\/resumes\/[A-Za-z0-9_-]{1,100}$/
 const NO_BYTES = Buffer.alloc(0)
 const REDIRECTS: ReadonlySet<number> = new Set([301, 302, 303, 307, 308])
 const RETRY_AFTER_MAX_MS = 24 * 60 * 60 * 1000
@@ -324,6 +326,9 @@ export async function fetchPage(deps: GuardDeps, request: PageRequest): Promise<
   const limits = { ...FETCH_LIMITS, ...deps.limits }
   const deadline = (deps.now ?? Date.now)() + limits.totalMs
   let url = checkUrl(request.url)
+  if (request.call?.method === "DELETE" && (!DELETE_PATH.test(url.pathname) || url.search || url.hash)) {
+    throw new FetchError("blocked")
+  }
   for (let redirects = 0; ; redirects++) {
     const outcome = await hop(deps, url, request, limits, deadline)
     if (!("redirect" in outcome)) return outcome

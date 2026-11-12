@@ -1,5 +1,6 @@
 import { afterEach, expect, test } from "bun:test"
-import { type MockSite, startMockSite } from "../watch/test-support"
+import { fetchPage } from "../watch/guard"
+import { type MockSite, startMockSite, testTransport } from "../watch/test-support"
 import { reactiveResume } from "./client"
 import { CvError } from "./errors"
 import { API_KEY, mockCvRuntime, RR_URL, startMockRr } from "./test-support"
@@ -97,6 +98,45 @@ test("a patch outside the allowlist is refused before any call", async () => {
       client.patch("base-1", [{ op: "replace", path: "/metadata/template", value: "x" }], "t"),
     ).rejects.toBeInstanceOf(CvError)
     expect(rr.hits).toEqual([])
+  } finally {
+    await rr.close()
+  }
+})
+
+test("a delete is only ever one resume by id: the guard refuses any other path, and a hostile id never leaves the client", async () => {
+  const rr = await startMockRr()
+  try {
+    const runtime = mockCvRuntime(rr)
+    const call = (path: string) =>
+      fetchPage(
+        { transport: testTransport(rr) },
+        {
+          url: `${RR_URL}${path}`,
+          accept: "application/json",
+          call: { method: "DELETE", headers: { "x-api-key": API_KEY }, media: [""] },
+        },
+      )
+    for (const path of [
+      "/api/openapi/resumes",
+      "/api/openapi/resumes/",
+      "/api/openapi/resumes/base-1/pdf",
+      "/api/openapi/resumes/base-1?all=1",
+      "/api/openapi/resumes/base-1#x",
+      "/api/openapi/other/base-1",
+      "/api/openapi/resumes/%2e%2e/x",
+    ]) {
+      await expect(call(path), path).rejects.toMatchObject({ kind: "blocked" })
+    }
+    expect(rr.hits).toEqual([])
+
+    const client = reactiveResume(runtime, connection, "ana")
+    for (const id of ["../base-1", "a/b", "base-1/pdf", "..", "x".repeat(101), "a b"]) {
+      await expect(client.trash(id), id).rejects.toBeInstanceOf(CvError)
+    }
+    expect(rr.hits).toEqual([])
+
+    await client.trash("base-1")
+    expect(rr.hits.map((hit) => hit.call)).toEqual(["DELETE /api/openapi/resumes/base-1"])
   } finally {
     await rr.close()
   }

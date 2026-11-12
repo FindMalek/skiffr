@@ -29,7 +29,7 @@ export interface MockRr {
   hits: Array<{ call: string; key: string | undefined }>
   /** Bodies of the patch calls. */
   patches: Array<{ id: string; operations: PatchOp[]; expectedUpdatedAt: string }>
-  options: { readOnly: boolean; noCopies: boolean; failPatch: boolean; failDelete: boolean }
+  options: { readOnly: boolean; noCopies: boolean; failPatch: boolean; failDelete: boolean; copyReturnsBase: boolean }
   close(): Promise<void>
 }
 
@@ -53,7 +53,8 @@ export function sampleData(): Json {
     summary: {
       title: "",
       hidden: false,
-      content: "<p>Backend engineer with 6 years building payment APIs in TypeScript and Go.</p>",
+      content:
+        "<p>Backend engineer with 6 years building payment APIs.</p><p>Strong in TypeScript and Go, comfortable with Kafka.</p>",
     },
     sections: {
       skills: {
@@ -134,7 +135,7 @@ export async function startMockRr(resumes: MockResume[] = [sampleResume("base-1"
   const store = new Map(resumes.map((resume) => [resume.id, resume]))
   const hits: MockRr["hits"] = []
   const patches: MockRr["patches"] = []
-  const options = { readOnly: false, noCopies: false, failPatch: false, failDelete: false }
+  const options = { readOnly: false, noCopies: false, failPatch: false, failDelete: false, copyReturnsBase: false }
   const sockets = new Set<net.Socket>()
 
   const server = http.createServer(async (request, response) => {
@@ -171,6 +172,7 @@ export async function startMockRr(resumes: MockResume[] = [sampleResume("base-1"
       return send(200, "%PDF-1.4\nmock resume\n%%EOF", "application/pdf")
     if (request.method === "POST" && (action === "copies" || action === "duplicate")) {
       if (options.noCopies && action === "copies") return send(404, { code: "NOT_FOUND" })
+      if (options.copyReturnsBase) return send(200, resume.id)
       const copyId = `copy-${store.size + 1}`
       store.set(copyId, {
         ...structuredClone(resume),

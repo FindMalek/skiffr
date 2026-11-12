@@ -45,49 +45,68 @@ export function hasUnicodeTrick(text: string): boolean {
 
 /** A clause ends at a comma (not inside a number like 1,000), `;`, `:`, a line break or a sentence end. */
 const CLAUSE_END = /(?<!\p{Nd}),|,(?!\p{Nd})|[;:\n]+|[.!?]+(?=\s|$)/u
+const SENTENCE_END = /[.!?]+(?=\s|$)/u
 const EDGE = /^[^\p{L}\p{N}$\u20ac\u00a3\u00a5]+|[^\p{L}\p{N}%+#]+$/gu
-const FIGURE = /[\p{N}$\u20ac\u00a3\u00a5%]/u
 
-/** The clauses of a text in the form they are compared in: folded, lowercase, one space, no edge punctuation. */
-export function clausesOf(text: string): string[] {
-  return comparable(text.replace(/\n+/g, ";"))
+/** What a clause is compared by: folded, lowercase, one space, no punctuation or symbol at its edges. */
+const keyOf = (clause: string): string => comparable(clause).replace(/\s+/g, " ").replace(EDGE, "").trim()
+
+export interface Clause {
+  /** The clause as the source wrote it. */
+  raw: string
+  key: string
+}
+
+export function clausesOf(text: string): Clause[] {
+  return normalize(text.replace(/\n+/g, " ; "))
+    .replace(INVISIBLE, " ")
     .split(CLAUSE_END)
-    .map((clause) => clause.replace(/\s+/g, " ").replace(EDGE, "").trim())
-    .filter(Boolean)
+    .map((piece) => {
+      const raw = piece.replace(/\s+/g, " ").trim()
+      return { raw, key: keyOf(raw) }
+    })
+    .filter((clause) => clause.key.length > 0)
 }
 
-/** What a piece of new text may be copied from: whole clauses, and the words of each clause in order. */
-export interface Scope {
-  whole: Set<string>
-  words: string[][]
-}
+/** The whole clauses a new text may be made of, by comparison key, each with the source's own wording. */
+export type Scope = Map<string, string>
 
 export function buildScope(units: readonly string[]): Scope {
-  const clauses = units.flatMap(clausesOf)
-  return { whole: new Set(clauses), words: clauses.map((clause) => clause.match(TOKEN) ?? []) }
+  const scope: Scope = new Map()
+  for (const unit of units) for (const { raw, key } of clausesOf(unit)) if (!scope.has(key)) scope.set(key, raw)
+  return scope
 }
 
-const hasRun = (haystack: readonly string[], needle: readonly string[]): boolean => {
-  for (let at = 0; at + needle.length <= haystack.length; at++) {
-    if (needle.every((word, i) => haystack[at + i] === word)) return true
-  }
-  return false
-}
+const capital = (text: string): string => text.replace(/^\p{Ll}/u, (letter) => letter.toUpperCase())
 
 /**
- * Whether every clause of `text` is the applicant's own. A clause with a number, a percent or a currency sign must be
- * copied whole, so a figure keeps its unit, its words and its entry. Any other clause may be copied whole or be a
- * stretch of two or more words from inside one clause, in the same order. Nothing is rewritten and no word is added.
+ * Rebuilds `text` from the source's own clauses, or null if any clause of it is not one. Only whole clauses count: a
+ * clause is never cut, so a "not", "no" or "assisted" can't be dropped and a figure keeps its unit, its words and its
+ * entry. Clauses can be dropped and reordered. What comes back is the source's wording, so a symbol, a change of case
+ * or an angle bracket from the model never makes it in. `paragraphs` keeps sentences (with a full stop) and lines;
+ * `line` joins everything into one line with commas.
  */
-export function isCopied(text: string, scope: Scope): boolean {
-  const clauses = clausesOf(text)
-  if (clauses.length === 0) return false
-  return clauses.every((clause) => {
-    if (scope.whole.has(clause)) return true
-    if (FIGURE.test(clause)) return false
-    const words = clause.match(TOKEN) ?? []
-    return words.length >= 2 && scope.words.some((source) => hasRun(source, words))
-  })
+export function copyOf(text: string, scope: Scope, shape: "line" | "paragraphs"): string | null {
+  const lines: string[] = []
+  for (const line of normalize(text).split(/\n+/)) {
+    const sentences: string[] = []
+    for (const sentence of line.split(SENTENCE_END)) {
+      const parts: string[] = []
+      for (const { key } of clausesOf(sentence)) {
+        const raw = scope.get(key)
+        if (raw === undefined) return null
+        parts.push(raw)
+      }
+      if (parts.length > 0) sentences.push(parts.join(", "))
+    }
+    if (sentences.length > 0)
+      lines.push(shape === "paragraphs" ? sentences.map((s) => `${capital(s)}.`).join(" ") : sentences.join(", "))
+  }
+  if (lines.length === 0) return null
+  return shape === "paragraphs" ? lines.join("\n") : lines.join(", ")
 }
+
+/** The clauses of a text as a list of keys, to tell whether two texts say the same. */
+export const clauseKeys = (text: string): string[] => clausesOf(text).map((clause) => clause.key)
 
 export const squash = (text: string): string => normalize(text).replace(/\s+/g, " ").trim()

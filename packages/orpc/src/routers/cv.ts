@@ -231,7 +231,6 @@ export const cvRouter = {
       const runtime = needCv(context)
       if (patchTooLarge(input.operations)) throw new ORPCError("BAD_REQUEST", { message: "That patch is too large." })
       const target = await jobOf(context, input.jobId)
-      spend(runtime.copies, context)
       const result = await guard("cv.apply", () =>
         apply({
           db: context.db,
@@ -241,6 +240,7 @@ export const cvRouter = {
           description: input.description,
           operations: input.operations,
           baseUpdatedAt: input.baseUpdatedAt,
+          spend: () => runtime.copies.take(context.user.id, context.now()),
         }),
       )
       return {
