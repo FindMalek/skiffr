@@ -14,7 +14,8 @@ RUN pnpm install --frozen-lockfile
 COPY --from=pruner /app/out/full/ .
 ARG TURBO_API
 ARG TURBO_TEAM
-ENV NEXT_TELEMETRY_DISABLED=1
+ARG WEB_URL
+ENV NEXT_TELEMETRY_DISABLED=1 WEB_URL=$WEB_URL
 RUN --mount=type=secret,id=turbo_token,env=TURBO_TOKEN pnpm turbo build --filter=web
 
 FROM node:24-alpine AS runner

@@ -26,6 +26,10 @@ if (!args.domain) {
 
 const apply = args.apply
 const online = Boolean(process.env.DOKPLOY_URL && process.env.DOKPLOY_TOKEN)
+if (apply && !online) {
+  console.error("--apply needs DOKPLOY_URL and DOKPLOY_TOKEN in the environment")
+  process.exit(1)
+}
 const hosts = hostsFor(args.domain)
 const url = (key) => `https://${hosts[key]}`
 

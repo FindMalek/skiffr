@@ -68,3 +68,7 @@ It creates the `skiffr` project, a postgres on `pgvector/pgvector:pg17` (its use
 `DOKPLOY_URL`, `DOKPLOY_TOKEN` are the same settings the PR previews use.
 
 Back up the database from Dokploy (Backups tab of the postgres service) to an S3 destination. The `backup` workflow only works against a database that is reachable from GitHub.
+
+### Rollback
+
+A deploy that dies in its first seconds keeps the old container (Dokploy services start first and roll back on failure). To go back to an older version set the previous `sha-` tag on the application in Dokploy, or run the workflow again on an older commit. A bad migration is not rolled back.
