@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { atsFromCanonicalId, canonicalizeJob, canonicalJobId, JOB_VENDORS } from "./canonical-job"
+import { atsFromCanonicalId, canonicalizeJob, canonicalJobId, isBoardHost, JOB_VENDORS } from "./canonical-job"
 import { sha256Hex } from "./sha256"
 
 /**
@@ -441,4 +441,16 @@ test("an unparsable or non-web link still gets a stable id", () => {
   expect(id("not a url")).toBe("url:not a url")
   expect(id("  NOT a URL ")).toBe("url:not a url")
   expect(id("x".repeat(500)).length).toBeLessThanOrEqual(200)
+})
+
+test("a board host is its own domain or a subdomain of it, never a lookalike", () => {
+  expect(["uk.indeed.com", "www.indeed.co.uk", "Indeed.com."].map((host) => isBoardHost("indeed", host))).toEqual([
+    true,
+    true,
+    true,
+  ])
+  for (const host of ["indeed.xyz", "evil.indeed.cc", "indeed.com.evil.example", "notindeed.com"])
+    expect(isBoardHost("indeed", host), host).toBe(false)
+  expect(isBoardHost("wellfound", "angel.co")).toBe(true)
+  expect(isBoardHost("glassdoor", "glassdoor.tk")).toBe(false)
 })

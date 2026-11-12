@@ -7,6 +7,8 @@ const schema = z.object({
   WEB_URL: z.url().default("http://localhost:3000"),
   API_PUBLIC_URL: z.url().default("http://localhost:3001"),
   DASHBOARD_URL: z.url().default("http://localhost:3002"),
+  /** The docs site, for links from the dashboard. */
+  DOCS_URL: z.url().optional(),
 })
 
 export const nextEnv = () => parseEnv(schema)

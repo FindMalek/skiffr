@@ -36,6 +36,8 @@ There is one `.env` at the repo root. Every app loads it, and `packages/env` val
 | `ANTHROPIC_API_KEY` | only if `AI_MODEL` points at an `anthropic:` model |
 | `EXTENSION_ORIGINS` | optional, comma separated `chrome-extension://<id>` origins allowed to call the api. Unset allows any extension holding a valid token |
 
+Gmail job emails (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GMAIL_ENCRYPTION_KEY` and friends) are optional and described in [Gmail job emails](/docs/gmail).
+
 What each provider receives is listed in [privacy and data flow](/docs/privacy).
 
 Keys for modules you left out of the project are not in `.env.example`. Adding a key means adding it to the zod schema in `packages/env` first.

@@ -7,6 +7,7 @@ import type { Auth } from "@skiffr/auth"
 import { appRouter, bearerSecret, createContext, type Services } from "@skiffr/orpc"
 import { sql } from "drizzle-orm"
 import { type Handler, withExtensionCors } from "./cors"
+import { GMAIL_ROUTES, handleGmail } from "./gmail"
 import { withSecurityHeaders } from "./headers"
 
 export type { Handler } from "./cors"
@@ -25,12 +26,13 @@ type Interceptors = NonNullable<NonNullable<ConstructorParameters<typeof RPCHand
  *   /rpc/*        oRPC for web + dashboard (cookie sessions need `x-csrf-token: orpc`) and the extension (bearer token, CORS for its origin)
  *   /v1/*         the same procedures as REST, docs at /v1/docs, spec at /v1/openapi.json
  *   /files/<key>  redirect to a short-lived url for an uploaded file
+ *   /gmail/connect, /gmail/callback  the Google consent for the Gmail job import (cookie session only, reached through the dashboard proxy)
  *   /telegram/webhook  Telegram bot updates (secret header checked)
  *   /health       for Dokploy and uptime checks
  */
 export function createServer(
   services: Services & { auth: Auth },
-  opts: { publicUrl: string; extensionOrigins?: string[] },
+  opts: { publicUrl: string; dashboardUrl?: string; extensionOrigins?: string[] },
 ) {
   const interceptors: Interceptors = []
   const wrappers: Array<(next: Handler) => Handler> = []
@@ -61,6 +63,7 @@ export function createServer(
       url.pathname = `/api${pathname}`
       return services.auth.handler(new Request(url, request))
     }
+    if (GMAIL_ROUTES.has(pathname)) return handleGmail(request, services, opts.dashboardUrl)
     if (pathname === "/health") {
       const db = await services.db
         .execute(sql`select 1`)

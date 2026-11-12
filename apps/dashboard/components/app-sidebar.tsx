@@ -20,6 +20,7 @@ import {
   LayoutDashboardIcon,
   ListChecksIcon,
   LogOutIcon,
+  MailIcon,
   NotebookPenIcon,
   PuzzleIcon,
   SettingsIcon,
@@ -44,8 +45,18 @@ const NAV: { href: Route; label: string; icon: typeof LayoutDashboardIcon; admin
   { href: "/answers", label: "Answers", icon: ListChecksIcon },
   { href: "/extension", label: "Extension", icon: PuzzleIcon },
   { href: "/users", label: "Users", icon: UsersIcon, admin: true },
+  { href: "/settings/gmail", label: "Gmail", icon: MailIcon },
   { href: "/settings", label: "Settings", icon: SettingsIcon },
 ]
+
+/** The most specific nav entry wins, so `/settings/gmail` doesn't also light up Settings. */
+function isActive(href: string, pathname: string): boolean {
+  if (href === "/") return pathname === "/"
+  const owns = (candidate: string) => pathname === candidate || pathname.startsWith(`${candidate}/`)
+  return (
+    owns(href) && !NAV.some((other) => other.href !== href && other.href.startsWith(`${href}/`) && owns(other.href))
+  )
+}
 
 export function AppSidebar({ me }: { me: Me }) {
   const pathname = usePathname()
@@ -73,7 +84,7 @@ export function AppSidebar({ me }: { me: Me }) {
                 <SidebarMenuItem key={item.href}>
                   <SidebarMenuButton
                     tooltip={item.label}
-                    isActive={item.href === "/" ? pathname === "/" : pathname.startsWith(item.href)}
+                    isActive={isActive(item.href, pathname)}
                     render={<Link href={item.href} />}
                   >
                     <item.icon />

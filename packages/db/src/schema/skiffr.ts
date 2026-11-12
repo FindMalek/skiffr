@@ -3,6 +3,8 @@ import {
   EMBEDDING_DIMENSIONS,
   FIELD_EVENT_OUTCOMES,
   FIELD_EVENT_SOURCES,
+  GMAIL_ACCOUNT_STATUSES,
+  GMAIL_MESSAGE_OUTCOMES,
 } from "@skiffr/common/constants"
 import type { ProfileData, ProfileFields, RecordOutput, SiteFieldMap } from "@skiffr/common/schemas"
 import { getTableColumns } from "drizzle-orm"
@@ -35,6 +37,8 @@ export const answerStatus = pgEnum("answer_status", ANSWER_STATUSES)
 export const fieldEventSource = pgEnum("field_event_source", FIELD_EVENT_SOURCES)
 export const fieldEventOutcome = pgEnum("field_event_outcome", FIELD_EVENT_OUTCOMES)
 export const jobStatus = pgEnum("job_status", ["queued", "applied", "skipped"])
+export const gmailAccountStatus = pgEnum("gmail_account_status", GMAIL_ACCOUNT_STATUSES)
+export const gmailMessageOutcome = pgEnum("gmail_message_outcome", GMAIL_MESSAGE_OUTCOMES)
 export const applicationStatus = pgEnum("application_status", [
   "applied",
   "responded",
@@ -226,4 +230,93 @@ export const apiToken = pgTable(
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
   },
   (t) => [index("api_token_user_idx").on(t.userId)],
+)
+
+/**
+ * The user's connected Gmail mailbox, one per user and one skiffr user per mailbox. `refresh_token_enc` is the refresh token
+ * sealed with AES-256-GCM (see `lib/gmail/crypto.ts`): it is never selected into a response and never logged.
+ */
+export const gmailAccount = pgTable(
+  "gmail_account",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: userId().unique(),
+    email: text("email").notNull().unique(),
+    refreshTokenEnc: text("refresh_token_enc").notNull(),
+    scopes: text("scopes").notNull(),
+    status: gmailAccountStatus("status").notNull().default("active"),
+    /** Id of the `skiffr/jobs` label in this mailbox. */
+    labelId: text("label_id"),
+    /** Addresses (`jobs@site.com`) and domains (`@site.com`) whose unread mail is read. */
+    senders: jsonb("senders").$type<string[]>().notNull().default([]),
+    lastSyncAt: timestamp("last_sync_at", { withTimezone: true }),
+    /** A fixed code (`auth`, `rate_limited`, ...), never a message from Google or anything from an email. */
+    lastError: text("last_error"),
+    /** Backoff: the scheduler leaves the account alone until then. */
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }),
+    /** Held while a sync runs, so two replicas or a click and the scheduler never run one mailbox at once. */
+    leaseUntil: timestamp("lease_until", { withTimezone: true }),
+    lastManualSyncAt: timestamp("last_manual_sync_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("gmail_account_status_idx").on(t.status)],
+)
+
+/**
+ * Every email already looked at, so a message is read once whatever happens next. It holds ids and counts only: no
+ * subject, sender or body. `modified_at` stays null until the mailbox was tidied (read, out of the inbox, labelled).
+ */
+export const gmailMessage = pgTable(
+  "gmail_message",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: userId(),
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => gmailAccount.id, { onDelete: "cascade" }),
+    googleMessageId: text("google_message_id").notNull(),
+    /** `linkedin`, `indeed`, ... or `other`: the job `source` is `gmail:<provider>`. */
+    provider: text("provider").notNull(),
+    outcome: gmailMessageOutcome("outcome").notNull(),
+    jobsFound: integer("jobs_found").notNull().default(0),
+    jobsNew: integer("jobs_new").notNull().default(0),
+    processedAt: timestamp("processed_at", { withTimezone: true }).notNull().defaultNow(),
+    modifiedAt: timestamp("modified_at", { withTimezone: true }),
+  },
+  (t) => [
+    unique("gmail_message_user_message_unique").on(t.userId, t.googleMessageId),
+    index("gmail_message_account_processed_idx").on(t.accountId, t.processedAt.desc()),
+  ],
+)
+
+/** Which jobs a message added to the queue, for the "imported from" list. */
+export const gmailMessageJob = pgTable(
+  "gmail_message_job",
+  {
+    messageId: uuid("message_id")
+      .notNull()
+      .references(() => gmailMessage.id, { onDelete: "cascade" }),
+    jobId: uuid("job_id")
+      .notNull()
+      .references(() => job.id, { onDelete: "cascade" }),
+  },
+  (t) => [primaryKey({ columns: [t.messageId, t.jobId] })],
+)
+
+/** A consent flow in progress: single use (deleted when the callback consumes it) and short lived. */
+export const gmailOauthState = pgTable(
+  "gmail_oauth_state",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: userId(),
+    /** sha-256 of the random part of `state`: the state itself is never stored. */
+    stateHash: text("state_hash").notNull().unique(),
+    /** The PKCE verifier, sealed like the refresh token. */
+    codeVerifierEnc: text("code_verifier_enc").notNull(),
+    returnTo: text("return_to").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("gmail_oauth_state_user_idx").on(t.userId)],
 )

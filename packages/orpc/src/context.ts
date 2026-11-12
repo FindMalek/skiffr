@@ -2,7 +2,14 @@ import type { Auth, Session } from "@skiffr/auth"
 import type { Db } from "@skiffr/db"
 import type { Storage } from "@skiffr/storage"
 import type { EmbeddingModel, LanguageModel } from "ai"
+import type { GmailRuntime, TokenCache } from "./lib/gmail"
 import { bearerSecret, type TokenAuth, TokenStoreError, tokenErrorFields, verifyToken } from "./lib/tokens"
+
+/** Gmail import, present only when the Google client and the encryption key are configured. */
+export interface GmailService {
+  runtime: GmailRuntime
+  tokens: TokenCache
+}
 
 /** Everything procedures need, built once by the api at startup (and by tests with their own). */
 export interface Services {
@@ -19,6 +26,7 @@ export interface Services {
   model: LanguageModel | null
   /** Null without an OpenAI key: lookup then skips the similarity step and writes skip embeddings. */
   embeddingModel: EmbeddingModel | null
+  gmail?: GmailService | null
 }
 
 /**

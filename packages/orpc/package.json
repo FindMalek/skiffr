@@ -10,7 +10,10 @@
     "./flags": "./src/flags.tsx",
     "./react": "./src/react.tsx",
     "./server": "./src/server-client.ts",
-    "./proxy": "./src/proxy.ts"
+    "./proxy": "./src/proxy.ts",
+    "./gmail": "./src/lib/gmail/index.ts",
+    "./gmail-test": "./src/lib/gmail/test-support.ts",
+    "./gmail-mock": "./src/lib/gmail/mock-google.ts"
   },
   "scripts": {
     "check-types": "tsc --noEmit",
@@ -26,6 +29,7 @@
     "@orpc/tanstack-query": "catalog:",
     "@tanstack/react-query": "catalog:",
     "drizzle-orm": "catalog:",
+    "htmlparser2": "catalog:",
     "zod": "catalog:",
     "@skiffr/storage": "workspace:*",
     "ai": "catalog:"
