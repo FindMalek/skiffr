@@ -124,7 +124,9 @@ test("urls that aren't http(s) are rejected on jobs, sources and profile links",
   await expect(call(appRouter.jobs.create, { ...POSTING, url: bad }, ana())).rejects.toMatchObject({
     code: "BAD_REQUEST",
   })
-  await expect(call(appRouter.jobSources.create, { url: "file:///etc/passwd" }, ana())).rejects.toMatchObject({
+  await expect(
+    call(appRouter.jobSources.create, { url: "file:///etc/passwd", label: "x" }, ana()),
+  ).rejects.toMatchObject({
     code: "BAD_REQUEST",
   })
   await expect(call(appRouter.profile.upsert, { data: { links: { github: bad } } }, ana())).rejects.toMatchObject({
@@ -196,19 +198,23 @@ test("removing an application puts its job back in the queue", async () => {
   expect(back?.status).toBe("queued")
 })
 
-test("a watched careers page is saved once however the url is written, and stamped when checked", async () => {
-  const source = await call(appRouter.jobSources.create, { url: "https://Acme.dev/careers/#open" }, ana())
-  expect(source).toMatchObject({ url: "https://acme.dev/careers", lastCheckedAt: null })
-  expect((await call(appRouter.jobSources.create, { url: "https://acme.dev/careers" }, ana())).id).toBe(source.id)
-  const checked = await call(appRouter.jobSources.markChecked, { id: source.id }, ana())
-  expect(checked.lastCheckedAt).toEqual(NOW)
+test("a watched careers page is saved once however the url is written", async () => {
+  const source = await call(
+    appRouter.jobSources.create,
+    { url: "https://Acme.dev/careers/#open", label: "Acme" },
+    ana(),
+  )
+  expect(source).toMatchObject({ url: "https://acme.dev/careers", label: "Acme", kind: "auto", lastCheckedAt: null })
+  expect((await call(appRouter.jobSources.create, { url: "https://acme.dev/careers", label: "Again" }, ana())).id).toBe(
+    source.id,
+  )
 })
 
 test("another user's rows are not found by any update or remove", async () => {
   const answer = await call(appRouter.answers.create, { rawLabel: "Own answer", value: "x" }, ana())
   const job = await call(appRouter.jobs.create, { ...POSTING, url: "https://jobs.acme.dev/own" }, ana())
   const application = await call(appRouter.applications.create, { jobId: job.id, ats: "lever" }, ana())
-  const source = await call(appRouter.jobSources.create, { url: "https://own.dev/careers" }, ana())
+  const source = await call(appRouter.jobSources.create, { url: "https://own.dev/careers", label: "Own" }, ana())
   const asBen = ben()
   const attempts: Array<() => Promise<unknown>> = [
     () => call(appRouter.answers.update, { id: answer.id, value: "y" }, asBen),
@@ -218,7 +224,7 @@ test("another user's rows are not found by any update or remove", async () => {
     () => call(appRouter.jobs.remove, { id: job.id }, asBen),
     () => call(appRouter.applications.update, { id: application.id, status: "offer" }, asBen),
     () => call(appRouter.applications.remove, { id: application.id }, asBen),
-    () => call(appRouter.jobSources.markChecked, { id: source.id }, asBen),
+    () => call(appRouter.jobSources.update, { id: source.id, enabled: false }, asBen),
     () => call(appRouter.jobSources.remove, { id: source.id }, asBen),
   ]
   for (const attempt of attempts) await expect(attempt()).rejects.toMatchObject({ code: "NOT_FOUND" })

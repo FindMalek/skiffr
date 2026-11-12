@@ -38,6 +38,8 @@ There is one `.env` at the repo root. Every app loads it, and `packages/env` val
 
 Gmail job emails (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GMAIL_ENCRYPTION_KEY` and friends) are optional and described in [Gmail job emails](/docs/gmail).
 
+Watching careers pages and feeds (`WATCH_SCHEDULER`, `WATCH_REFRESH_MINUTES`) needs no keys and is described in [Job sources](/docs/sources).
+
 What each provider receives is listed in [privacy and data flow](/docs/privacy).
 
 Keys for modules you left out of the project are not in `.env.example`. Adding a key means adding it to the zod schema in `packages/env` first.

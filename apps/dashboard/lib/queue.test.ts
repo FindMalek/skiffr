@@ -111,5 +111,6 @@ test("source names: known sources and gmail providers read plainly, anything els
   expect(sourceLabel("gmail:linkedin")).toBe("Gmail · LinkedIn")
   expect(sourceLabel("gmail:indeed")).toBe("Gmail · Indeed")
   expect(sourceLabel("gmail:somewhere")).toBe("Gmail · somewhere")
+  expect(sourceLabel("watch:Acme careers")).toBe("Watched · Acme careers")
   expect(sourceLabel("<b>x</b>")).toBe("<b>x</b>")
 })

@@ -1,0 +1,74 @@
+---
+title: Job sources
+description: Watch careers pages and feeds and queue the new postings.
+---
+
+skiffr can watch a careers page or a feed and put new postings in your queue. You add the address under **Sources** in the dashboard, give it a name, and the api fetches it about once an hour.
+
+## What you can watch
+
+| Address | How it is read |
+| --- | --- |
+| RSS, Atom or JSON Feed | the title and link of each item |
+| a Greenhouse, Lever, Ashby or Workable board | the board's public listing. Give the board address you would open in a browser (`boards.greenhouse.io/acme`, `jobs.lever.co/acme`, `jobs.ashbyhq.com/acme`, `apply.workable.com/acme`, `acme.workable.com`) and skiffr reads the vendor's public json for it |
+| any other web page | schema.org `JobPosting` data in the page when there is some, otherwise the links that look like a posting: on the page's own site or a known board, with a path like `/careers/<role>` and a title that is not navigation |
+
+A page that builds its list with JavaScript, or sits behind a login, gives nothing: skiffr reads the html the server sends and does not run scripts. Find the page's feed or its board address instead.
+
+Postings are queued with the source `watch:<name>` (the queue shows "Watched · name") and deduped by the same id the dashboard, the extension and Gmail use, so a job you also added by hand stays one row. skiffr remembers what it queued from a source: a job you delete does not come back on the next fetch.
+
+At most 100 new jobs are queued per fetch. A long board fills up over the next fetches. The first fetch of a source with many postings queues them all (up to that limit), so expect a burst.
+
+Removing a source stops the fetching. Jobs it already queued stay.
+
+## Limits
+
+| What | Limit |
+| --- | --- |
+| sources per user | 20 |
+| time between fetches of one source | `WATCH_REFRESH_MINUTES` (default 60, at least 15), longer after a failure (doubling, up to a day) |
+| **Run now** | once a minute per source, 6 in ten minutes per user |
+| fetches per user | 60 an hour |
+| requests to one host | one a second |
+| response | 2 MB on the wire and again after decompression, 20 seconds in total, 3 redirects |
+| postings read from one page | 500 |
+
+## Environment
+
+| Key | What it is |
+| --- | --- |
+| `WATCH_SCHEDULER` | `on` (default) or `off`. Off keeps the api from fetching on a schedule. **Run now** still works |
+| `WATCH_REFRESH_MINUTES` | minutes between fetches of one source, 15 to 1440, default 60 |
+
+With several api replicas, one of them (chosen with a Postgres advisory lock, like Gmail) runs the schedule, and the source being fetched is leased in the database so a click and the schedule never fetch it at once. `DATABASE_URL` must be a direct Postgres connection, not a transaction pooler.
+
+## Security model
+
+The server fetches addresses that users type in, so this is the part to read.
+
+- **Only public web pages.** The address must be `http` or `https` on port 80 or 443 and must not carry a username or password. Names such as `localhost`, `*.local`, `*.internal` and single-label hosts are refused. Address literals are read the way a browser reads them, so `2130706433`, `0x7f000001`, `0177.0.0.1` and `127.1` are all `127.0.0.1`, and refused.
+- **The name is resolved by skiffr, and every answer must be public.** A name that resolves to any private, loopback, link-local (`169.254.169.254`, the cloud metadata address), carrier-grade NAT (`100.64.0.0/10`), multicast, reserved or documentation range of IPv4, or outside global unicast in IPv6 (unique local `fc00::/7`, link-local, IPv4-mapped, NAT64, 6to4, Teredo), is refused as a whole, even if another answer is public.
+- **The connection goes to the address that was checked.** There is no second lookup between the check and the connect, so a name that answers differently the next time (dns rebinding) cannot send the request somewhere else.
+- **Every redirect starts over.** At most 3 hops, and each target goes through the same checks, resolution included.
+- **Bounded.** 2 MB on the wire and after decompression (a gzip bomb stops at the same number), a deadline for the whole fetch and an idle timeout (a slow server is cut), and only html, xml, rss, atom and json content types are accepted. Only `identity` and `gzip` encodings are asked for.
+- **Nothing identifying is sent.** One fixed user agent, `skiffr-watcher/1.0`, no cookies (none are sent, kept or read), no referrer, no authorization.
+- **Job links are stored, never opened.** Links found on a page must be plain `http(s)` links without credentials or internal hosts, and are only shown to you to click.
+- **Page text is untrusted.** Titles and company names lose all markup, entities, control and direction characters and are cut to 200 characters. They are shown as text, never as html.
+- **Parsing is bounded.** Pages are read with a streaming parser (`htmlparser2`) that builds no tree, so deep nesting costs nothing, at most 500 postings are kept, and JSON-LD blocks are capped in size, count and depth. A DOCTYPE with entities is never expanded.
+- **Per-user and per-host limits** and the source cap above keep one account from using the server to hammer a site.
+- **Session only.** The extension token can't call these routes.
+- **Logs** carry the source id, the step and the kind of failure, never an address, a header or any page content.
+
+What this does not cover: skiffr cannot stop a public site from serving a misleading posting, and anything reachable from the api's own network position through a public address (for example a public host that proxies into your network) is as reachable as it is to anyone. Run the api in a network where it can reach what it must and nothing more.
+
+## Why a source shows a problem
+
+| Code | Meaning |
+| --- | --- |
+| blocked | the address is not a public web page. It is retried once a day |
+| dns | the name does not resolve |
+| network, timeout, upstream | the site was unreachable, slow or had an error. Retried with a growing wait |
+| rate_limited | the site said 429. Its `Retry-After` is honored, up to a day |
+| not_found | 404 or 410 |
+| too_large, content_type | the response was over 2 MB, or not a web page or feed |
+| unparseable | a feed or board answered with something that is not one. A web page with no postings is not an error: it shows 0 postings |

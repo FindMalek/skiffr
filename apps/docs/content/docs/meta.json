@@ -1,3 +1,14 @@
 {
-  "pages": ["index", "setup", "environment", "structure", "scripts", "deploy", "learning", "gmail", "privacy"]
+  "pages": [
+    "index",
+    "setup",
+    "environment",
+    "structure",
+    "scripts",
+    "deploy",
+    "learning",
+    "gmail",
+    "sources",
+    "privacy"
+  ]
 }

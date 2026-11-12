@@ -49,6 +49,11 @@ const schema = z.object({
   GMAIL_SCHEDULER: z.enum(["on", "off"]).default("on"),
   GMAIL_SYNC_INTERVAL_MINUTES: z.coerce.number().int().min(1).max(1440).default(15),
 
+  /** `off` keeps the api from fetching watched job sources itself. "Run now" still works. */
+  WATCH_SCHEDULER: z.enum(["on", "off"]).default("on"),
+  /** How long a source waits between fetches when all goes well. */
+  WATCH_REFRESH_MINUTES: z.coerce.number().int().min(15).max(1440).default(60),
+
   AI_MODEL: z.string().default("groq:openai/gpt-oss-120b"),
   GROQ_API_KEY: optional,
   OPENAI_API_KEY: optional,

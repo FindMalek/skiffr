@@ -79,3 +79,22 @@ export const GMAIL_SENDER_MAX = 120
 export const GMAIL_LABEL = "skiffr/jobs"
 export const GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.modify"
 export const GMAIL_RECENT_MAX = 50
+export const WATCH_SOURCE_KINDS = ["auto", "greenhouse", "lever", "ashby", "workable", "feed", "html"] as const
+export const WATCH_SOURCE_STATUSES = ["pending", "ok", "error"] as const
+/** The fixed codes stored in `job_source.last_error`, shown to the user, and safe to log. */
+export const WATCH_SOURCE_ERRORS = [
+  "blocked",
+  "dns",
+  "network",
+  "timeout",
+  "too_large",
+  "content_type",
+  "not_found",
+  "rate_limited",
+  "upstream",
+  "unparseable",
+  "internal",
+] as const
+/** Sources one user can watch. */
+export const WATCH_SOURCES_MAX = 20
+export const WATCH_LABEL_MAX = 60

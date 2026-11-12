@@ -8,6 +8,9 @@ import {
   JOB_STATUSES,
   SHORT_TEXT_MAX,
   URL_MAX,
+  WATCH_LABEL_MAX,
+  WATCH_SOURCE_KINDS,
+  WATCH_SOURCE_STATUSES,
 } from "../constants"
 import { pageSchema } from "./page"
 import { CLEAN_MESSAGE, clean } from "./text"
@@ -134,11 +137,36 @@ export const applicationListSchema = pageSchema.extend({ status: applicationStat
 export const jobSourceSchema = z.object({
   id: z.string(),
   url: z.string(),
+  label: z.string(),
+  kind: z.enum(WATCH_SOURCE_KINDS),
+  enabled: z.boolean(),
+  status: z.enum(WATCH_SOURCE_STATUSES),
   lastCheckedAt: z.date().nullable(),
+  nextAttemptAt: z.date().nullable(),
+  /** A fixed code (`blocked`, `timeout`, ...), never text from the site. */
+  lastError: z.string().nullable(),
+  lastFound: z.number(),
+  lastAdded: z.number(),
   createdAt: z.date(),
 })
 
-export const jobSourceInputSchema = z.object({ url: httpUrlSchema })
+export const jobSourceInputSchema = z.object({
+  url: httpUrlSchema,
+  label: z.string().trim().min(1).max(WATCH_LABEL_MAX).refine(clean, CLEAN_MESSAGE),
+})
+
+export const jobSourceUpdateSchema = z.object({
+  id: z.uuid(),
+  enabled: z.boolean().optional(),
+  label: jobSourceInputSchema.shape.label.optional(),
+})
+
+export const jobSourceRunSchema = z.object({
+  state: z.enum(["done", "busy", "stopped"]),
+  error: z.string().optional(),
+  found: z.number(),
+  added: z.number(),
+})
 
 export type Job = z.infer<typeof jobSchema>
 export type JobCounts = z.infer<typeof jobCountsSchema>
