@@ -185,7 +185,9 @@ test("private fields and card numbers never reach the api", async ({
 
   await expect.poll(() => mockApi.records.length).toBe(1)
   const lookup = JSON.stringify(mockApi.requests.find((request) => request.path === "/rpc/learning/lookup")?.body)
-  expect(lookup).toContain("Payment details: BIC")
+  // a private field is dropped where the form is read, so it is in neither the lookup nor the batch
+  expect(lookup).not.toContain("BIC")
+  expect(lookup).toContain("Reference")
   const sent = JSON.stringify(mockApi.requests.filter((request) => request.path === RECORD_PATH))
   for (const secret of ["078-05", "4242", "hunter2", "LEAK", "Social security", "password", "Compte"]) {
     expect(sent).not.toContain(secret)

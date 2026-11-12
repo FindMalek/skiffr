@@ -4,7 +4,14 @@ import { normalizeLabel } from "@skiffr/common/utils"
 import { draftAnswer, fitLength } from "./draft-answer"
 import { embedTexts } from "./embeddings"
 import { AiInputError, AiModelError, ModelBudgetError } from "./errors"
-import { controlKind, isLearnableField, isSensitiveValue } from "./learnable"
+import {
+  controlKind,
+  isDemographicOptions,
+  isLearnableField,
+  isSensitiveQuestion,
+  isSensitiveSection,
+  isSensitiveValue,
+} from "./learnable"
 import { mapFields } from "./map-fields"
 import { profileSkills, tailorResume } from "./tailor"
 import { mockEmbeddingModel, mockModel } from "./testing"
@@ -306,7 +313,8 @@ test("only known input kinds with harmless labels are learnable", () => {
   const learnable = (label: string, type: string | undefined = "text", autocomplete?: string) =>
     isLearnableField({ label, type, autocomplete })
   expect(learnable("Notice period")).toBe(true)
-  expect(learnable("Pronouns", "Select-One")).toBe(true)
+  expect(learnable("Pronouns", "Select-One")).toBe(false)
+  expect(learnable("Preferred name", "Select-One")).toBe(true)
   expect(learnable("PIN code")).toBe(true)
   expect(learnable("Postal code", "text", "postal-code")).toBe(true)
   for (const type of [undefined, "", "password", "hidden", "file", "submit", " pass\u200bword "]) {
@@ -377,9 +385,7 @@ test("secrets, payment, ids, birth dates and equal-opportunity answers are never
     "Website",
     "Years of experience",
     "Preferred name",
-    "Nationality",
     "Postal code",
-    "Pronouns",
     "Visa sponsorship required",
   ]) {
     expect(isLearnableField({ label, type: "text" }), label).toBe(true)
@@ -644,7 +650,6 @@ test("skill questions and near misses stay learnable", () => {
     "ZIP code",
     "Area code",
     "Code review experience",
-    "Nationalité",
     "Code of conduct",
     "Billing: Country code",
     "Application: Postal code",
@@ -724,4 +729,352 @@ test("a model that refuses for a spent budget leaves as its own kind, so callers
   await expect(
     draftAnswer({ model: mockModel(new ModelBudgetError()), question: "Why us?", profile }),
   ).rejects.toMatchObject({ kind: "budget" })
+})
+
+test("consent, agreement, certification and opt-in questions are the person's own, in any control and language", () => {
+  const labels = [
+    "I understand",
+    "I certify that the above is true",
+    "I declare the information is accurate",
+    "I accept the talent community terms",
+    "Keep me in the loop for future roles",
+    "Do you consent to us keeping your data?",
+    "Please read the arbitration agreement below",
+    "Agreement to Arbitrate",
+    "I agree to the Privacy Policy",
+    "Subscribe to our newsletter",
+    "I acknowledge receipt of the notice",
+    "Data retention",
+    "Do you consent to the processing of your personal data?",
+    "J'accepte les conditions générales",
+    "Je certifie l'exactitude des informations",
+    "Ich stimme der Datenschutzerklärung zu",
+    "Ich bestätige die Richtigkeit",
+    "Acepto la política de privacidad",
+    "Declaro que la información es veraz",
+    "أوافق على الشروط والأحكام",
+    "أقر بصحة المعلومات",
+    "أوافق على سياسة الخصوصية",
+  ]
+  for (const label of labels) expect(isSensitiveQuestion({ label }), label).toBe(true)
+  for (const label of labels) expect(isLearnableField({ label, type: "select" }), label).toBe(false)
+})
+
+test("pronouns, self identification, age, nationality and equal opportunity wording are never read", () => {
+  for (const label of [
+    "Pronouns",
+    "Self-identification",
+    "Voluntary Self-Identification",
+    "Which of the following best describes you?",
+    "How would you describe yourself?",
+    "I identify as",
+    "النوع الاجتماعي",
+    "Age",
+    "What is your age?",
+    "Nationality",
+    "Nationalité",
+    "Equal Employment Opportunity",
+    "EEOC question",
+  ]) {
+    expect(isSensitiveQuestion({ label }), label).toBe(true)
+  }
+})
+
+test("ordinary questions stay readable, and what is accepted as an over-block is listed", () => {
+  for (const label of [
+    "Country code",
+    "Years of experience",
+    "Postal code",
+    "Preferred name",
+    "Are you authorized to work in the United States?",
+    "Will you now or in the future require visa sponsorship?",
+    "Please confirm you're based in the USA",
+    "How did you initially hear about this job?",
+    "Marketing Manager: First name",
+    "Message",
+    "Image",
+    "Percentage of time travelling",
+  ]) {
+    expect(isSensitiveQuestion({ label }), label).toBe(false)
+  }
+  // accepted over-blocks: a plain "age" or "terms" word, "agree to relocate" and similar attestations
+  for (const label of ["Are you over 18 years of age?", "Contract terms", "Do you agree to relocate?"]) {
+    expect(isSensitiveQuestion({ label }), label).toBe(true)
+  }
+})
+
+test("a question is private by the shape of its answers or by its section, whatever its label says", () => {
+  expect(isSensitiveQuestion({ label: "Please select one", options: ["Male", "Female"] })).toBe(true)
+  expect(isSensitiveQuestion({ label: "Please select one", options: ["Man", "Woman", "Non-binary"] })).toBe(true)
+  expect(isSensitiveQuestion({ label: "Choose", options: ["Yes", "No", "Decline to self identify"] })).toBe(true)
+  expect(isSensitiveQuestion({ label: "Choose", options: ["Hispanic or Latino", "Asian"] })).toBe(true)
+  expect(isSensitiveQuestion({ label: "Choose", options: ["I am not a protected veteran"] })).toBe(true)
+  expect(isDemographicOptions(["Yes", "No"])).toBe(false)
+  expect(isDemographicOptions(["Remote", "On site", "Hybrid"])).toBe(false)
+  expect(isSensitiveQuestion({ label: "Please select one", sections: ["Equal Employment Opportunity"] })).toBe(true)
+  expect(isSensitiveQuestion({ label: "Please select one", sections: ["Voluntary self-identification"] })).toBe(true)
+  expect(isSensitiveQuestion({ label: "Please select one", sections: ["Diversity Survey"] })).toBe(true)
+  expect(isSensitiveQuestion({ label: "Please select one", sections: ["Additional questions"] })).toBe(false)
+  expect(isSensitiveSection("Personal information")).toBe(false)
+  expect(isSensitiveQuestion({ label: "Anything", name: "job_application[gender]" })).toBe(true)
+  expect(isSensitiveQuestion({ label: "Anything", autocomplete: "bday" })).toBe(true)
+})
+
+const BLOCKED_BY_CATEGORY: Record<string, string[]> = {
+  consent: [
+    "Je consens au traitement de mes données",
+    "Consentement",
+    "J'accepte les conditions générales",
+    "J'autorise le traitement de mes données",
+    "Ich willige ein",
+    "Ich habe die Datenschutzerklärung gelesen",
+    "Datenschutzerklärung",
+    "Einwilligung zur Datenverarbeitung",
+    "Ich stimme zu",
+    "Estoy de acuerdo con los términos",
+    "Doy mi consentimiento",
+    "Política de privacidad",
+    "أوافق على الشروط",
+    "أقر بصحة البيانات",
+    "الموافقة على سياسة الخصوصية",
+    "اوافق",
+  ],
+  pronouns: ["Pronoms", "Pronomen", "Pronombres", "Pronouns", "الضمائر"],
+  "gender, sex, salutation": [
+    "Genre",
+    "Geschlecht",
+    "Anrede",
+    "Civilité",
+    "Género",
+    "Sexo",
+    "النوع",
+    "النوع الاجتماعي",
+    "الجنس",
+  ],
+  "race, ethnicity, origin": [
+    "Race",
+    "Origine ethnique",
+    "Ethnische Herkunft",
+    "Herkunft",
+    "Origen étnico",
+    "Raza",
+    "العرق",
+    "الأصل العرقي",
+    "الاصل العرقي",
+    "Are you a person of color?",
+    "Do you belong to an underrepresented group?",
+    "Skin tone",
+    "Country of origin",
+    "Caste",
+  ],
+  "age and birth": [
+    "Alter",
+    "Edad",
+    "Âge",
+    "How old are you?",
+    "Place of birth",
+    "Lieu de naissance",
+    "Geburtsort",
+    "Lugar de nacimiento",
+    "تاريخ الميلاد",
+    "مكان الميلاد",
+    "العمر",
+  ],
+  "nationality and citizenship": [
+    "Nationalité",
+    "Staatsangehörigkeit",
+    "Nacionalidad",
+    "الجنسية",
+    "Country of citizenship",
+    "Citizenship status",
+    "Are you a U.S. citizen?",
+  ],
+  disability: ["Schwerbehinderung", "Behinderung", "Situation de handicap", "Discapacidad", "الإعاقة", "Impairment"],
+  "veteran and military": [
+    "Statut d'ancien combattant",
+    "Veterano",
+    "Veteran status",
+    "Military status",
+    "Are you a member of the armed forces?",
+    "Wehrdienst",
+    "Servicio militar",
+    "الخدمة العسكرية",
+    "المحارب القديم",
+  ],
+  "religion and belief": ["Religion", "Konfession", "Religión", "الديانة", "المعتقد"],
+  "orientation, family, health": [
+    "LGBTQIA+",
+    "LGBTQ",
+    "Sexual preference",
+    "Sexual orientation",
+    "Orientation sexuelle",
+    "Sexuelle Orientierung",
+    "Orientación sexual",
+    "الميول الجنسية",
+    "Parental status",
+    "Marital status",
+    "Familienstand",
+    "Estado civil",
+    "الحالة الاجتماعية",
+    "Are you pregnant?",
+    "Schwanger",
+    "Do you receive government benefits?",
+  ],
+}
+
+test("the claimed languages and categories are all kept out, accents or none", () => {
+  for (const [category, labels] of Object.entries(BLOCKED_BY_CATEGORY)) {
+    for (const label of labels) {
+      expect(isSensitiveQuestion({ label }), `${category}: ${label}`).toBe(true)
+      expect(isLearnableField({ label, type: "text" }), `${category}: ${label}`).toBe(false)
+      const stripped = label.normalize("NFKD").replace(/\p{M}/gu, "")
+      expect(isSensitiveQuestion({ label: stripped }), `${category}: ${stripped}`).toBe(true)
+    }
+  }
+})
+
+test("spacing, digits, format characters and look-alike letters do not spell around the lists", () => {
+  for (const label of ["Gen​der", "G e n d e r", "G3nder", "Gеnder", "Prоnouns", "Ethn1c origin", "Ｇender"]) {
+    expect(isSensitiveQuestion({ label }), label).toBe(true)
+  }
+})
+
+test("ordinary questions in the same languages stay readable", () => {
+  for (const label of [
+    "Certifications",
+    "Experience with declarative UI",
+    "Notice period",
+    "Years of experience",
+    "Country code",
+    "Are you authorized to work in the United States?",
+    "Are you a US citizen or authorized to work in the US?",
+    "Do you require visa sponsorship?",
+    "Job type",
+    "نوع الوظيفة",
+    "Poste souhaité",
+    "Gewünschtes Gehalt",
+    "Puesto deseado",
+    "Date de disponibilité",
+    "Verfügbar ab",
+    "Salario esperado",
+    "الراتب المتوقع",
+    "Message",
+    "Languages",
+  ]) {
+    expect(isSensitiveQuestion({ label }), label).toBe(false)
+  }
+})
+
+test("permission to contact, permission to keep or use data, opt-ins and signatures are the person's own", () => {
+  for (const label of [
+    "May we contact your current employer?",
+    "Can we contact your references?",
+    "Do we have your permission to contact your employer?",
+    "I give Acme permission to process my data",
+    "I allow Acme to retain my CV",
+    "Keep my profile for future openings",
+    "Send me similar jobs",
+    "Yes, I want to receive job alerts",
+    "Yes, you may store my application for 12 months",
+    "Are you happy for us to keep your details on file?",
+    "Je donne mon accord pour la conservation de mes données",
+    "Doy mi autorización",
+    "Autorización para contactar a su empleador",
+    "Erlaubnis zur Kontaktaufnahme",
+    "Arbeitgeber kontaktieren",
+    "Daten speichern",
+    "Quiero recibir el boletín",
+    "أمنح موافقتي",
+    "أبدي موافقتي على معالجة البيانات",
+    "أسمح بالاحتفاظ بسيرتي الذاتية",
+    "إذن الاتصال بصاحب العمل",
+    "تفويض",
+    "Signature",
+    "Electronic signature",
+    "E-signature",
+    "Sign here",
+    "Typed name as signature",
+    "Date signed",
+    "Unterschrift",
+    "Firma",
+    "Firma electrónica",
+    "Firma del solicitante",
+    "التوقيع",
+  ]) {
+    expect(isSensitiveQuestion({ label }), label).toBe(true)
+  }
+})
+
+test("work authorization, a company's Firma and a driving licence requirement stay readable", () => {
+  for (const label of [
+    "Are you authorized to work in the United States?",
+    "Are you legally authorised to work in the UK?",
+    "Êtes-vous autorisé à travailler en France ?",
+    "¿Tiene autorización para trabajar en España?",
+    "Haben Sie eine Arbeitsgenehmigung?",
+    "Do you require a work permit?",
+    "Company (Firma)",
+    "Firmenname",
+    "Do you have a valid driver's license?",
+    "Avez-vous le permis de conduire ?",
+    "Age of your oldest project",
+    "Contact email",
+    "Preferred contact method",
+    "Where can we reach you?",
+  ]) {
+    expect(isSensitiveQuestion({ label }), label).toBe(false)
+  }
+  // still private: the number, and a bare "driving licence" field
+  expect(isSensitiveQuestion({ label: "Driver's license number" })).toBe(true)
+  expect(isSensitiveQuestion({ label: "Driving licence" })).toBe(true)
+  expect(isSensitiveQuestion({ label: "Age" })).toBe(true)
+})
+
+test("family, union, birth country and age and salutation wording in the claimed languages", () => {
+  for (const label of [
+    "Number of children",
+    "Do you have dependents?",
+    "Spouse name",
+    "Union membership",
+    "Country of birth",
+    "Year you were born",
+    "Faith",
+    "Indigenous status",
+    "Branch of service",
+    "Honorific",
+    "Nombre d'enfants à charge",
+    "Appartenance syndicale",
+    "Anzahl der Kinder",
+    "Gewerkschaftsmitglied",
+    "Número de hijos",
+    "Afiliación sindical",
+    "عدد الأطفال",
+    "Wie alt sind Sie?",
+    "¿Cuántos años tiene?",
+    "كم عمرك؟",
+    "Ethnische Zugehörigkeit",
+    "Staatsbürgerschaft",
+    "اللقب",
+  ]) {
+    expect(isSensitiveQuestion({ label }), label).toBe(true)
+  }
+})
+
+test("a neutral label is still private when its answers are honorifics, marital states, beliefs, races or age bands", () => {
+  const neutral = (options: string[]) => isSensitiveQuestion({ label: "Please choose", options })
+  expect(neutral(["Mr", "Mrs", "Ms", "Mx"])).toBe(true)
+  expect(neutral(["Herr", "Frau"])).toBe(true)
+  expect(neutral(["Señor", "Señora"])).toBe(true)
+  expect(neutral(["Single", "Married", "Divorced"])).toBe(true)
+  expect(neutral(["Soltero", "Casado"])).toBe(true)
+  expect(neutral(["Christian", "Muslim", "Jewish"])).toBe(true)
+  expect(neutral(["Asian", "White", "Black"])).toBe(true)
+  expect(neutral(["Blanc", "Noir", "Asiatique"])).toBe(true)
+  expect(neutral(["Under 25", "25-34", "35-44", "65+"])).toBe(true)
+  expect(neutral(["Yes, I have a disability", "No, I do not have a disability"])).toBe(true)
+  expect(neutral(["I am a veteran", "I am not a veteran"])).toBe(true)
+  expect(neutral(["Remote", "On site", "Hybrid"])).toBe(false)
+  expect(neutral(["1-2 years", "3-5 years", "5+ years"])).toBe(false)
+  expect(neutral(["Single room", "Shared room"])).toBe(false)
+  expect(neutral(["Yes", "No"])).toBe(false)
 })

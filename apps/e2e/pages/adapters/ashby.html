@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Senior Engineer @ Acme</title>
+<style>
+  body { font: 15px/1.4 system-ui, sans-serif; background: #fafafa; color: #222; margin: 0 }
+  ._right { max-width: 640px; margin: 0 auto; padding: 16px }
+  ._tabs { display: flex; gap: 16px; border-bottom: 1px solid #ddd; margin-bottom: 16px }
+  ._tab { padding: 8px 0; color: #555; text-decoration: none }
+  ._tab._active { color: #111; border-bottom: 2px solid #4f46e5 }
+  ._fieldEntry_1e3gg_28 { margin: 16px 0 }
+  ._label_1e3gg_42 { display: block; font-weight: 600; margin-bottom: 4px }
+  ._label_1e3gg_42._required_f7cvd_91::after { content: " *"; color: #b42318 }
+  ._input_1e3gg_32, ._input_d7ago_28 { box-sizing: border-box; width: 100%; padding: 8px; border: 1px solid #bbb; border-radius: 6px }
+  ._description_1e3gg_48 { color: #666; font-size: 13px; margin-bottom: 6px }
+  ._yesno_1e3gg_148 { display: flex; gap: 8px }
+  ._option_1svni_32 { padding: 8px 20px; border: 1px solid #bbb; background: #fff; border-radius: 6px; cursor: pointer }
+  ._option_1svni_32[aria-pressed=true] { background: #4f46e5; color: #fff; border-color: #4f46e5 }
+  ._yesno_1e3gg_148 > input[type=checkbox] { display: none }
+  ._inputContainer_d7ago_28 { position: relative; display: flex }
+  ._toggleButton_d7ago_32 { width: 0; border: 0; padding: 0; background: none }
+  [role=listbox] { position: absolute; z-index: 9; background: #fff; border: 1px solid #bbb; border-radius: 6px; margin: 0; padding: 4px 0; min-width: 260px }
+  [role=option] { padding: 6px 12px; cursor: pointer }
+  [role=option]:hover { background: #eef }
+  fieldset { border: 0; padding: 0; margin: 0 }
+  ._option_1258i_34 { display: flex; gap: 8px; align-items: center; margin: 4px 0 }
+  ._circle_132c8_77 { display: none }
+  input[type=file] { display: none }
+  ._button_zyh3g_28 { padding: 8px 16px; border: 1px solid #bbb; background: #fff; border-radius: 6px }
+  .ashby-application-form-section-header-title { margin: 24px 0 4px }
+</style>
+</head>
+<body>
+<div id="root">
+  <div class="_navRoot_5bhg5_28 ashby-job-posting-header"><ul class="_navContainer_5bhg5_35"><li><a class="_navLogoLink_5bhg5_95" href="/acme"><span>Acme</span></a></li></ul></div>
+  <div class="_container_dea4p_28"><div class="_titles_dea4p_33"><h1 class="_title_dea4p_33 _large_dea4p_66 ashby-job-posting-heading">Senior Engineer</h1></div>
+  <div class="_content_dea4p_70 _details_5yu8i_417"><div class="ashby-job-posting-right-pane _right">
+    <nav class="_tabs_5yu8i_29 _tabs" role="tablist"><a class="_tab_5yu8i_29 _tab" id="job-overview" aria-controls="overview" aria-selected="false" role="tab" href="#">Overview</a><a aria-current="page" class="_tab_5yu8i_29 _tab _active_5yu8i_56 _active" id="job-application-form" aria-controls="form" aria-selected="true" role="tab" href="#">Application</a></nav>
+    <div role="tabpanel" aria-labelledby="job-application-form" id="form">
+      <div class="_autofillPane_5yu8i_448 ashby-application-form-autofill-uploader _container_f7cvd_28"><div role="presentation" class="_root_xd2v0_1 ashby-application-form-autofill-input-root" data-state="default"><input accept="application/pdf,.pdf" type="file"><div class="_base_xd2v0_31 ashby-application-form-autofill-input-base-layer"><h3 class="_title_xd2v0_64 ashby-application-form-autofill-input-title">Autofill from resume</h3><p class="_description_xd2v0_76">Upload your resume here to autofill key application fields.</p><button class="_button_zyh3g_28 _secondary_zyh3g_115 _ctaButton_xd2v0_94" type="button">Upload file</button></div></div></div>
+      <form action="/submit?ats=ashby" method="post" novalidate>
+      <div class="_jobPostingForm_5yu8i_402 ashby-application-form-container _container_f7cvd_28"><div class="_section_5yu8i_86 ashby-application-form-section-container">
+        <div class="_fieldEntry_1e3gg_28 ashby-application-form-field-entry" data-field-path="_systemfield_name"><label class="_heading_f7cvd_52 _required_f7cvd_91 _label_1e3gg_42 ashby-application-form-question-title" for="_systemfield_name">Name</label><div><input placeholder="Type here..." name="_systemfield_name" required id="_systemfield_name" type="text" class="_input_80epu_28 _input_1e3gg_32 ashby-application-form-input-text" value=""></div></div>
+        <div class="_fieldEntry_1e3gg_28 ashby-application-form-field-entry" data-field-path="_systemfield_email"><label class="_heading_f7cvd_52 _required_f7cvd_91 _label_1e3gg_42 ashby-application-form-question-title" for="_systemfield_email">Email</label><div><input placeholder="hello@example.com..." name="_systemfield_email" required id="_systemfield_email" type="email" class="_input_80epu_28 _input_1e3gg_32 ashby-application-form-input-text" value=""></div></div>
+        <div class="_fieldEntry_1e3gg_28 ashby-application-form-field-entry" data-field-path="_systemfield_resume"><label class="_heading_f7cvd_52 _label_1e3gg_42 ashby-application-form-question-title" for="_systemfield_resume">Resume</label><div role="presentation" class="_container_10xk4_70 ashby-application-form-input-file"><input accept="application/pdf,.pdf" type="file" id="_systemfield_resume"><div class="_instructions_10xk4_33 ashby-application-form-input-file-dropzone"><button type="button" class="_button_zyh3g_28 ashby-application-form-input-file-dropzone-upload"><span><span>Upload File</span></span></button><p class="_dragInstructions_10xk4_28">or drag and drop here</p></div></div></div>
+        <div class="_fieldEntry_1e3gg_28 ashby-application-form-field-entry" data-field-path="2f73c135-4c72-40cf-84bc-ba7700192f2f"><label class="_heading_f7cvd_52 _required_f7cvd_91 _label_1e3gg_42 ashby-application-form-question-title" for="2f73c135-4c72-40cf-84bc-ba7700192f2f">LinkedIn Profile</label><div><input placeholder="Type here..." name="2f73c135-4c72-40cf-84bc-ba7700192f2f" required id="2f73c135-4c72-40cf-84bc-ba7700192f2f" type="text" class="_input_80epu_28 _input_1e3gg_32 ashby-application-form-input-text" value=""></div></div>
+        <div class="_fieldEntry_1e3gg_28 ashby-application-form-field-entry" data-field-path="_systemfield_location"><label class="_heading_f7cvd_52 _required_f7cvd_91 _label_1e3gg_42 ashby-application-form-question-title" for="_systemfield_location">Which country do you intend to work from?</label><div class="_description_1e3gg_48 ashby-application-form-question-description"><p>Please list your city and country.</p></div><div class="_inputContainer_d7ago_28"><input class="_input_d7ago_28 ashby-application-form-input-autocomplete" placeholder="Start typing..." aria-autocomplete="list" aria-expanded="false" aria-haspopup="listbox" role="combobox" value=""><button class="_container_pjyt6_1 _toggleButton_d7ago_32" type="button"></button></div></div>
+        <div class="_fieldEntry_1e3gg_28 ashby-application-form-field-entry" data-field-path="9dbddae8-2594-40be-b4b9-92420e945f18"><label class="_heading_f7cvd_52 _required_f7cvd_91 _label_1e3gg_42 ashby-application-form-question-title" for="9dbddae8-2594-40be-b4b9-92420e945f18">Will you now or in the future require sponsorship for employment visa status to work in this location?</label><div class="_container_1svni_28 _yesno_1e3gg_148 ashby-application-form-input-yesno"><button class="_container_pjyt6_1 _option_1svni_32 ashby-application-form-input-yesno-option" aria-pressed="false" data-option="yes" type="button">Yes</button><button class="_container_pjyt6_1 _option_1svni_32 ashby-application-form-input-yesno-option" aria-pressed="false" data-option="no" type="button">No</button><input type="checkbox" class="_input_1svni_78" name="9dbddae8-2594-40be-b4b9-92420e945f18"></div></div>
+        <div class="_fieldEntry_1e3gg_28 ashby-application-form-field-entry" data-field-path="9dbddae8-0000-4a00-8000-00000000c0de"><label class="_heading_f7cvd_52 _required_f7cvd_91 _label_1e3gg_42 ashby-application-form-question-title" for="9dbddae8-0000-4a00-8000-00000000c0de">Do you consent to the processing of your personal data?</label><div class="_container_1svni_28 _yesno_1e3gg_148 ashby-application-form-input-yesno"><button class="_container_pjyt6_1 _option_1svni_32 ashby-application-form-input-yesno-option" aria-pressed="false" data-option="yes" type="button">Yes</button><button class="_container_pjyt6_1 _option_1svni_32 ashby-application-form-input-yesno-option" aria-pressed="false" data-option="no" type="button">No</button><input type="checkbox" class="_input_1svni_78" name="9dbddae8-0000-4a00-8000-00000000c0de"></div></div>
+        <div class="_fieldEntry_1e3gg_28 ashby-application-form-field-entry" data-field-path="f890254e-5bf6-483d-87cb-a8cb9ec59a83"><label class="_heading_f7cvd_52 _required_f7cvd_91 _label_1e3gg_42 ashby-application-form-question-title" for="f890254e-5bf6-483d-87cb-a8cb9ec59a83">Describe the best engineer you've worked with.</label><div class="_description_1e3gg_48 ashby-application-form-question-description"><p>We want to understand your reference point for great engineering.</p></div><textarea placeholder="Type here..." required name="f890254e-5bf6-483d-87cb-a8cb9ec59a83" id="f890254e-5bf6-483d-87cb-a8cb9ec59a83" class="_input_zf0lr_28 _input_1e3gg_32 ashby-application-form-input-textarea" rows="4"></textarea></div>
+        <div data-field-path="a3c2d1e0-0001-4a00-8000-000000000001"><fieldset class="_container_1258i_28 _fieldEntry_1e3gg_28 ashby-application-form-input-radio-group"><label class="_heading_f7cvd_52 _label_1e3gg_42 ashby-application-form-question-title" for="a3c2d1e0-0001-4a00-8000-000000000001">How did you hear about Acme?</label>
+          <div class="_option_1258i_34 ashby-application-form-input-radio-group-option"><span class="_container_132c8_28"><span class="_circle_132c8_77"></span><input type="radio" id="hear-labeled-radio-0" name="hear" class="ashby-application-form-input-radio-group-option-radio"></span><label for="hear-labeled-radio-0" class="_label_1258i_42 ashby-application-form-input-radio-group-option-label">LinkedIn</label></div>
+          <div class="_option_1258i_34 ashby-application-form-input-radio-group-option"><span class="_container_132c8_28"><span class="_circle_132c8_77"></span><input type="radio" id="hear-labeled-radio-1" name="hear" class="ashby-application-form-input-radio-group-option-radio"></span><label for="hear-labeled-radio-1" class="_label_1258i_42 ashby-application-form-input-radio-group-option-label">Referral</label></div>
+          <div class="_option_1258i_34 ashby-application-form-input-radio-group-option"><span class="_container_132c8_28"><span class="_circle_132c8_77"></span><input type="radio" id="hear-labeled-radio-2" name="hear" class="ashby-application-form-input-radio-group-option-radio"></span><label for="hear-labeled-radio-2" class="_label_1258i_42 ashby-application-form-input-radio-group-option-label">Other</label></div>
+        </fieldset></div>
+        <div data-field-path="a3c2d1e0-0002-4a00-8000-000000000002"><fieldset class="_container_1258i_28 _fieldEntry_1e3gg_28 ashby-application-form-input-checkbox-group"><label class="_heading_f7cvd_52 _label_1e3gg_42 ashby-application-form-question-title" for="a3c2d1e0-0002-4a00-8000-000000000002">Privacy notice</label>
+          <div class="_option_1258i_34 ashby-application-form-input-checkbox-group-option"><span class="_container_132c8_28"><input type="checkbox" id="privacy-labeled-checkbox-0" name="privacy" class="ashby-application-form-input-checkbox-group-option-checkbox"></span><label for="privacy-labeled-checkbox-0" class="_label_1258i_42 ashby-application-form-input-checkbox-group-option-label">I agree to the processing of my personal data</label></div>
+        </fieldset></div>
+      </div></div>
+      <div class="ashby-survey-form-container"><div class="_jobPostingForm_5yu8i_402 ashby-application-form-container _container_f7cvd_28"><div class="_section_5yu8i_86 ashby-application-form-section-container">
+        <div class="_sectionHeader_5yu8i_93 ashby-application-form-section-header"><h2 class="_title_5yu8i_99 ashby-application-form-section-header-title">Diversity Survey</h2><div class="_sectionDescription_5yu8i_105 ashby-application-form-section-header-description"><p><em>This optional survey helps us evaluate our diversity and inclusion efforts. Participation is voluntary.</em></p></div></div>
+        <div data-field-path="cf0f1bc7-7ce6-4eb3-aebc-b6562141cb68"><fieldset class="_container_1258i_28 _fieldEntry_1e3gg_28 ashby-application-form-input-radio-group"><label class="_heading_f7cvd_52 _label_1e3gg_42 ashby-application-form-question-title" for="cf0f1bc7-7ce6-4eb3-aebc-b6562141cb68">What is your current age?</label>
+          <div class="_option_1258i_34 ashby-application-form-input-radio-group-option"><span class="_container_132c8_28"><input type="radio" id="age-labeled-radio-0" name="age" class="ashby-application-form-input-radio-group-option-radio"></span><label for="age-labeled-radio-0" class="_label_1258i_42">Under 30</label></div>
+          <div class="_option_1258i_34 ashby-application-form-input-radio-group-option"><span class="_container_132c8_28"><input type="radio" id="age-labeled-radio-1" name="age" class="ashby-application-form-input-radio-group-option-radio"></span><label for="age-labeled-radio-1" class="_label_1258i_42">30-39</label></div>
+          <div class="_option_1258i_34 ashby-application-form-input-radio-group-option"><span class="_container_132c8_28"><input type="radio" id="age-labeled-radio-2" name="age" class="ashby-application-form-input-radio-group-option-radio"></span><label for="age-labeled-radio-2" class="_label_1258i_42">I prefer not to answer</label></div>
+        </fieldset></div>
+        <div data-field-path="8d7dcc65-3a0b-476a-b679-574b869780bb"><fieldset class="_container_1258i_28 _fieldEntry_1e3gg_28 ashby-application-form-input-radio-group"><label class="_heading_f7cvd_52 _label_1e3gg_42 ashby-application-form-question-title" for="8d7dcc65-3a0b-476a-b679-574b869780bb">What is your gender identity?</label>
+          <div class="_option_1258i_34 ashby-application-form-input-radio-group-option"><span class="_container_132c8_28"><input type="radio" id="gender-labeled-radio-0" name="gender" class="ashby-application-form-input-radio-group-option-radio"></span><label for="gender-labeled-radio-0" class="_label_1258i_42">Man</label></div>
+          <div class="_option_1258i_34 ashby-application-form-input-radio-group-option"><span class="_container_132c8_28"><input type="radio" id="gender-labeled-radio-1" name="gender" class="ashby-application-form-input-radio-group-option-radio"></span><label for="gender-labeled-radio-1" class="_label_1258i_42">Woman</label></div>
+          <div class="_option_1258i_34 ashby-application-form-input-radio-group-option"><span class="_container_132c8_28"><input type="radio" id="gender-labeled-radio-2" name="gender" class="ashby-application-form-input-radio-group-option-radio"></span><label for="gender-labeled-radio-2" class="_label_1258i_42">I prefer not to answer</label></div>
+        </fieldset></div>
+      </div></div></div>
+      <div class="_submit"><button type="submit" class="_button_zyh3g_28 ashby-application-form-submit-button">Submit Application</button></div>
+      </form>
+    </div>
+  </div></div></div>
+</div>
+<script src="/shared/widgets.js"></script>
+<script>
+  const { bind, track, h, state, render, fold } = Fixture
+  for (const el of document.querySelectorAll("form input[type=text], form input[type=email], form textarea")) bind(el)
+
+  for (const yesno of document.querySelectorAll(".ashby-application-form-input-yesno")) {
+    yesno.addEventListener("click", (event) => {
+      const button = event.target.closest("button")
+      if (!button) return
+      for (const other of yesno.querySelectorAll("button")) other.setAttribute("aria-pressed", String(other === button))
+      yesno.querySelector("input").checked = button.dataset.option === "yes"
+    })
+  }
+
+  // react-aria style autocomplete: the list is drawn into the body once results come back
+  const place = document.querySelector(".ashby-application-form-input-autocomplete")
+  const PLACES = ["Lisbon, Portugal", "Lisbon, Ohio, United States", "Porto, Portugal", "London, United Kingdom", "Paris, France"]
+  let list = null
+  let timer
+  let typed = ""
+  const close = () => {
+    list?.remove()
+    list = null
+    place.setAttribute("aria-expanded", "false")
+    place.removeAttribute("aria-controls")
+  }
+  track(place, (value) => {
+    typed = value
+    clearTimeout(timer)
+    close()
+    if (!value) return
+    timer = setTimeout(() => {
+      const rows = PLACES.filter((p) => fold(p).includes(fold(value)))
+      if (!rows.length || document.activeElement !== place) return
+      list = h("div", { role: "listbox", id: "autocomplete-listbox-1" })
+      for (const [i, text] of rows.entries()) list.append(h("div", { role: "option", id: `autocomplete-option-${i}`, "aria-selected": "false", text }))
+      const box = place.getBoundingClientRect()
+      list.style.left = `${box.left + scrollX}px`
+      list.style.top = `${box.bottom + scrollY}px`
+      list.addEventListener("click", (event) => {
+        const option = event.target.closest("[role=option]")
+        if (!option) return
+        typed = option.textContent
+        place.value = typed
+        close()
+      })
+      document.body.append(list)
+      place.setAttribute("aria-expanded", "true")
+      place.setAttribute("aria-controls", list.id)
+    }, 1100)
+  })
+  window.addEventListener("fixture-render", () => {
+    if (place.value !== typed) place.value = typed
+  })
+  place.addEventListener("blur", () => setTimeout(close, 150))
+</script>
+</body>
+</html>

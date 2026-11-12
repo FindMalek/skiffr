@@ -141,6 +141,26 @@ export function fireKey(el: Element, type: "keydown" | "keyup", key: string): vo
   fire(el, type, { key, code: key.length === 1 ? `Key${key.toUpperCase()}` : key }, "KeyboardEvent")
 }
 
+/** Cancels any form submission a click would cause: a button with no type is a submit button, and the engine never submits. */
+export function blockSubmit(doc: Document): () => void {
+  const stop = (event: Event) => {
+    event.preventDefault()
+    event.stopImmediatePropagation()
+  }
+  doc.addEventListener("submit", stop, true)
+  return () => doc.removeEventListener("submit", stop, true)
+}
+
+/** A plain click of the element that cannot submit a form. */
+export function activate(el: HTMLElement): void {
+  const release = blockSubmit(el.ownerDocument)
+  try {
+    el.click()
+  } finally {
+    release()
+  }
+}
+
 export function click(el: HTMLElement): void {
   for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup"]) {
     fire(
@@ -150,7 +170,7 @@ export function click(el: HTMLElement): void {
       type.startsWith("pointer") ? "PointerEvent" : "MouseEvent",
     )
   }
-  el.click()
+  activate(el)
 }
 
 export function focusEl(el: HTMLElement): void {
@@ -204,4 +224,21 @@ export function setNativeValue(el: HTMLElement, value: string): void {
   const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set
   if (setter) setter.call(el, value)
   else (el as HTMLInputElement).value = value
+}
+
+export async function typeInto(el: HTMLElement, text: string): Promise<void> {
+  focusEl(el)
+  const input = el as HTMLInputElement
+  setNativeValue(el, "")
+  fireInput(el, null, "deleteContentBackward")
+  for (const char of text) {
+    fireKey(el, "keydown", char)
+    fire(el, "beforeinput", { data: char, inputType: "insertText" }, "InputEvent")
+    setNativeValue(el, input.value + char)
+    try {
+      input.setSelectionRange(input.value.length, input.value.length)
+    } catch {}
+    fireInput(el, char)
+    fireKey(el, "keyup", char)
+  }
 }

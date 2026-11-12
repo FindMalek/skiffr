@@ -1,3 +1,4 @@
+import { adapterFor, adapterRead } from "../adapters"
 import { isPlaceholderOption } from "./collect"
 import { cleanText, textOf } from "./dom"
 import type { CollectedField } from "./types"
@@ -45,7 +46,7 @@ export function readField(field: CollectedField): string {
     case "contenteditable":
       return (el.innerText ?? el.textContent ?? "").trim()
     case "combobox":
-      return readCombobox(el)
+      return adapterRead(adapterFor(el), el) ?? readCombobox(el)
     default:
       return (el as HTMLInputElement).value
   }

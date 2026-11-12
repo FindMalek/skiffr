@@ -949,17 +949,17 @@ const first = (matches: Awaited<ReturnType<typeof lookup>>["matches"]) => matche
 test("site entries come first with source site and beat the global answer for that field", async () => {
   const as = await newUser()
   await call(appRouter.answers.create, { rawLabel: "Notice period", value: "1 month" }, as())
-  await call(appRouter.answers.create, { rawLabel: "Pronouns", value: "she/her" }, as())
+  await call(appRouter.answers.create, { rawLabel: "Favorite color", value: "green" }, as())
   const options = ["1 month", "2 weeks"]
   await record(as, [
     event("Notice period", "1 month", "2 weeks", { type: "select", options }),
-    event("Pronouns", "she/her", "she/her", { source: "answer" }),
+    event("Favorite color", "green", "green", { source: "answer" }),
   ])
 
-  const { matches } = await lookupAt(as, SITE, [select("n", "Notice period", options), field("p", "Pronouns")])
+  const { matches } = await lookupAt(as, SITE, [select("n", "Notice period", options), field("p", "Favorite color")])
   expect(matches).toMatchObject([
     { fieldId: "n", source: "site", value: "2 weeks", autofill: true },
-    { fieldId: "p", source: "site", value: "she/her", autofill: true },
+    { fieldId: "p", source: "site", value: "green", autofill: true },
   ])
   const other = await lookupAt(as, SITE_B, [select("n", "Notice period", options)])
   expect(first(other.matches)).toMatchObject({ source: "label", value: "1 month" })
@@ -1027,7 +1027,7 @@ test("a form changed by one field still matches, a different form does not", asy
 test("password, card, hidden and long values never reach a site profile", async () => {
   const as = await newUser()
   await record(as, [
-    event("Pronouns", "", "she/her"),
+    event("Favorite color", "", "green"),
     event("Password", "", "hunter2", { type: "password" }),
     event("Card number", "", "4111 1111 1111 1111"),
     event("Account", "", "x", { autocomplete: "cc-number" }),
@@ -1036,7 +1036,7 @@ test("password, card, hidden and long values never reach a site profile", async 
     event("About you", "", "x".repeat(301), { type: "textarea" }),
   ])
   const [saved] = await sitesOf(as().id)
-  expect(Object.values(saved!.fieldMap).map((entry) => entry.label)).toEqual(["pronouns"])
+  expect(Object.values(saved!.fieldMap).map((entry) => entry.label)).toEqual(["favorite color"])
   const stored = JSON.stringify(saved)
   for (const text of ["hunter2", "4111", "password", "card number", "cv.pdf", "xxxxxxxx"]) {
     expect(stored).not.toContain(text)
@@ -1064,9 +1064,10 @@ test("entries copied from the profile or an answer are dropped once their source
   await record(as, [
     event("Preferred name", "Ana", "Ana", { source: "answer" }),
     event("Email", "a@b.dev", "a@b.dev", { source: "profile" }),
-    event("Pronouns", "x", "x", { source: "ai" }),
+    event("Favorite color", "x", "x", { source: "ai" }),
   ])
-  const ask = () => lookupAt(as, SITE, [field("n", "Preferred name"), field("e", "Email"), field("p", "Pronouns")])
+  const ask = () =>
+    lookupAt(as, SITE, [field("n", "Preferred name"), field("e", "Email"), field("p", "Favorite color")])
   expect((await ask()).matches.map((m) => m.source)).toEqual(["site", "site", "site"])
 
   await call(appRouter.answers.create, { rawLabel: "Preferred name", value: "Anita" }, as())
@@ -1090,7 +1091,7 @@ test("the cap keeps 500 forms per user and drops the least recently used", async
       lastUsedAt: new Date(base + i * 1_000),
     })),
   )
-  await atSite(as, "new.dev", [event("Pronouns", "", "she/her")], {})
+  await atSite(as, "new.dev", [event("Favorite color", "", "green")], {})
   const rows = await sitesOf(as().id)
   expect(rows).toHaveLength(500)
   expect(rows.map((r) => r.siteKey)).toContain("new.dev")
@@ -1109,7 +1110,7 @@ test("forms unused for 180 days are purged when the user records again, newer on
     lastUsedAt: new Date(Date.now() - days * DAY),
   })
   await db.insert(siteProfile).values([row("old.dev", 200), row("recent.dev", 100)])
-  await record(as, [event("Pronouns", "", "she/her")])
+  await record(as, [event("Favorite color", "", "green")])
   expect((await sitesOf(as().id)).map((r) => r.siteKey).sort()).toEqual([SITE, "recent.dev"].sort())
 })
 
@@ -1138,23 +1139,25 @@ test("a retried batch counts once in the site profile too", async () => {
 test("site profiles are listed and forgotten per site, for their owner only", async () => {
   const as = await newUser()
   const other = await newUser()
-  await atSite(as, SITE, [event("Pronouns", "", "she/her")])
-  await atSite(as, SITE_B, [event("Pronouns", "", "they/them")])
-  await atSite(other, SITE, [event("Pronouns", "", "he/him")])
+  await atSite(as, SITE, [event("Favorite color", "", "green")])
+  await atSite(as, SITE_B, [event("Favorite color", "", "blue")])
+  await atSite(other, SITE, [event("Favorite color", "", "red")])
 
   const listed = await call(appRouter.learning.siteProfiles, { limit: 50 }, as())
   expect(listed.map((s) => s.siteKey).sort()).toEqual([SITE_B, SITE].sort())
-  expect(listed.find((s) => s.siteKey === SITE)?.fields).toMatchObject([{ label: "pronouns", value: "she/her" }])
-  expect(first((await lookupAt(other, SITE_B, [field("p", "Pronouns")])).matches)).toMatchObject({
+  expect(listed.find((s) => s.siteKey === SITE)?.fields).toMatchObject([{ label: "favorite color", value: "green" }])
+  expect(first((await lookupAt(other, SITE_B, [field("p", "Favorite color")])).matches)).toMatchObject({
     source: "exact",
-    value: "he/him",
+    value: "red",
   })
 
   expect(await call(appRouter.learning.forgetSite, { siteKey: SITE }, other())).toEqual({ removedForms: 1 })
   expect(await call(appRouter.learning.forgetSite, { siteKey: SITE }, other())).toEqual({ removedForms: 0 })
   expect(await call(appRouter.learning.siteProfiles, { limit: 50 }, as())).toHaveLength(2)
   expect(await call(appRouter.learning.forgetSite, { siteKey: SITE }, as())).toEqual({ removedForms: 1 })
-  expect(first((await lookupAt(as, SITE, [field("p", "Pronouns")])).matches)).not.toMatchObject({ source: "site" })
+  expect(first((await lookupAt(as, SITE, [field("p", "Favorite color")])).matches)).not.toMatchObject({
+    source: "site",
+  })
 })
 
 test("a failing site profile query is logged by class and code only, never with the site", async () => {
@@ -1185,7 +1188,7 @@ test("a failing site profile query is logged by class and code only, never with 
 
 test("the site profile of a deleted user goes with them", async () => {
   const as = await newUser()
-  await record(as, [event("Pronouns", "", "she/her")])
+  await record(as, [event("Favorite color", "", "green")])
   await db.delete(user).where(eq(user.id, as().id))
   expect(
     await db.select({ n: sql<number>`count(*)::int` }).from(siteProfile).where(eq(siteProfile.userId, as().id)),
@@ -1215,13 +1218,13 @@ test("a profile entry keeps its source and time when accepted, and a later recor
   const at = (days: number) => ({ now: () => new Date(Date.now() + days * DAY) })
   const form = (source: "profile" | "site") => [
     event("Email", "a@b.dev", "a@b.dev", { source }),
-    event("Pronouns", "x", "x", { source: "ai" }),
+    event("Favorite color", "x", "x", { source: "ai" }),
   ]
   await record(as, form("profile"), {}, at(0))
   await db.insert(profile).values({ userId: as().id, data: {} as never, updatedAt: new Date(Date.now() + DAY) })
   const savedAt = (await entryOf(as().id, "email|text"))?.savedAt
 
-  const ask = () => lookupAt(as, SITE, [field("e", "Email"), field("p", "Pronouns")])
+  const ask = () => lookupAt(as, SITE, [field("e", "Email"), field("p", "Favorite color")])
   expect((await ask()).matches.map((m) => m.source)).toEqual(["none", "site"])
   await record(as, form("site"), {}, at(2))
   expect(await entryOf(as().id, "email|text")).toMatchObject({ source: "profile", savedAt })
@@ -1230,7 +1233,7 @@ test("a profile entry keeps its source and time when accepted, and a later recor
 
 test("the exact form is found however many newer forms the site has", async () => {
   const as = await newUser()
-  await record(as, [event("Pronouns", "", "she/her")])
+  await record(as, [event("Favorite color", "", "green")])
   await db.insert(siteProfile).values(
     Array.from({ length: 25 }, (_, i) => ({
       userId: as().id,
@@ -1241,10 +1244,10 @@ test("the exact form is found however many newer forms the site has", async () =
       lastUsedAt: new Date(Date.now() + (i + 1) * 1_000),
     })),
   )
-  await atSite(as, SITE_B, [event("Pronouns", "she/her", "they/them")])
-  expect(first((await lookupAt(as, SITE, [field("p", "Pronouns")])).matches)).toMatchObject({
+  await atSite(as, SITE_B, [event("Favorite color", "green", "blue")])
+  expect(first((await lookupAt(as, SITE, [field("p", "Favorite color")])).matches)).toMatchObject({
     source: "site",
-    value: "she/her",
+    value: "green",
   })
 })
 
@@ -1253,13 +1256,13 @@ test("a select whose options change every visit stays one form, and an unseen op
   for (let i = 0; i < 40; i++) {
     await record(as, [
       event("Notice period", "2 weeks", "2 weeks", { type: "select", options: [`${i} days`, "2 weeks"], source: "ai" }),
-      event("Pronouns", "x", "x", { source: "ai" }),
+      event("Favorite color", "x", "x", { source: "ai" }),
     ])
   }
   expect(await sitesOf(as().id)).toHaveLength(1)
   const { matches } = await lookupAt(as, SITE, [
     select("n", "Notice period", ["never seen", "2 weeks"]),
-    field("p", "Pronouns"),
+    field("p", "Favorite color"),
   ])
   expect(matches).toMatchObject([
     { source: "site", value: "2 weeks" },
@@ -1278,7 +1281,7 @@ test("one site keeps 20 forms and drops its own oldest, other sites are untouche
     lastUsedAt: new Date(Date.now() - (100 - i) * 60_000),
   })
   await db.insert(siteProfile).values([...Array.from({ length: 20 }, (_, i) => row(SITE, i)), row(SITE_B, 0)])
-  await record(as, [event("Pronouns", "", "she/her")])
+  await record(as, [event("Favorite color", "", "green")])
   const rows = await sitesOf(as().id)
   const signatures = rows.filter((r) => r.siteKey === SITE).map((r) => r.formSignature)
   expect(signatures).toHaveLength(20)

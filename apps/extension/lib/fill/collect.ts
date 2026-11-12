@@ -5,6 +5,7 @@ import {
   AI_OPTIONS_MAX,
   AI_REQUEST_CHARS_MAX,
 } from "@skiffr/common"
+import { type Adapter, adapterChoices, adapterFor, adapterKind, adapterLabel, adapterSkips } from "../adapters"
 import {
   cleanText,
   containsControl,
@@ -14,14 +15,16 @@ import {
   isRendered,
   parentOf,
   textOf,
+  view,
   walkElements,
 } from "./dom"
+import { type HeadingMemo, isSensitiveControl } from "./sensitive"
 import type { CollectedField, FieldChoice, FieldDescriptor, FieldInfo, FieldKind } from "./types"
 import { isVisible, newVisibilityCtx, type VisibilityCtx } from "./visibility"
 
-export type Ctx = { labels: Map<Node, Map<string, HTMLElement[]>>; vis: VisibilityCtx }
+export type Ctx = { labels: Map<Node, Map<string, HTMLElement[]>>; vis: VisibilityCtx; headings: HeadingMemo }
 
-export const newCtx = (): Ctx => ({ labels: new Map(), vis: newVisibilityCtx() })
+export const newCtx = (): Ctx => ({ labels: new Map(), vis: newVisibilityCtx(), headings: new Map() })
 
 const NOT_FILLABLE = new Set(["hidden", "password", "submit", "button", "reset", "image", "color", "range"])
 const BAIT = new Set([
@@ -285,6 +288,7 @@ function buildField(
   ctx: Ctx,
   filter: boolean,
 ): { field: CollectedField | null; members: HTMLElement[] } | null {
+  const adapter = adapterFor(el)
   const input = el as HTMLInputElement
   const members: HTMLElement[] = kind === "radio" || kind === "checkbox" ? groupMembers(input, kind) : [el]
   const usable = filter ? members.filter((member) => !isDisabled(member)) : members
@@ -306,7 +310,7 @@ function buildField(
       el: member,
     }))
   } else if (kind === "combobox") {
-    choices = readListOptions(el).map((option) => ({
+    choices = (adapterChoices(adapter, el) ?? readListOptions(el)).map((option) => ({
       text: cleanText(option.textContent),
       value: option.id,
       el: option,
@@ -317,10 +321,26 @@ function buildField(
   const found = kind === "radio" || grouped ? groupLabel(usable, ctx) : ownLabel(el, ctx)
   const title = cleanText(el.getAttribute("title"))
   const placeholder = cleanText(el.getAttribute("placeholder"))
-  const own = found || precedingText(el) || placeholder || title
+  const own = adapterLabel(adapter, el) || found || precedingText(el) || placeholder || title
   const section = sectionOf(el, ctx)
   const label = section && own && section.length <= SECTION_MAX && !same(own, section) ? `${section}: ${own}` : own
   const name = input.name || el.id || undefined
+  // a question drawn only by CSS cannot be read, so nothing about it is sent: it is left to the person
+  if (filter && !found && drawnByCss(el, ctx)) return { field: null, members }
+  if (
+    filter &&
+    isSensitiveControl(
+      el,
+      {
+        labels: [own, cleanText(el.getAttribute("aria-label")), placeholder, title],
+        name,
+        autocomplete: el.getAttribute("autocomplete") ?? undefined,
+        options: choices.map((choice) => choice.text),
+      },
+      ctx.headings,
+    )
+  )
+    return { field: null, members }
   const trapName = BAIT.has(squash(name ?? "")) || /^b_[0-9a-f]{20,}/i.test(name ?? "")
   if (filter && trapName && (el.getAttribute("tabindex") === "-1" || !label)) return { field: null, members }
 
@@ -354,9 +374,32 @@ function buildField(
   return { field: { id: "", kind, el: usable[0] as HTMLElement, choices, descriptor, info }, members }
 }
 
+const GENERATED = /^(none|normal|""|'')?$/
+
+/** A label with no text of its own whose words are drawn by CSS (`::before`, `::after`): the page asks something we cannot read. */
+function drawnByCss(el: HTMLElement, ctx: Ctx): boolean {
+  const named = (el.getAttribute("aria-labelledby") ?? "")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 5)
+    .map((id) => byId(el, id))
+    .filter(isElement)
+  return [...labelsFor(el, ctx), ...named].some((label) => {
+    if (textOf(label)) return false
+    try {
+      const win = view(label)
+      return ["::before", "::after"].some(
+        (pseudo) => !GENERATED.test(win.getComputedStyle(label, pseudo).content.trim()),
+      )
+    } catch {
+      return false
+    }
+  })
+}
+
 /** The field a single control belongs to, without the visibility and trap filters. */
 export function resolveField(el: HTMLElement): CollectedField | null {
-  const kind = kindOf(el)
+  const kind = adapterKind(adapterFor(el), el) ?? kindOf(el)
   return kind ? (buildField(el, kind, newCtx(), false)?.field ?? null) : null
 }
 
@@ -366,10 +409,16 @@ export function collectFields(root: ParentNode = document): CollectedField[] {
   const fields: CollectedField[] = []
   const seen = new Set<Element>()
   const used = new Map<string, number>()
+  let doc: Document | null = null
+  let adapter: Adapter | null = null
   for (const el of walkElements(root)) {
     if (seen.has(el)) continue
-    const kind = kindOf(el)
-    if (!kind) continue
+    if (el.ownerDocument !== doc) {
+      doc = el.ownerDocument
+      adapter = adapterFor(doc)
+    }
+    const kind = adapterKind(adapter, el) ?? kindOf(el)
+    if (!kind || adapterSkips(adapter, el)) continue
     const built = buildField(el, kind, ctx, true)
     if (!built) continue
     for (const member of built.members) seen.add(member)
