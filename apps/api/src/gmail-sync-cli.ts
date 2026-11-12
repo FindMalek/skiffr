@@ -1,10 +1,15 @@
 import { createDb } from "@skiffr/db"
 import { loadApiEnv } from "@skiffr/env/api"
+import { configFromEnv, createObservability, setObservability } from "@skiffr/observability"
 import { syncDue } from "@skiffr/orpc/gmail"
 import { gmailFromEnv } from "./gmail-runtime"
 
 /** One pass over every due mailbox, then exit: for a scheduled job when `GMAIL_SCHEDULER=off`. */
 const env = loadApiEnv()
+const observability = createObservability(
+  configFromEnv(env, { service: "skiffr-gmail-sync", environment: env.DEPLOY_ENV }),
+)
+setObservability(observability)
 const gmail = gmailFromEnv(env)
 if (!gmail) {
   console.info("gmail import is not configured")
@@ -14,3 +19,4 @@ const db = createDb(env.DATABASE_URL)
 const results = await syncDue({ db, runtime: gmail.runtime, now: () => new Date(), tokens: gmail.tokens })
 console.info(`gmail sync ran ${results.length} mailboxes`)
 await db.close()
+await observability.flush()

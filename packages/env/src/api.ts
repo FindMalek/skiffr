@@ -76,6 +76,18 @@ const schema = z.object({
   /** Model calls the whole server may make per UTC day, all users together: the guard against many free accounts. 0 means no limit. */
   AI_GLOBAL_DAILY_CALLS: count(0),
 
+  /** Optional, all off until set. GlitchTip (Sentry compatible) error reports: the project's dsn. */
+  GLITCHTIP_DSN: z.url().optional(),
+  /** OTLP/HTTP base up to the org, e.g. `http://openobserve:5080/api/default`. Request logs, metrics and model call spans go here. */
+  OTEL_EXPORTER_OTLP_ENDPOINT: z.url().optional(),
+  /** `key=value,key=value`, e.g. `authorization=Basic <base64>,stream-name=skiffr`. A secret. */
+  OTEL_EXPORTER_OTLP_HEADERS: optional,
+  /** Umami base url and website id for the api's own product events (counts only, no ids). */
+  UMAMI_URL: z.url().optional(),
+  UMAMI_WEBSITE_ID: z.uuid().optional(),
+  /** `true` adds prompts and answers to model call spans. They hold personal data: leave it off unless the collector is yours and you need it. */
+  AI_TRACE_CAPTURE_CONTENT: z.enum(["true", "false"]).default("false"),
+
   /** Where the api finds the client address: the header the proxy in front sets, and how many proxies append to it. 0 ignores the header and uses the connection's own address. */
   CLIENT_IP_HEADER: z
     .string()

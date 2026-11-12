@@ -2,6 +2,7 @@ import "@skiffr/ui/globals.css"
 import { QueryProvider } from "@skiffr/orpc/react"
 import { cn } from "@skiffr/ui/lib/utils"
 import type { Metadata } from "next"
+import Script from "next/script"
 import { ThemeProvider } from "@/components/theme-provider"
 import { siteUrl } from "@/lib/seo"
 import { SITE } from "@/lib/site"
@@ -27,6 +28,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang={page.lang} suppressHydrationWarning className={cn("h-full antialiased", fontVariables, "font-sans")}>
       <body className="relative flex min-h-full flex-col bg-background text-foreground">
+        <Script src="/analytics.js" strategy="afterInteractive" />
         <ThemeProvider>
           <QueryProvider>
             <div aria-hidden className="pointer-events-none fixed inset-0 -z-10">

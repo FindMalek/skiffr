@@ -4,6 +4,7 @@ import { createDb } from "@skiffr/db"
 import { runMigrations } from "@skiffr/db/migrate"
 import { seedDemo } from "@skiffr/db/seed"
 import { loadApiEnv } from "@skiffr/env/api"
+import { configFromEnv, createObservability, parseDsn, reportCrashes, setObservability } from "@skiffr/observability"
 import { RateLimiter } from "@skiffr/orpc"
 import { createCvRuntime } from "@skiffr/orpc/cv"
 import { advisoryLeader, createScheduler, LOCKS } from "@skiffr/orpc/gmail"
@@ -17,6 +18,18 @@ import { createServer } from "./server"
 const WATCH_TICK_MS = 5 * 60_000
 
 const env = loadApiEnv()
+const observability = createObservability(configFromEnv(env, { service: "skiffr-api", environment: env.DEPLOY_ENV }))
+setObservability(observability)
+const sinks = [
+  env.GLITCHTIP_DSN && parseDsn(env.GLITCHTIP_DSN) && "errors",
+  env.OTEL_EXPORTER_OTLP_ENDPOINT && "otlp",
+  env.UMAMI_URL && env.UMAMI_WEBSITE_ID && "umami",
+].filter(Boolean)
+console.info(
+  `observability: ${sinks.length > 0 ? sinks.join(", ") : "off"}${env.AI_TRACE_CAPTURE_CONTENT === "true" ? " (model call content captured)" : ""}`,
+)
+// A crash is reported before the process exits with code 1, as it did without this.
+reportCrashes(observability, { job: "api" })
 const db = createDb(env.DATABASE_URL)
 await runMigrations(db)
 
@@ -118,7 +131,11 @@ watcher?.start()
 console.info(`job source watcher ${watcher ? `every ${env.WATCH_REFRESH_MINUTES} min per source` : "is off"}`)
 
 const PRUNE_MS = 60 * 60_000
-const prune = () => pruneRateLimits(db, new Date()).catch(() => console.error("[auth] could not prune rate limit rows"))
+const prune = () =>
+  pruneRateLimits(db, new Date()).catch((error) => {
+    console.error("[auth] could not prune rate limit rows")
+    observability.captureError(error, { job: "prune" })
+  })
 await prune()
 setInterval(prune, PRUNE_MS).unref()
 
@@ -131,6 +148,7 @@ for (const signal of ["SIGTERM", "SIGINT"] as const) {
     await watcher?.stop()
     await server.stop()
     await db.close()
+    await observability.flush()
     process.exit(0)
   })
 }

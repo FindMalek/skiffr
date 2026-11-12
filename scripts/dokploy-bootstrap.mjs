@@ -7,6 +7,7 @@ import { readFileSync } from "node:fs"
 import { parseArgs } from "node:util"
 import { APPS, appName, hostsFor, imageFor, POSTGRES, PROJECT } from "../.github/scripts/deploy-lib.mjs"
 import { dokploy } from "../.github/scripts/preview-api.mjs"
+import { envForApp, OPTIONAL_KEYS } from "./bootstrap-env.mjs"
 
 const { values: args } = parseArgs({
   options: {
@@ -33,31 +34,7 @@ if (apply && !online) {
 const hosts = hostsFor(args.domain)
 const url = (key) => `https://${hosts[key]}`
 
-// Only these keys are read from --env-file, nothing from the shell environment. Values are never printed.
-const OPTIONAL_KEYS = [
-  "BETTER_AUTH_SECRET",
-  "ADMIN_EMAIL",
-  "ADMIN_PASSWORD",
-  "EXTENSION_ORIGINS",
-  "GITHUB_CLIENT_ID",
-  "GITHUB_CLIENT_SECRET",
-  "GITHUB_TOKEN",
-  "S3_ENDPOINT",
-  "S3_REGION",
-  "S3_BUCKET",
-  "S3_ACCESS_KEY_ID",
-  "S3_SECRET_ACCESS_KEY",
-  "GOOGLE_CLIENT_ID",
-  "GOOGLE_CLIENT_SECRET",
-  "GMAIL_ENCRYPTION_KEY",
-  "GOOGLE_REDIRECT_URI",
-  "GMAIL_SCHEDULER",
-  "GMAIL_SYNC_INTERVAL_MINUTES",
-  "AI_MODEL",
-  "GROQ_API_KEY",
-  "OPENAI_API_KEY",
-  "ANTHROPIC_API_KEY",
-]
+// Only these keys are read from --env-file (see bootstrap-env.mjs), nothing from the shell environment. Values are never printed.
 const GMAIL_KEYS = ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GMAIL_ENCRYPTION_KEY"]
 
 function parseEnvText(text, unquote = false) {
@@ -166,7 +143,8 @@ function desiredEnv(key, { postgres, apiAppName, generated }) {
     DEPLOY_ENV: "production",
     GITHUB_REPO: args.repo,
   }
-  if (key !== "api") return { ...urls, API_URL: `http://${apiAppName ?? "<api app name>"}:3001` }
+  if (key !== "api")
+    return { ...urls, API_URL: `http://${apiAppName ?? "<api app name>"}:3001`, ...envForApp(key, extras) }
   const database = postgres
     ? `postgresql://${postgres.databaseUser}:${postgres.databasePassword}@${postgres.appName}:5432/${postgres.databaseName}`
     : "(set once the postgres exists)"
@@ -178,7 +156,7 @@ function desiredEnv(key, { postgres, apiAppName, generated }) {
     DOKPLOY_POSTGRES_ID: postgres?.postgresId ?? "(set once the postgres exists)",
     BETTER_AUTH_SECRET: generated.BETTER_AUTH_SECRET,
     ...(extras.ADMIN_EMAIL && !extras.ADMIN_PASSWORD ? { ADMIN_PASSWORD: generated.ADMIN_PASSWORD } : {}),
-    ...extras,
+    ...envForApp("api", extras),
   }
 }
 
