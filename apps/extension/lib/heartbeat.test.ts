@@ -52,3 +52,11 @@ test("a failing api never throws out of a beat and is not retried before the int
   await beat()
   expect(calls).toHaveLength(1)
 })
+
+test("a clock that went back does not hold the beat off", async () => {
+  const { beat, calls, advance } = setup()
+  await beat()
+  advance(-HEARTBEAT_INTERVAL_MS)
+  await beat()
+  expect(calls).toHaveLength(2)
+})

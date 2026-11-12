@@ -1,3 +1,4 @@
+import { connect } from "../fixtures/application.ts"
 import { expect, test } from "../fixtures/extension.ts"
 import { ATS_PAGES } from "../fixtures/pages.ts"
 
@@ -87,4 +88,24 @@ test("a slow storage read does not overwrite what was typed", async ({ context, 
   await page.reload()
   await expect(page.getByLabel("API url")).toHaveValue(SETTINGS.apiUrl)
   await expect(page.getByLabel("Token")).toHaveValue(SETTINGS.token)
+})
+
+test("a worker that wakes with a token sends one heartbeat with the client header", async ({
+  context,
+  serviceWorker,
+  fixtureServer,
+  mockApi,
+}) => {
+  await connect(serviceWorker, mockApi)
+  mockApi.reset()
+  const page = await context.newPage()
+  const cdp = await context.newCDPSession(page)
+  await cdp.send("ServiceWorker.enable")
+  await cdp.send("ServiceWorker.stopAllWorkers")
+  // the content script on this page messages the worker, which wakes it
+  await page.goto(`${fixtureServer.origin}${ATS_PAGES.greenhouse.path}`)
+
+  const beats = () => mockApi.requests.filter((request) => request.path === "/rpc/extension/whoami")
+  await expect.poll(() => beats().length).toBe(1)
+  expect(beats()[0]?.client).toMatch(/^extension-chrome\/\d+\.\d+\.\d+$/)
 })

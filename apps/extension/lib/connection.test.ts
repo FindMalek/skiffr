@@ -14,7 +14,7 @@ test("the api's answer to whoami becomes the message the options page shows", as
   const ok = async (request: Request) => {
     seen.push(request)
     return reply(200, {
-      json: { user: { name: "Ana", email: "ana@test.dev" }, token: null, minExtensionVersion: "0.0.1" },
+      json: { user: { name: "Ana", email: "ana@test.dev" }, token: null, minExtensionVersion: "0.0.0" },
     })()
   }
   expect(await testConnection(load, ok as never)).toEqual({ ok: true, name: "Ana", updateNeeded: false })

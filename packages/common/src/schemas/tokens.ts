@@ -8,7 +8,7 @@ export const apiTokenSchema = z.object({
   last4: z.string(),
   createdAt: z.date(),
   lastUsedAt: z.date().nullable(),
-  /** Name and version the client sent last (`extension-chrome`, `0.3.1`), null when it never sent them. */
+  /** Name and version the client sent last (`extension-chrome`, `0.0.1`), null when it never sent them. */
   client: z.string().nullable(),
   clientVersion: z.string().nullable(),
   expiresAt: z.date().nullable(),
@@ -38,13 +38,13 @@ export const whoamiSchema = z.object({
 })
 
 export const extensionStatusSchema = z.object({
-  /** `never`: no token has been used by a skiffr client yet. `stale`: not seen for `EXTENSION_STALE_HOURS`. */
+  /** `never`: no extension has used an active token yet. `stale`: not seen for `EXTENSION_STALE_HOURS`. */
   state: z.enum(["connected", "stale", "never"]),
   lastSeenAt: z.date().nullable(),
   client: z.string().nullable(),
   clientVersion: z.string().nullable(),
   minExtensionVersion: z.string(),
-  /** `unknown` when the extension never reported a version (it predates the header). */
+  /** `unknown` when no version is known. */
   version: z.enum(["ok", "update-needed", "unknown"]),
   /** When the extension last recorded a fill (a field event), not when it last called the api. */
   lastFillAt: z.date().nullable(),

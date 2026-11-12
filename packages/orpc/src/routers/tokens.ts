@@ -16,7 +16,7 @@ import {
 } from "@skiffr/common/schemas"
 import { isOlderVersion } from "@skiffr/common/utils"
 import { apiToken, fieldEvent } from "@skiffr/db"
-import { and, count, desc, eq, gt, gte, isNotNull, isNull, max, or, type SQL, sql } from "drizzle-orm"
+import { and, count, desc, eq, gt, gte, isNotNull, isNull, like, max, or, type SQL, sql } from "drizzle-orm"
 import { z } from "zod"
 import { mine, orNotFound } from "../lib/owned"
 import { generateToken, guardTokenDb } from "../lib/tokens"
@@ -167,12 +167,19 @@ export const extensionRouter = {
     .output(extensionStatusSchema)
     .handler(async ({ context }) => {
       const now = context.now()
-      // The freshest active token that has been used. An older extension without the header counts as seen, version unknown.
+      // The freshest active token an extension used. A token without the extension header (a script) must not hide an outdated extension.
       const [seen] = await guardTokenDb("status", () =>
         context.db
           .select({ lastSeenAt: apiToken.lastUsedAt, client: apiToken.client, clientVersion: apiToken.clientVersion })
           .from(apiToken)
-          .where(and(eq(apiToken.userId, context.user.id), isActive(now), isNotNull(apiToken.lastUsedAt)))
+          .where(
+            and(
+              eq(apiToken.userId, context.user.id),
+              isActive(now),
+              isNotNull(apiToken.lastUsedAt),
+              like(apiToken.client, "extension-%"),
+            ),
+          )
           .orderBy(desc(apiToken.lastUsedAt))
           .limit(1),
       )

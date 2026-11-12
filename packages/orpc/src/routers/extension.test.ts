@@ -12,7 +12,7 @@ let db: Db
 let drop: () => Promise<void>
 
 beforeAll(async () => {
-  const connected = await connectDb(["ana", "ben"])
+  const connected = await connectDb(["ana", "ben", "cy", "dee", "eve", "fay"])
   db = connected.db
   drop = connected.drop
 })
@@ -56,7 +56,6 @@ test("the client header is stored on use and listed, and a client without it sti
   const { id, secret } = await mint("ana")
   await (await asToken(secret, NOW)).extension.whoami()
   expect(await stored(id)).toMatchObject({ client: null, clientVersion: null })
-  expect(await status("ana")).toMatchObject({ state: "connected", client: null, version: "unknown" })
 
   await (await asToken(secret, new Date(NOW.getTime() + 61_000), "extension-chrome/0.1.0")).extension.whoami()
   const listed = (await call(appRouter.tokens.list, undefined, session("ana"))).find((t) => t.id === id)
@@ -84,6 +83,41 @@ test("status reports connected, stale and a version below the api's minimum, for
   })
   expect((await status("ben", new Date(NOW.getTime() + 25 * HOUR))).state).toBe("stale")
   expect((await status("ben", new Date(NOW.getTime() - 1))).state).toBe("connected")
+})
+
+test("another user's token use never makes this user connected", async () => {
+  const { secret } = await mint("ana")
+  await (await asToken(secret, NOW, "extension-chrome/0.1.0")).extension.whoami()
+  expect((await status("ana")).state).toBe("connected")
+  expect(await status("cy")).toMatchObject({ state: "never", lastSeenAt: null, client: null })
+})
+
+test("a revoked or expired token never makes a user connected", async () => {
+  const revoked = await mint("dee")
+  await (await asToken(revoked.secret, NOW, "extension-chrome/0.1.0")).extension.whoami()
+  expect((await status("dee")).state).toBe("connected")
+  await call(appRouter.tokens.revoke, { id: revoked.id }, session("dee"))
+  expect((await status("dee")).state).toBe("never")
+
+  const { secret } = await mint("eve")
+  await (await asToken(secret, NOW, "extension-chrome/0.1.0")).extension.whoami()
+  expect((await status("eve", new Date(NOW.getTime() + HOUR))).state).toBe("connected")
+  expect((await status("eve", new Date(NOW.getTime() + 31 * 24 * HOUR))).state).toBe("never")
+})
+
+test("a token without the extension header does not hide an outdated extension", async () => {
+  const script = await mint("fay")
+  await (await asToken(script.secret, NOW)).extension.whoami()
+  expect((await status("fay")).state).toBe("never")
+
+  const { secret } = await mint("fay")
+  await (await asToken(secret, NOW, "extension-chrome/0.0.0")).extension.whoami()
+  await (await asToken(script.secret, new Date(NOW.getTime() + 5000))).extension.whoami()
+  expect(await status("fay", new Date(NOW.getTime() + 10_000))).toMatchObject({
+    state: "connected",
+    client: "extension-chrome",
+    version: "update-needed",
+  })
 })
 
 test("lastFillAt is the newest field event of the caller", async () => {
