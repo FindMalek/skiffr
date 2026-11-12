@@ -20,7 +20,7 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   output: "standalone",
   outputFileTracingRoot: root,
-  transpilePackages: ["@skiffr/ui"],
+  transpilePackages: ["@skiffr/ui", "@skiffr/observability"],
   poweredByHeader: false,
   reactStrictMode: true,
   headers: async () => [{ source: "/:path*", headers: securityHeaders }],

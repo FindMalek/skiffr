@@ -3,7 +3,7 @@ title: Privacy and data flow
 description: Exactly what leaves your machine, and where it goes.
 ---
 
-skiffr is self-hosted. Your profile, answers and tokens are in your own Postgres, behind your own api. There are no analytics, and the extension is built to talk to no server except the api you configured.
+skiffr is self-hosted. Your profile, answers and tokens are in your own Postgres, behind your own api. The extension is built to talk to no server except the api you configured and carries no tracker. The sites (landing page, docs, dashboard) can load your own Umami for page views, and the api can send error reports, logs and metrics to your own GlitchTip and OpenObserve, all off unless you set them and all from an allowlist, see [observability](/docs/observability).
 
 The extension detects forms and fills them, and calls your api for that. After a fill it also sends the edits you make to your api, see below.
 
@@ -23,6 +23,7 @@ web page -> extension -> your api -> your Postgres
 | your api | field labels, names, placeholders, types and option texts of the form, your token. After a fill, also the filled and final values of the fields you edit (the extension cuts values at 301 characters, the api accepts up to 2000) | when you fill, and when you submit or leave the page |
 | language model provider | the same field descriptors, your profile key names, and the values of an allowlist of profile keys | when a field needs mapping or an answer is drafted |
 | embeddings provider | the normalized question label | only with `OPENAI_API_KEY`, and only for learning |
+| your Umami, GlitchTip, OpenObserve | page views without query or referrer, error class and stack, request method, route and status, model id and token counts. Never form values, labels, resume or job text, tokens or the message of an error. Prompts and answers only with `AI_TRACE_CAPTURE_CONTENT=true` | only when you set the matching variable |
 | nobody | form submissions | never |
 
 ### What the model sees of your profile

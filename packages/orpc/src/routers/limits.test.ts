@@ -4,6 +4,8 @@ import { mockEmbeddingModel, mockModel } from "@skiffr/ai/testing"
 import type { Session } from "@skiffr/auth"
 import { EMBEDDING_DIMENSIONS } from "@skiffr/common/constants"
 import { aiUsage, aiUsageGlobal, answer, type Db, notes } from "@skiffr/db"
+import { createObservability, getObservability, noopObservability, setObservability } from "@skiffr/observability"
+import { mockCollector } from "@skiffr/observability/testing"
 import { streamText } from "ai"
 import { MockLanguageModelV4 } from "ai/test"
 import { sql } from "drizzle-orm"
@@ -436,4 +438,35 @@ test("every override names a real procedure, and every procedure falls in a clas
   for (const name of Object.keys(CLASS_OVERRIDES)) expect(paths).toContain(name)
   for (const name of paths) expect(LIMIT_CLASSES).toContain(limitClassOf(name, "GET"))
   for (const limitClass of Object.values(CLASS_OVERRIDES)) expect(Object.keys(DEFAULT_RATE_RULES)).toContain(limitClass)
+})
+
+test("a model call is traced with model and tokens but never the question or the answer, and a spent budget shows as a refusal", async () => {
+  const collector = mockCollector()
+  setObservability(
+    createObservability({
+      service: "skiffr-api",
+      environment: "test",
+      otlpEndpoint: `${collector.url}/api/default`,
+      flushMs: 0,
+    }),
+  )
+  try {
+    await profile("ana")
+    const extra = {
+      aiBudget: { dailyCalls: 1, dailyTokens: 0 },
+      model: mockModel("An answer nobody should see in a trace."),
+    }
+    await draft("ana", extra)
+    await expect(draft("ana", extra)).rejects.toMatchObject({ code: "AI_BUDGET_EXHAUSTED" })
+    await getObservability().flush()
+    const sent = collector.everything()
+    expect(sent).toContain("gen_ai.request.model")
+    expect(sent).toContain('"stringValue":"ok"')
+    expect(sent).toContain('"stringValue":"budget"')
+    expect(sent).not.toContain("Initech")
+    expect(sent).not.toContain("nobody should see")
+  } finally {
+    setObservability(noopObservability)
+    collector.stop()
+  }
 })

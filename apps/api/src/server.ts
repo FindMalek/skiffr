@@ -4,12 +4,14 @@ import { RPCHandler } from "@orpc/server/fetch"
 import { SimpleCsrfProtectionHandlerPlugin } from "@orpc/server/plugins"
 import { ZodToJsonSchemaConverter } from "@orpc/zod/zod4"
 import { type Auth, CLIENT_IP_HEADER, UNKNOWN_CLIENT_IP } from "@skiffr/auth"
+import { getObservability } from "@skiffr/observability"
 import { appRouter, bearerSecret, createContext, type Services } from "@skiffr/orpc"
 import { sql } from "drizzle-orm"
 import { type ClientIpConfig, clientIpOf } from "./client-ip"
 import { type Handler, withExtensionCors } from "./cors"
 import { GMAIL_ROUTES, handleGmail } from "./gmail"
 import { withSecurityHeaders } from "./headers"
+import { recordRequest } from "./telemetry"
 
 export type { Handler } from "./cors"
 
@@ -105,6 +107,7 @@ export function createServer(
         .execute(sql`select 1`)
         .then(() => true)
         .catch(() => false)
+      getObservability().gauge("skiffr.db.up", db ? 1 : 0)
       return Response.json({ ok: db, db, env: services.config.deployEnv }, { status: db ? 200 : 503 })
     }
     if (pathname.startsWith("/files/")) {
@@ -132,6 +135,9 @@ export function createServer(
   )
   return async function fetch(request: Request, peer?: string): Promise<Response> {
     if (peer) peers.set(request, peer)
-    return withSecurityHeaders(await handler(request), { https })
+    const startedAt = performance.now()
+    const response = withSecurityHeaders(await handler(request), { https })
+    recordRequest(request, response, startedAt)
+    return response
   }
 }

@@ -40,6 +40,8 @@ There is one `.env` at the repo root. Every app loads it, and `packages/env` val
 | `CLIENT_IP_HEADER`, `TRUSTED_PROXY_COUNT` | where the api reads the client address for the sign-in and sign-up limits. Defaults `x-forwarded-for` and `1`: the api sits behind one proxy that appends the address it saw (Traefik on Dokploy does). Use `0` when the api is reached directly, so the header is ignored and the connection's address is used, or the number of proxies when there are more |
 | `EXTENSION_ORIGINS` | optional, comma separated `chrome-extension://<id>` origins allowed to call the api. Unset allows any extension holding a valid token |
 
+Error reports, logs, metrics, model call traces and page analytics (`GLITCHTIP_DSN`, `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`, `UMAMI_URL`, `UMAMI_WEBSITE_ID`, `AI_TRACE_CAPTURE_CONTENT`) are optional and described in [Observability](/docs/observability).
+
 Gmail job emails (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GMAIL_ENCRYPTION_KEY` and friends) are optional and described in [Gmail job emails](/docs/gmail).
 
 Tailoring your CV through Reactive Resume (`CV_ENCRYPTION_KEY`) is optional and described in [CV tailoring](/docs/cv-tailoring).
