@@ -5,6 +5,7 @@ import { runDue, type WatchDeps } from "./run"
 /** The sources' schedule: the same in-process loop the mailboxes use, with its own lock so the two don't share a leader. */
 export const createWatchScheduler = (deps: WatchDeps, options: LoopOptions): Scheduler =>
   createLoop(async (stopped) => (await runDue(deps, stopped)).length, {
+    job: "watch",
     onError: (error) => logWatchFailure("scheduler", error),
     ...options,
   })

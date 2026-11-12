@@ -56,7 +56,7 @@ DOKPLOY_URL=https://dokploy.example.com DOKPLOY_TOKEN=... \
 
 It creates the `skiffr` project, a postgres on `pgvector/pgvector:pg17` (its user is the superuser the `vector` extension needs), the `skiffr-api`, `skiffr-web`, `skiffr-dashboard` and `skiffr-docs` applications, their domains and their env. It is safe to run again: existing things are kept and an env key that is already set in Dokploy is never overwritten. `BETTER_AUTH_SECRET`, the database password and, when `ADMIN_EMAIL` is given without a password, `ADMIN_PASSWORD` are generated and live in Dokploy only. The script prints key names, never values.
 
-`--env-file` is optional and only these keys are read from it: `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `EXTENSION_ORIGINS`, `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_TOKEN`, the `S3_*` keys, the three Gmail keys, `AI_MODEL`, `GROQ_API_KEY`, `OPENAI_API_KEY` and `ANTHROPIC_API_KEY`. Anything left out stays unset and the api still boots, see [environment](/docs/environment).
+`--env-file` is optional and only these keys are read from it: `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `EXTENSION_ORIGINS`, `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_TOKEN`, the `S3_*` keys, the three Gmail keys, `AI_MODEL`, `GROQ_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` and the [observability](/docs/observability) keys (`GLITCHTIP_DSN`, `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`, `AI_TRACE_CAPTURE_CONTENT`, `UMAMI_URL`, and per app `UMAMI_<APP>_WEBSITE_ID`, `GLITCHTIP_WEB_DSN`, `GLITCHTIP_DASHBOARD_DSN`). Anything left out stays unset and the api still boots, see [environment](/docs/environment).
 
 4. set the GitHub repo settings below, then run the `deploy` workflow once from the Actions tab
 

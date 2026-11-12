@@ -35,7 +35,8 @@
     "htmlparser2": "catalog:",
     "zod": "catalog:",
     "@skiffr/storage": "workspace:*",
-    "ai": "catalog:"
+    "ai": "catalog:",
+    "@skiffr/observability": "workspace:*"
   },
   "peerDependencies": {
     "react": "catalog:"
