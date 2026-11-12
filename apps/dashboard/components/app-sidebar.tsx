@@ -23,6 +23,7 @@ import {
   MailIcon,
   NotebookPenIcon,
   PuzzleIcon,
+  RadarIcon,
   SettingsIcon,
   UsersIcon,
 } from "lucide-react"
@@ -46,6 +47,7 @@ const NAV: { href: Route; label: string; icon: typeof LayoutDashboardIcon; admin
   { href: "/extension", label: "Extension", icon: PuzzleIcon },
   { href: "/users", label: "Users", icon: UsersIcon, admin: true },
   { href: "/settings/gmail", label: "Gmail", icon: MailIcon },
+  { href: "/settings/sources", label: "Sources", icon: RadarIcon },
   { href: "/settings", label: "Settings", icon: SettingsIcon },
 ]
 

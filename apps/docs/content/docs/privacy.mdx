@@ -59,6 +59,10 @@ For every filled field the api keeps one event: the raw field label, the filled 
 
 Only when you connect it, see [Gmail job emails](/docs/gmail): skiffr reads unread inbox mail from the senders you watch, stores job title, company and link (not the email), and marks processed mail read, out of the inbox and labelled. No email text goes to a model provider.
 
+### Job sources
+
+Only for addresses you add, see [Job sources](/docs/sources): the api fetches those public pages and feeds with a request that names skiffr and carries no cookie or personal detail, and stores the title, company and link of each posting (not the page). The job links are never opened. No page text goes to a model provider.
+
 ### Tokens
 
 The extension authenticates with a personal access token that starts with `skp_`. The server keeps its SHA-256 hash and a short display tail, never the token. In the extension the background worker and the options page read it. Content scripts on web pages are kept from it by `storage.local.setAccessLevel("TRUSTED_CONTEXTS")`, which needs Chrome 142 or newer (the manifest's `minimum_chrome_version`). Calls to the api are made by the background worker. A token can only call a fixed list of procedures (`TOKEN_PROCEDURES` in `packages/orpc/src/procedures.ts`): profile, answers, jobs, applications and the two ai calls. Account, auth and token management need a signed-in session. Set `EXTENSION_ORIGINS` to pin the api to your own extension id.

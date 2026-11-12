@@ -5,10 +5,13 @@ import {
   FIELD_EVENT_SOURCES,
   GMAIL_ACCOUNT_STATUSES,
   GMAIL_MESSAGE_OUTCOMES,
+  WATCH_SOURCE_KINDS,
+  WATCH_SOURCE_STATUSES,
 } from "@skiffr/common/constants"
 import type { ProfileData, ProfileFields, RecordOutput, SiteFieldMap } from "@skiffr/common/schemas"
 import { getTableColumns } from "drizzle-orm"
 import {
+  boolean,
   index,
   integer,
   jsonb,
@@ -39,6 +42,8 @@ export const fieldEventOutcome = pgEnum("field_event_outcome", FIELD_EVENT_OUTCO
 export const jobStatus = pgEnum("job_status", ["queued", "applied", "skipped"])
 export const gmailAccountStatus = pgEnum("gmail_account_status", GMAIL_ACCOUNT_STATUSES)
 export const gmailMessageOutcome = pgEnum("gmail_message_outcome", GMAIL_MESSAGE_OUTCOMES)
+export const jobSourceKind = pgEnum("job_source_kind", WATCH_SOURCE_KINDS)
+export const jobSourceStatus = pgEnum("job_source_status", WATCH_SOURCE_STATUSES)
 export const applicationStatus = pgEnum("application_status", [
   "applied",
   "responded",
@@ -201,17 +206,42 @@ export const recordBatch = pgTable(
   (t) => [primaryKey({ columns: [t.userId, t.batchId] })],
 )
 
-/** A careers page the user watches for new postings. */
+/**
+ * A careers page or feed the user watches. The watcher fetches it every so often, queues the postings it has not seen
+ * (`seen_ids` keeps what it already queued, so a job the user deleted does not come back) and leaves the links alone.
+ * `kind` starts as `auto` and is settled by the first fetch, unless the url is a known board.
+ */
 export const jobSource = pgTable(
   "job_source",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     userId: userId(),
     url: text("url").notNull(),
+    label: text("label").notNull().default(""),
+    kind: jobSourceKind("kind").notNull().default("auto"),
+    enabled: boolean("enabled").notNull().default(true),
+    status: jobSourceStatus("status").notNull().default("pending"),
     lastCheckedAt: timestamp("last_checked_at", { withTimezone: true }),
+    /** A fixed code (`blocked`, `timeout`, ...), never a message from the site. */
+    lastError: text("last_error"),
+    failures: integer("failures").notNull().default(0),
+    /** Backoff and schedule: the watcher leaves the source alone until then. Null is due now. */
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }),
+    /** Held while a fetch runs, so two replicas or a click and the schedule never fetch one source at once. */
+    leaseUntil: timestamp("lease_until", { withTimezone: true }),
+    lastManualRunAt: timestamp("last_manual_run_at", { withTimezone: true }),
+    etag: text("etag"),
+    lastModified: text("last_modified"),
+    lastFound: integer("last_found").notNull().default(0),
+    lastAdded: integer("last_added").notNull().default(0),
+    seenIds: jsonb("seen_ids").$type<string[]>().notNull().default([]),
     createdAt: createdAt(),
+    updatedAt: updatedAt(),
   },
-  (t) => [unique("job_source_user_url_unique").on(t.userId, t.url)],
+  (t) => [
+    unique("job_source_user_url_unique").on(t.userId, t.url),
+    index("job_source_due_idx").on(t.enabled, t.nextAttemptAt),
+  ],
 )
 
 /** Personal access tokens for the extension. Only the sha-256 of the secret is stored; `prefix` and `last4` are for display. */
