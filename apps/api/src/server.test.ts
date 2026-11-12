@@ -6,6 +6,8 @@ import type { Db } from "@skiffr/db"
 import { user } from "@skiffr/db"
 import * as schema from "@skiffr/db/schema"
 import { strictDateSerializers } from "@skiffr/db/test-db"
+import { createObservability, noopObservability, setObservability } from "@skiffr/observability"
+import { mockCollector } from "@skiffr/observability/testing"
 import { drizzle } from "drizzle-orm/pglite"
 import { migrate } from "drizzle-orm/pglite/migrator"
 import { createServer } from "./server"
@@ -134,4 +136,35 @@ test("numeric query parameters of GET routes arrive as strings and are still num
     expect(res.status, path).toBe(200)
   }
   expect((await get("/v1/learning/sites?limit=0")).status).toBe(400)
+})
+
+test("a request is logged and counted by method, route and status, never by its query, body or cookie", async () => {
+  const collector = mockCollector()
+  const observability = createObservability({
+    service: "skiffr-api",
+    environment: "test",
+    otlpEndpoint: `${collector.url}/api/default`,
+    flushMs: 0,
+  })
+  setObservability(observability)
+  try {
+    await server(
+      new Request("http://api.test/rpc/answers/list?email=jane@example.com", {
+        method: "POST",
+        headers: { cookie: "session=SECRET-COOKIE" },
+        body: JSON.stringify({ value: "Jane Doe" }),
+      }),
+    )
+    await server(new Request("http://api.test/files/resume-of-jane.pdf"))
+    await server(new Request("http://api.test/some/junk/jane-doe"))
+    await observability.flush()
+    const sent = collector.everything()
+    expect(sent).toContain("http.request")
+    expect(sent).toContain("/files/:key")
+    expect(sent).toContain('"stringValue":"other"')
+    for (const leak of ["jane", "Jane", "SECRET-COOKIE", "email="]) expect(sent).not.toContain(leak)
+  } finally {
+    setObservability(noopObservability)
+    collector.stop()
+  }
 })

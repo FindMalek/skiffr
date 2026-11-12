@@ -8,4 +8,6 @@ export function proxy(request: NextRequest) {
   return NextResponse.next()
 }
 
-export const config = { matcher: ["/((?!sign-in|sign-up|api|_next|icon.svg|opengraph-image|robots.txt).*)"] }
+export const config = {
+  matcher: ["/((?!sign-in|sign-up|api|_next|icon.svg|opengraph-image|robots.txt|analytics.js).*)"],
+}
