@@ -1,25 +1,38 @@
 import { expect, test } from "bun:test"
-import { CV_PATCH_OPS_MAX } from "@skiffr/common/constants"
+import { CV_PATCH_BYTES_MAX, CV_PATCH_OPS_MAX } from "@skiffr/common/constants"
 import type { CvOperation } from "@skiffr/common/schemas"
 import { applyOps } from "./json-patch"
-import { buildSource, type Evaluation, evaluatePatch, patched } from "./patch"
-import { buildView, htmlText, resumeTexts } from "./resume"
+import { buildSource, type Evaluation, evaluatePatch, fitPatch, patched } from "./patch"
+import { buildView, htmlText, modelView, parseBullets, visibleTexts } from "./resume"
 import { BULLETS, sampleData } from "./test-support"
 
-const data = sampleData()
-const view = buildView(data)
-const source = buildSource([...resumeTexts(data), "Ana Silva, based in Lisbon", "TypeScript, Go, Rust"])
+type Json = Record<string, unknown>
 
-const run = (...operations: unknown[]): Evaluation => evaluatePatch({ data, view, operations, source })
+function setup(mutate?: (data: Json) => void, profileSkills: string[] = ["Rust"]) {
+  const data = sampleData()
+  mutate?.(data)
+  const view = buildView(data)
+  const source = buildSource(view, profileSkills)
+  const run = (...operations: unknown[]): Evaluation => evaluatePatch({ data, view, operations, source })
+  return { data, view, source, run }
+}
+
+const { data, view, run } = setup()
 const replace = (path: string, value: CvOperation["value"]) => ({ op: "replace", path, value })
 const reasons = (evaluation: Evaluation) => evaluation.rejected.map((r) => r.reason)
 
-test("allowed edits pass: headline, summary, keyword order, bullet order and rewording, visibility, item order", () => {
+const items = (data: Json, section: string) =>
+  ((data.sections as Record<string, { items: Json[] }>)[section] as { items: Json[] }).items
+const withBullets = (data: Json, index: number, ...bullets: string[]) => {
+  items(data, "experience")[index]!.description = `<ul>${bullets.map((b) => `<li><p>${b}</p></li>`).join("")}</ul>`
+}
+
+test("allowed edits pass: copied clauses, keyword order, bullet cuts, hiding, skill group order", () => {
   const evaluation = run(
-    replace("/headline", "Backend Engineer, TypeScript and Go"),
-    replace("/summary", "Backend engineer building payment APIs in TypeScript and Go for 6 years."),
+    replace("/headline", "TypeScript, Go"),
+    replace("/summary", "Serving 2M requests a day. Built the billing API in TypeScript and PostgreSQL."),
     replace("/skills/1/keywords", ["Kafka", "PostgreSQL", "Docker"]),
-    replace("/experience/0/bullets", [BULLETS.acme[1], "Built the billing API with TypeScript and PostgreSQL."]),
+    replace("/experience/0/bullets", [BULLETS.acme[1], "Built the billing API in TypeScript and PostgreSQL"]),
     replace("/experience/1/hidden", true),
     replace("/sections/interests/hidden", true),
     { op: "move", from: "/skills/1", path: "/skills/0" },
@@ -29,69 +42,94 @@ test("allowed edits pass: headline, summary, keyword order, bullet order and rew
 
   const out = patched(data, evaluation.resumeOps)
   const sections = out.sections as Record<string, { hidden: boolean; items: Array<Record<string, unknown>> }>
-  expect((out.basics as { headline: string }).headline).toBe("Backend Engineer, TypeScript and Go")
+  expect((out.basics as { headline: string }).headline).toBe("TypeScript, Go")
   expect(sections.skills?.items.map((item) => item.name)).toEqual(["Infrastructure", "Languages"])
   expect(sections.skills?.items[0]?.keywords).toEqual(["Kafka", "PostgreSQL", "Docker"])
   expect(sections.experience?.items[1]?.hidden).toBe(true)
   expect(sections.interests?.hidden).toBe(true)
-  expect(htmlText(sections.experience?.items[0]?.description as string).split("\n")).toEqual([
-    BULLETS.acme[1] as string,
-    "Built the billing API with TypeScript and PostgreSQL.",
-  ])
+  const bullets = parseBullets(sections.experience?.items[0]?.description as string)
+  expect(bullets?.bullets).toEqual([BULLETS.acme[1], "Built the billing API in TypeScript and PostgreSQL"])
   expect(sections.experience?.items[0]?.description).toContain(`<li><p>${BULLETS.acme[1]}</p></li>`)
-  expect(evaluation.changes.map((c) => c.id).sort()).toEqual([
-    "experience.0.bullets",
-    "experience.1.hidden",
-    "headline",
-    "section.interests",
-    "skills.1.keywords",
-    "skills.order",
-    "summary",
+  expect(htmlText((out.summary as { content: string }).content).split("\n")).toEqual([
+    "Serving 2M requests a day. Built the billing API in TypeScript and PostgreSQL.",
   ])
 })
 
 test("the base data is never touched by evaluating or applying a patch", () => {
   const before = structuredClone(data)
-  patched(data, run(replace("/headline", "Backend Engineer")).resumeOps)
+  patched(data, run(replace("/headline", "TypeScript, Go")).resumeOps)
   expect(data).toEqual(before)
 })
 
-const INVENTED: Array<[string, unknown, string]> = [
-  ["a company in the headline", replace("/headline", "Backend Engineer at Initech"), "invented_fact"],
-  ["a seniority title", replace("/headline", "Principal Staff Architect"), "invented_fact"],
-  ["a degree in the summary", replace("/summary", "Backend engineer with a PhD in Computer Science."), "invented_fact"],
-  ["a number in the summary", replace("/summary", "Backend engineer with 9 years in TypeScript."), "invented_fact"],
-  ["a number written out", replace("/summary", "Backend engineer with six years in TypeScript."), "invented_fact"],
+const INVENTED: Array<[string, unknown]> = [
+  ["a company in the headline", replace("/headline", "Backend Engineer at Initech")],
+  ["a seniority title", replace("/headline", "Principal Staff Architect")],
+  ["a degree in the summary", replace("/summary", "Backend engineer with a PhD in Computer Science.")],
+  ["a number in the summary", replace("/summary", "Backend engineer with 9 years in TypeScript.")],
+  ["a number written out", replace("/summary", "Backend engineer with six years in TypeScript.")],
+  ["a date moved to another entry", replace("/summary", "Senior Backend Developer at Globex since 2021")],
+  ["a company joined to a date", replace("/summary", "Backend engineer at Acme Labs since 2018 in Lisbon")],
+  ["a figure moved onto other words", replace("/summary", "Mentored 40 engineers building payment apis")],
+  ["a figure from a bullet put in a summary sentence", replace("/summary", "Backend engineer for 40 minutes")],
+  ["a percent that was never there", replace("/summary", "Cut deploy time by 40%")],
+  ["words from two clauses glued together", replace("/summary", "Backend engineer and built the billing API")],
+  ["a paraphrase", replace("/summary", "Backend engineer creating payment interfaces in TypeScript and Go.")],
   [
-    "a changed metric in a bullet",
-    replace("/experience/0/bullets", ["Cut deploy time from 40 minutes to 4 with Docker and GitHub Actions."]),
-    "invented_fact",
+    "a reversed metric in a bullet",
+    replace("/experience/0/bullets", ["Cut deploy time from 8 minutes to 40 with Docker and GitHub Actions."]),
+  ],
+  [
+    "a changed figure in a bullet",
+    replace("/experience/0/bullets", [
+      "Built the billing API in TypeScript and PostgreSQL, serving 40 requests a day.",
+    ]),
   ],
   [
     "a tool from another job in a bullet",
     replace("/experience/0/bullets", ["Wrote Go services on Kafka for the billing API."]),
-    "invented_fact",
   ],
-  ["a skill that is not in the resume", replace("/skills/0/keywords", ["TypeScript", "Kubernetes"]), "invented_skill"],
-  ["a skill only the posting names", replace("/skills/0/keywords", ["TypeScript", "Terraform"]), "invented_skill"],
+  [
+    "a clause from another entry in a bullet",
+    replace("/experience/0/bullets", ["Wrote Go services on Kafka for order events"]),
+  ],
   [
     "a new bullet",
     replace("/experience/1/bullets", [...(view.experience[1]?.bullets ?? []), "Wrote Go services on Kafka."]),
-    "invalid_value",
   ],
-  [
-    "a different claim in known words",
-    replace("/experience/1/bullets", [BULLETS.globex[0], "Wrote Kafka Go."]),
-    "not_a_rewording",
-  ],
-  ["text that is far too long", replace("/summary", "Go ".repeat(500)), "too_long"],
+  ["text that is far too long", replace("/summary", `${"Go ".repeat(500)}`)],
 ]
 
-test.each(INVENTED)("%s is refused", (_name, op, reason) => {
+test.each(INVENTED)("%s is refused", (_name, op) => {
   const evaluation = run(op)
-  expect(reasons(evaluation)).toEqual([reason as never])
+  expect(evaluation.rejected).toHaveLength(1)
+  expect(["invented_fact", "invalid_value", "too_long"]).toContain(evaluation.rejected[0]?.reason as string)
   expect(evaluation.operations).toEqual([])
   expect(evaluation.resumeOps).toEqual([])
+})
+
+test("a verb that claims more than the original is refused, even though every word is the applicant's own somewhere", () => {
+  const { run: runVariant } = setup((d) => {
+    withBullets(
+      d,
+      0,
+      "Assisted with the billing API.",
+      "Participated in migration to Docker.",
+      "Sourced qualified sales leads.",
+    )
+  })
+  expect(reasons(runVariant(replace("/experience/0/bullets", ["Drove the billing API."])))).toEqual(["invented_fact"])
+  expect(
+    reasons(runVariant(replace("/experience/0/bullets", ["Initiated and delivered migration to Docker."]))),
+  ).toEqual(["invented_fact"])
+  expect(reasons(runVariant(replace("/experience/0/bullets", ["Designed and built migration to Docker."])))).toEqual([
+    "invented_fact",
+  ])
+  // `leads` in "sales leads" must not license "Leading the billing API"
+  expect(reasons(runVariant(replace("/summary", "Leading the billing API in TypeScript")))).toEqual(["invented_fact"])
+  expect(reasons(runVariant(replace("/experience/0/bullets", ["Leading qualified sales leads."])))).toEqual([
+    "invented_fact",
+  ])
+  expect(runVariant(replace("/experience/0/bullets", ["Participated in migration to Docker."])).rejected).toEqual([])
 })
 
 const OUTSIDE: Array<[string, unknown, string]> = [
@@ -109,9 +147,10 @@ const OUTSIDE: Array<[string, unknown, string]> = [
   ["a test", { op: "test", path: "/headline", value: "x" }, "op_not_allowed"],
   ["an index past the end", replace("/skills/7/keywords", ["Go"]), "bad_index"],
   ["a move across lists", { op: "move", from: "/skills/0", path: "/experience/1" }, "path_not_allowed"],
+  ["a move of experience", { op: "move", from: "/experience/1", path: "/experience/0" }, "path_not_allowed"],
   ["a move past the end", { op: "move", from: "/skills/0", path: "/skills/5" }, "bad_index"],
   ["a section that does not exist", replace("/sections/secrets/hidden", true), "bad_index"],
-  ["a visibility that is not a boolean", replace("/skills/0/hidden", "yes"), "invalid_value"],
+  ["a section named like an object property", replace("/sections/constructor/hidden", true), "bad_index"],
   ["junk", "not an operation", "invalid_value"],
 ]
 
@@ -121,42 +160,122 @@ test.each(OUTSIDE)("%s is refused", (_name, op, reason) => {
   expect(evaluation.resumeOps).toEqual([])
 })
 
-test("a refused operation does not stop the good ones", () => {
+test("hiding only goes one way: nothing can be shown again", () => {
+  for (const path of [
+    "/sections/references/hidden",
+    "/experience/2/hidden",
+    "/skills/0/hidden",
+    "/sections/interests/hidden",
+  ]) {
+    for (const value of [false, "false", 0, null, undefined]) {
+      const evaluation = run({ op: "replace", path, value })
+      expect(evaluation.resumeOps, `${path} ${String(value)}`).toEqual([])
+      expect(reasons(evaluation)).toEqual(["invalid_value"])
+    }
+  }
+  const out = patched(
+    data,
+    run(replace("/sections/references/hidden", true), replace("/experience/2/hidden", true)).resumeOps,
+  )
+  expect((out.sections as Record<string, { hidden: boolean }>).references?.hidden).toBe(true)
+  expect(items(out, "experience")[2]?.hidden).toBe(true)
+})
+
+test("text in a hidden entry, a hidden section or a custom section is nobody's words", () => {
+  for (const op of [
+    replace("/summary", "Backend engineer at Secret Corp"),
+    replace("/headline", "Backend Engineer, Secret Corp"),
+    replace("/headline", "Principal Wizard"),
+    replace("/summary", "Led a team of 40 engineers building payment APIs"),
+    replace("/summary", "Led a team of 40 engineers."),
+    replace("/summary", "Dear Hiring Manager at Umbrella"),
+    replace("/skills/0/keywords", ["TypeScript", "Principal Wizard"]),
+    replace("/experience/2/bullets", ["Led a team of 40 engineers."]),
+    replace("/skills/0/keywords", ["Priya Private"]),
+  ]) {
+    const evaluation = run(op)
+    expect(evaluation.operations, JSON.stringify(op)).toEqual([])
+    expect(evaluation.rejected).toHaveLength(1)
+  }
+})
+
+test("the model is shown nothing of a hidden entry, a hidden section's entries or a hidden summary", () => {
+  const sent = JSON.stringify(modelView(view))
+  for (const secret of ["Secret Corp", "Principal Wizard", "40 engineers", "Priya", "Umbrella", "+351"]) {
+    expect(sent).not.toContain(secret)
+  }
+  expect(modelView(view).experience[2]).toEqual({ hidden: true })
+  const hiddenSection = setup((d) => {
+    ;(d.sections as Record<string, { hidden: boolean }>).skills!.hidden = true
+    ;(d.summary as { hidden: boolean }).hidden = true
+  })
+  const shown = modelView(hiddenSection.view)
+  expect(shown.skills.every((item) => Object.keys(item).join() === "hidden")).toBe(true)
+  expect(shown.summary).toBe("")
+  expect(reasons(hiddenSection.run(replace("/summary", "Serving 2M requests a day")))).toEqual(["path_not_allowed"])
+  expect(reasons(hiddenSection.run(replace("/skills/0/keywords", ["Go"])))).toEqual(["path_not_allowed"])
+})
+
+test("hidden and custom text does not count in the keyword score either", () => {
+  const texts = visibleTexts(data).join(" ")
+  for (const secret of ["Secret Corp", "Principal Wizard", "Priya", "Umbrella"]) expect(texts).not.toContain(secret)
+})
+
+test("skills only reorder and drop inside their own group, and add only what the profile lists, as the applicant wrote it", () => {
+  expect(run(replace("/skills/0/keywords", ["Go", "TypeScript"])).rejected).toEqual([])
+  expect(reasons(run(replace("/skills/0/keywords", ["TypeScript", "Kafka"])))).toEqual(["invented_skill"])
+  expect(reasons(run(replace("/skills/0/keywords", ["TypeScript", "Kubernetes"])))).toEqual(["invented_skill"])
+  expect(reasons(run(replace("/skills/0/keywords", ["TypeScript ★★★★★"])))).toEqual(["invented_skill"])
+  expect(reasons(run(replace("/skills/0/keywords", ["Go 🏆"])))).toEqual(["invented_skill"])
+  expect(reasons(run(replace("/skills/0/keywords", ["Principal Wizard"])))).toEqual(["invented_skill"])
+
+  const added = run(replace("/skills/0/keywords", ["rust", "typescript"]))
+  expect(added.view.skills[0]?.keywords).toEqual(["Rust", "TypeScript"])
+  const deduped = run(replace("/skills/0/keywords", ["Go", "go", "GO", "SQL"]))
+  expect(deduped.view.skills[0]?.keywords).toEqual(["Go", "SQL"])
+})
+
+test("a headline stays on one line", () => {
+  expect(run(replace("/headline", "TypeScript,\n\nGo")).view.headline).toBe("TypeScript, Go")
+})
+
+test("one bad operation drops only itself", () => {
   const evaluation = run(
     replace("/summary", "Backend engineer with a PhD."),
+    replace("/sections/constructor/hidden", true),
     replace("/skills/1/keywords", ["Kafka", "Docker"]),
     replace("/basics/name", "x"),
   )
   expect(evaluation.operations).toEqual([replace("/skills/1/keywords", ["Kafka", "Docker"])])
-  expect(reasons(evaluation)).toEqual(["invented_fact", "path_not_allowed"])
+  expect(reasons(evaluation)).toEqual(["invented_fact", "bad_index", "path_not_allowed"])
+  expect(() => patched(data, evaluation.resumeOps)).not.toThrow()
 })
 
-test("a patch with too many operations or too many bytes is refused whole", () => {
-  expect(() =>
-    run(...Array.from({ length: CV_PATCH_OPS_MAX + 1 }, () => replace("/headline", "Backend Engineer"))),
-  ).toThrow()
-  expect(() =>
-    run(
-      ...Array.from({ length: 12 }, () =>
-        replace(
-          "/skills/0/keywords",
-          Array.from({ length: 40 }, () => "TypeScript".repeat(5)),
-        ),
-      ),
+test("a forged patch with too many operations or too many bytes is refused whole, a model's is cut down", () => {
+  const many = Array.from({ length: CV_PATCH_OPS_MAX + 1 }, () => replace("/headline", "TypeScript"))
+  expect(() => run(...many)).toThrow()
+  expect(fitPatch(many)).toHaveLength(CV_PATCH_OPS_MAX)
+  const bulky = Array.from({ length: 12 }, () =>
+    replace(
+      "/skills/0/keywords",
+      Array.from({ length: 40 }, () => "TypeScript".repeat(5)),
     ),
-  ).toThrow()
+  )
+  expect(() => run(...bulky)).toThrow()
+  expect(JSON.stringify(fitPatch(bulky)).length).toBeLessThanOrEqual(CV_PATCH_BYTES_MAX)
+  expect(fitPatch(bulky).length).toBeLessThan(bulky.length)
 })
 
 const TRICKS: Array<[string, string, string]> = [
-  ["a zero width space inside a word", "Backend Engineer in Type​Script", "unicode"],
-  ["a zero width joiner", "Backend‍ Engineer", "unicode"],
-  ["a right to left override", "Backend Engineer ‮Go", "unicode"],
-  ["a cyrillic look-alike inside a latin word", "Backend Enginеer", "unicode"],
-  ["a greek look-alike", "Backend Engineer in TypεScript", "unicode"],
-  ["arabic indic digits", "Backend engineer with ٦ years in Go", "unicode"],
-  ["a control character", "Backend\u0007 Engineer", "unicode"],
-  ["a word written wholly in another script", "Backend Engineer in Доккер", "invented_fact"],
-  ["a tool that is only a lookalike spelling", "Backend Engineer in Typescrip7", "invented_fact"],
+  ["a zero width space inside a word", "Type​Script", "unicode"],
+  ["a zero width joiner", "Type‍Script", "unicode"],
+  ["a right to left override", "TypeScript ‮Go", "unicode"],
+  ["a cyrillic look-alike inside a latin word", "TypeScript, Gо", "unicode"],
+  ["a greek look-alike", "TypεScript", "unicode"],
+  ["arabic indic digits", "Serving ٢M requests a day", "unicode"],
+  ["a control character", "Type\u0007Script", "unicode"],
+  ["a word written wholly in another script", "Доккер", "invented_fact"],
+  ["a lookalike spelling", "Typescrip7", "invented_fact"],
 ]
 
 test.each(TRICKS)("%s is refused", (_name, headline, reason) => {
@@ -164,9 +283,9 @@ test.each(TRICKS)("%s is refused", (_name, headline, reason) => {
 })
 
 test("full width digits fold to the plain number, so a copied figure still matches and is stored plain", () => {
-  const evaluation = run(replace("/summary", "Backend engineer with ６ years building payment APIs in TypeScript."))
+  const evaluation = run(replace("/summary", "Serving ２M requests a day."))
   expect(evaluation.rejected).toEqual([])
-  expect(evaluation.view.summary).toBe("Backend engineer with 6 years building payment APIs in TypeScript.")
+  expect(evaluation.view.summary).toBe("Serving 2M requests a day.")
 })
 
 test("the posting is never a source of facts: nothing in it can widen what is allowed", () => {
@@ -184,14 +303,18 @@ test("the posting is never a source of facts: nothing in it can widen what is al
 test("applying the compiled operations to the data is the same as the view the checks ran on", () => {
   const evaluation = run(
     replace("/skills/0/keywords", ["Go", "TypeScript"]),
-    { op: "move", from: "/experience/1", path: "/experience/0" },
+    { op: "move", from: "/skills/1", path: "/skills/0" },
     replace("/experience/0/hidden", true),
   )
   const out = applyOps(data, evaluation.resumeOps)
   const after = buildView(out)
-  expect(after.skills[0]?.keywords).toEqual(["Go", "TypeScript"])
+  expect(after.skills.map((s) => [s.name, s.keywords[0]])).toEqual([
+    ["Infrastructure", "PostgreSQL"],
+    ["Languages", "Go"],
+  ])
   expect(after.experience.map((e) => [e.company, e.hidden])).toEqual([
-    ["Globex", true],
-    ["Acme Labs", false],
+    ["Acme Labs", true],
+    ["Globex", false],
+    ["Secret Corp", true],
   ])
 })

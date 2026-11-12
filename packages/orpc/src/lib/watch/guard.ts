@@ -34,6 +34,7 @@ const MEDIA_TYPES: ReadonlySet<string> = new Set([
   "application/feed+json",
   "application/ld+json",
 ])
+const NO_BYTES = Buffer.alloc(0)
 const REDIRECTS: ReadonlySet<number> = new Set([301, 302, 303, 307, 308])
 const RETRY_AFTER_MAX_MS = 24 * 60 * 60 * 1000
 
@@ -77,7 +78,7 @@ export interface PageRequest {
   lastModified?: string | null
   /** An api call instead of a page read: only these methods and headers, and no redirect is followed, so a key never leaves the host it was meant for. */
   call?: {
-    method: "GET" | "POST" | "PATCH"
+    method: "GET" | "POST" | "PATCH" | "DELETE"
     headers: { "x-api-key": string }
     json?: unknown
     media?: readonly string[]
@@ -259,7 +260,7 @@ function exchange(
             url: url.href,
             contentType: media,
             body: decode(raw, contentType),
-            raw,
+            raw: request.call ? raw : NO_BYTES,
             etag: validators(header(res.headers.etag)),
             lastModified: validators(header(res.headers["last-modified"])),
           })

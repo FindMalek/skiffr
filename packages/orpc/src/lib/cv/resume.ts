@@ -138,6 +138,8 @@ export interface ExperienceView extends ViewItem {
 export interface ResumeView {
   headline: string
   summary: string
+  /** A hidden summary is not read by anyone, so it is neither a source nor edited. */
+  summaryHidden: boolean
   skills: SkillView[]
   experience: ExperienceView[]
   sections: Record<string, { hidden: boolean }>
@@ -150,6 +152,13 @@ export function sectionItems(data: Json, name: string): Json[] {
   return isObject(section) && isObject(section[name]) ? list(section[name].items) : []
 }
 
+/** Own section names only: `constructor` or `__proto__` are not sections. */
+export const hasSection = (view: ResumeView, name: string): boolean => Object.hasOwn(view.sections, name)
+
+/**
+ * `hidden` on an item is what a reader sees: an item of a hidden section is hidden too. The text of hidden items stays
+ * here (it is shown as "Hidden" in a diff) but is never a source of words and never goes to the model.
+ */
 export function buildView(data: Json): ResumeView {
   const sections: ResumeView["sections"] = {}
   if (isObject(data.sections)) {
@@ -157,14 +166,17 @@ export function buildView(data: Json): ResumeView {
       if (SECTION_NAME.test(name) && isObject(section)) sections[name] = { hidden: section.hidden === true }
     }
   }
+  const hiddenSection = (name: string) => sections[name]?.hidden === true
+  const summary = isObject(data.summary) ? data.summary : {}
   return {
-    headline: str(isObject(data.basics) ? data.basics.headline : ""),
-    summary: htmlText(str(isObject(data.summary) ? data.summary.content : "")),
+    headline: squash(str(isObject(data.basics) ? data.basics.headline : "")),
+    summary: htmlText(str(summary.content)),
+    summaryHidden: summary.hidden === true,
     skills: sectionItems(data, "skills").map((item, origin) => ({
       origin,
       name: str(item.name),
       keywords: Array.isArray(item.keywords) ? item.keywords.filter((k): k is string => typeof k === "string") : [],
-      hidden: item.hidden === true,
+      hidden: item.hidden === true || hiddenSection("skills"),
     })),
     experience: sectionItems(data, "experience").map((item, origin) => ({
       origin,
@@ -172,16 +184,22 @@ export function buildView(data: Json): ResumeView {
       position: str(item.position),
       period: str(item.period),
       bullets: parseBullets(str(item.description))?.bullets ?? null,
-      hidden: item.hidden === true,
+      hidden: item.hidden === true || hiddenSection("experience"),
     })),
     sections,
   }
 }
 
-/** What the model is shown: the same view without the internal positions. */
+/** What the model is shown: no internal positions, and hidden items and a hidden summary as nothing but the fact that they are hidden. */
 export function modelView(view: ResumeView) {
-  const strip = <T extends ViewItem>({ origin: _origin, ...rest }: T) => rest
-  return { ...view, skills: view.skills.map(strip), experience: view.experience.map(strip) }
+  const shown = <T extends ViewItem>({ origin: _origin, ...rest }: T) => (rest.hidden ? { hidden: true } : rest)
+  return {
+    headline: view.headline,
+    summary: view.summaryHidden ? "" : view.summary,
+    skills: view.skills.map(shown),
+    experience: view.experience.map(shown),
+    sections: view.sections,
+  }
 }
 
 const SKIP_KEYS = new Set(["id", "icon", "iconColor", "url", "inlineLink", "columns", "keepTogether", "startOnNewPage"])
@@ -193,13 +211,6 @@ function collect(value: unknown, out: string[], depth = 0) {
   else if (isObject(value)) {
     for (const [key, child] of Object.entries(value)) if (!SKIP_KEYS.has(key)) collect(child, out, depth + 1)
   }
-}
-
-/** Every piece of readable text in the resume data, html reduced to text. Used to know what the applicant has written. */
-export function resumeTexts(data: Json): string[] {
-  const out: string[] = []
-  for (const part of [data.basics, data.summary, data.sections, data.customSections]) collect(part, out)
-  return out
 }
 
 /** The text a recruiter's system would read: hidden sections and items are not there. */

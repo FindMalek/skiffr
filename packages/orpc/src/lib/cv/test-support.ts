@@ -29,7 +29,7 @@ export interface MockRr {
   hits: Array<{ call: string; key: string | undefined }>
   /** Bodies of the patch calls. */
   patches: Array<{ id: string; operations: PatchOp[]; expectedUpdatedAt: string }>
-  options: { readOnly: boolean; noCopies: boolean }
+  options: { readOnly: boolean; noCopies: boolean; failPatch: boolean; failDelete: boolean }
   close(): Promise<void>
 }
 
@@ -90,6 +90,14 @@ export function sampleData(): Json {
             description: `<ul>${BULLETS.globex.map(li).join("")}</ul>`,
             roles: [],
           }),
+          item({
+            hidden: true,
+            company: "Secret Corp",
+            position: "Principal Wizard",
+            period: "2012 - 2014",
+            description: `<ul>${li("Led a team of 40 engineers.")}</ul>`,
+            roles: [],
+          }),
         ],
       },
       education: {
@@ -100,8 +108,17 @@ export function sampleData(): Json {
         ],
       },
       interests: { title: "", hidden: false, items: [item({ name: "Chess", keywords: ["Chess"] })] },
+      references: { title: "", hidden: true, items: [item({ name: "Priya Private", description: "+351 555 0100" })] },
     },
-    customSections: [],
+    customSections: [
+      {
+        id: "c1",
+        type: "cover-letter",
+        title: "Letter",
+        hidden: false,
+        items: [{ id: "c1i", hidden: false, content: "<p>Dear Hiring Manager at Umbrella</p>" }],
+      },
+    ],
     metadata: { template: "azurill" },
   }
 }
@@ -117,7 +134,7 @@ export async function startMockRr(resumes: MockResume[] = [sampleResume("base-1"
   const store = new Map(resumes.map((resume) => [resume.id, resume]))
   const hits: MockRr["hits"] = []
   const patches: MockRr["patches"] = []
-  const options = { readOnly: false, noCopies: false }
+  const options = { readOnly: false, noCopies: false, failPatch: false, failDelete: false }
   const sockets = new Set<net.Socket>()
 
   const server = http.createServer(async (request, response) => {
@@ -165,7 +182,13 @@ export async function startMockRr(resumes: MockResume[] = [sampleResume("base-1"
       })
       return send(200, copyId)
     }
+    if (request.method === "DELETE" && !action) {
+      if (options.failDelete) return send(500, {})
+      store.delete(resume.id)
+      return send(200, null)
+    }
     if (request.method === "PATCH" && !action) {
+      if (options.failPatch) return send(500, { code: "BOOM" })
       const operations = body.operations as PatchOp[]
       patches.push({ id: resume.id, operations, expectedUpdatedAt: String(body.expectedUpdatedAt) })
       if (body.expectedUpdatedAt !== resume.updatedAt) return send(409, { code: "CONFLICT" })
@@ -199,10 +222,18 @@ export async function startMockRr(resumes: MockResume[] = [sampleResume("base-1"
 }
 
 /** The mock stands in for `rr.test`, a name that resolves to a public address so the real checks run on it. */
-export function mockCvRuntime(rr: Pick<MockRr, "port">, options: { tailorsPerHour?: number } = {}): CvRuntime {
+export function mockCvRuntime(
+  rr: Pick<MockRr, "port">,
+  options: { tailorsPerHour?: number; copiesPerHour?: number; callsPerHour?: number; gapMs?: number } = {},
+): CvRuntime {
+  const hour = 60 * 60 * 1000
   return {
     key: CV_KEY,
     guard: { transport: testTransport(rr) },
-    budget: new UserBudget(options.tailorsPerHour ?? 1_000, 60 * 60 * 1000),
+    budget: new UserBudget(options.tailorsPerHour ?? 1_000, hour),
+    copies: new UserBudget(options.copiesPerHour ?? 1_000, hour),
+    calls: new UserBudget(options.callsPerHour ?? 1_000, hour),
+    gapMs: options.gapMs ?? 0,
+    gates: new Map(),
   }
 }

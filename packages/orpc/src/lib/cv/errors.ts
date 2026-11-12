@@ -25,6 +25,8 @@ export class CvError extends Error {
   constructor(
     readonly kind: CvErrorKind,
     readonly status?: number,
+    /** Set when a copy was made and could not be removed again: its name, so the user can find it. */
+    readonly leftover?: string,
   ) {
     super("A Reactive Resume call failed.")
   }

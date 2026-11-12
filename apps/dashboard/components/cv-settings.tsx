@@ -266,8 +266,9 @@ function SecurityNote() {
             description you paste.
           </li>
           <li>
-            <strong>Never invents.</strong> The AI can reword, reorder and hide. Every suggestion is checked in code
-            against what you wrote, and one that adds a company, title, date, degree, skill, tool or number is dropped.
+            <strong>Never invents.</strong> The AI can reorder, cut down and hide what you wrote, never reword it. Every
+            suggestion is checked in code, and text that is not copied from your resume, or a number moved away from its
+            words, is dropped.
           </li>
           <li>
             <strong>Shows first.</strong> You see every change and the keyword score before a copy is made.

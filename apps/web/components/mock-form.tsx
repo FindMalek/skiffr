@@ -21,15 +21,15 @@ function Toast() {
     <div className="absolute right-3 bottom-12 w-52 border bg-popover p-3 text-popover-foreground shadow-md">
       <p className="font-medium text-xs">Autofill this application?</p>
       <div className="mt-2.5 flex gap-1.5">
-        <span className="inline-flex h-6 items-center bg-primary px-2 text-primary-foreground text-xs">Autofill</span>
-        <span className="inline-flex h-6 items-center border px-2 text-xs">Not now</span>
+        <span className="inline-flex h-6 items-center bg-primary px-2 text-primary-foreground text-xs">Yes</span>
+        <span className="inline-flex h-6 items-center border px-2 text-xs">No</span>
       </div>
     </div>
   )
 }
 
 const NOTES: Record<MockStep, string> = {
-  detect: "Form found. It would ask first.",
+  detect: "Form found. It asks first.",
   fill: "Fields filled. Nothing submitted.",
 }
 

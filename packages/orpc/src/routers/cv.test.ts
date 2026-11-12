@@ -7,7 +7,18 @@ import { cvConnection, type Db, job, profile } from "@skiffr/db"
 import { eq } from "drizzle-orm"
 import type { Context } from "../context"
 import type { CvRuntime } from "../lib/cv"
-import { API_KEY, BULLETS, type MockRr, mockCvRuntime, RR_URL, sampleData, startMockRr } from "../lib/cv/test-support"
+import { copyNameOf } from "../lib/cv/service"
+import {
+  API_KEY,
+  BULLETS,
+  CV_KEY,
+  type MockRr,
+  mockCvRuntime,
+  RR_URL,
+  sampleData,
+  startMockRr,
+} from "../lib/cv/test-support"
+import { seal } from "../lib/gmail/crypto"
 import { connectDb } from "../lib/gmail/test-support"
 import { queueJob } from "../lib/jobs"
 import { TOKEN_PROCEDURES } from "../procedures"
@@ -80,7 +91,6 @@ test("without the server key nothing can be connected, and the status says so", 
     configured: false,
     connected: false,
   })
-  await expect(connect("ana").then(() => null)).resolves.toBeNull()
   await expect(
     call(appRouter.cv.connect, { baseUrl: RR_URL, apiKey: API_KEY }, as("ana", { cv: null })),
   ).rejects.toMatchObject({ code: "SERVICE_UNAVAILABLE" })
@@ -306,4 +316,159 @@ test("disconnecting forgets the key", async () => {
   await ready("ana")
   await call(appRouter.cv.disconnect, undefined, as("ana"))
   expect(await db.select().from(cvConnection)).toEqual([])
+})
+
+test("hiding is one way: a model or a forged apply can't show a hidden section or entry again", async () => {
+  const jobId = await ready("ana")
+  const unhide = [
+    replace("/sections/references/hidden", false),
+    replace("/experience/2/hidden", false),
+    replace("/summary", "Led a team of 40 engineers building payment APIs"),
+    replace("/headline", "Backend Engineer, Secret Corp"),
+  ]
+  const preview = await call(
+    appRouter.cv.preview,
+    { jobId, description: POSTING },
+    as("ana", { model: reply(...unhide) }),
+  )
+  expect(preview.operations).toEqual([])
+  expect(preview.rejected.map((r) => r.reason)).toEqual([
+    "invalid_value",
+    "invalid_value",
+    "invented_fact",
+    "invented_fact",
+  ])
+  expect(JSON.stringify(rr.hits)).not.toContain("Secret")
+
+  await expect(
+    call(
+      appRouter.cv.apply,
+      { jobId, description: POSTING, operations: unhide.slice(0, 2), baseUpdatedAt: preview.baseUpdatedAt },
+      as("ana"),
+    ),
+  ).rejects.toMatchObject({ code: "BAD_REQUEST" })
+  expect([...rr.resumes.keys()]).toEqual(["base-1"])
+})
+
+test("nothing hidden reaches the model", async () => {
+  const jobId = await ready("ana")
+  const model = reply()
+  await call(appRouter.cv.preview, { jobId, description: POSTING }, as("ana", { model }))
+  const sent = JSON.stringify(model.doGenerateCalls[0]?.prompt)
+  for (const secret of ["Secret Corp", "Principal Wizard", "40 engineers", "Priya", "Umbrella"]) {
+    expect(sent).not.toContain(secret)
+  }
+})
+
+test("a model that sends too many operations still gets a preview, and a run that failed before the model costs nothing", async () => {
+  const jobId = await ready("ana")
+  const limited = mockCvRuntime(rr, { tailorsPerHour: 1 })
+  const spare = rr.resumes.get("base-1")!
+  rr.resumes.delete("base-1")
+  await expect(
+    call(appRouter.cv.preview, { jobId, description: POSTING }, as("ana", { cv: limited, model: reply() })),
+  ).rejects.toMatchObject({ code: "NOT_FOUND" })
+  rr.resumes.set("base-1", spare)
+
+  const many = Array.from({ length: 45 }, () => replace("/skills/0/hidden", true))
+  const preview = await call(
+    appRouter.cv.preview,
+    { jobId, description: POSTING },
+    as("ana", { cv: limited, model: reply(...many) }),
+  )
+  expect(preview.operations).toHaveLength(1)
+})
+
+test("copies, connects, tests, listings and pdfs are each limited per user", async () => {
+  const jobId = await ready("ana")
+  const preview = await call(
+    appRouter.cv.preview,
+    { jobId, description: POSTING },
+    as("ana", { model: reply(replace("/skills/0/hidden", true)) }),
+  )
+  const apply = (limited: CvRuntime) =>
+    call(
+      appRouter.cv.apply,
+      { jobId, description: POSTING, operations: preview.operations, baseUpdatedAt: preview.baseUpdatedAt },
+      as("ana", { cv: limited, model: null }),
+    )
+  const copies = mockCvRuntime(rr, { copiesPerHour: 1 })
+  await apply(copies)
+  for (let i = 0; i < 4; i++) {
+    await expect(apply(copies)).rejects.toMatchObject({ code: "TOO_MANY_REQUESTS" })
+  }
+  expect([...rr.resumes.keys()]).toEqual(["base-1", "copy-2"])
+
+  const calls = mockCvRuntime(rr, { callsPerHour: 3 })
+  const hits = rr.hits.length
+  for (const run of [
+    () => call(appRouter.cv.test, undefined, as("ana", { cv: calls })),
+    () => call(appRouter.cv.resumes, undefined, as("ana", { cv: calls })),
+    () => call(appRouter.cv.pdf, { resumeId: "base-1" }, as("ana", { cv: calls })),
+  ]) {
+    await run()
+  }
+  const before = rr.hits.length
+  expect(before).toBe(hits + 3)
+  for (const run of [
+    () => call(appRouter.cv.connect, { baseUrl: RR_URL, apiKey: API_KEY }, as("ana", { cv: calls })),
+    () => call(appRouter.cv.test, undefined, as("ana", { cv: calls })),
+    () => call(appRouter.cv.resumes, undefined, as("ana", { cv: calls })),
+    () => call(appRouter.cv.pdf, { resumeId: "base-1" }, as("ana", { cv: calls })),
+  ]) {
+    await expect(run()).rejects.toMatchObject({ code: "TOO_MANY_REQUESTS" })
+  }
+  expect(rr.hits.length).toBe(before)
+  // another user has their own allowance
+  await expect(call(appRouter.cv.resumes, undefined, as("ben", { cv: calls }))).rejects.toMatchObject({
+    code: "PRECONDITION_FAILED",
+  })
+})
+
+test("each user has their own pacing gate, so one can't queue behind another", async () => {
+  await ready("ana")
+  await connect("ben")
+  const paced = mockCvRuntime(rr, { gapMs: 50 })
+  await call(appRouter.cv.resumes, undefined, as("ana", { cv: paced }))
+  await call(appRouter.cv.resumes, undefined, as("ben", { cv: paced }))
+  expect([...paced.gates.keys()].sort()).toEqual(["ana", "ben"])
+})
+
+test("a copy that can't be finished is removed again, and if that fails the user is told which copy is left", async () => {
+  const jobId = await ready("ana")
+  const preview = await call(
+    appRouter.cv.preview,
+    { jobId, description: POSTING },
+    as("ana", { model: reply(replace("/skills/0/hidden", true)) }),
+  )
+  const input = { jobId, description: POSTING, operations: preview.operations, baseUpdatedAt: preview.baseUpdatedAt }
+
+  rr.options.failPatch = true
+  const removed = await call(appRouter.cv.apply, input, as("ana")).catch((error) => error)
+  expect(removed).toMatchObject({ code: "BAD_GATEWAY" })
+  expect(removed.message).not.toContain("could not be removed")
+  expect([...rr.resumes.keys()]).toEqual(["base-1"])
+
+  rr.options.failDelete = true
+  const left = await call(appRouter.cv.apply, input, as("ana")).catch((error) => error)
+  expect(left.message).toContain('A copy named "Initech - Platform Engineer" was made and could not be removed')
+  expect(rr.resumes.size).toBe(2)
+})
+
+test("a key sealed for another purpose with the same server key does not open here", async () => {
+  await ready("ana")
+  await db
+    .update(cvConnection)
+    .set({ apiKeyEnc: seal(CV_KEY, API_KEY, "ana") })
+    .where(eq(cvConnection.userId, "ana"))
+  const hits = rr.hits.length
+  await expect(call(appRouter.cv.test, undefined, as("ana"))).rejects.toMatchObject({ code: "PRECONDITION_FAILED" })
+  expect(rr.hits.length).toBe(hits)
+})
+
+test("a very long company or role can't push the other out of the copy name", () => {
+  const name = copyNameOf("C".repeat(300), "Platform Engineer")
+  expect(name.length).toBeLessThanOrEqual(100)
+  expect(name.endsWith(" - Platform Engineer")).toBe(true)
+  expect(copyNameOf("Initech", "R".repeat(300))).toContain("Initech - ")
 })

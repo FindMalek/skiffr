@@ -1,7 +1,7 @@
 /** Everything the landing page says about the project, in one place. */
 export const SITE = {
   name: "skiffr",
-  tagline: "Open-source job application autofill that learns from your corrections. Early development, not released.",
+  tagline: "Open-source job application autofill that learns from your corrections. Self-hosted, early development.",
   badge: "early development",
   repo: "https://github.com/FindMalek/skiffr",
   license: "MIT License",

@@ -1,20 +1,3 @@
-/** Words that carry no fact: connectors and plain action verbs. Nothing that names a tool, a title, a number or a place belongs here. */
-const PLAIN_WORDS = `a about above across after again against all also an and any are as at be been being between both but by can could did do does during
-each early either end ends enough every for from further had has have having he her his how i if in into is it its just like made make
-makes making many more most much my new no nor not of off on once one only onto or other our out over own per same she should since so
-some such than that the their them then there these they this those through to too under until up upon us very was we were what when
-where whether which while who whom why will with within without would you your achieved added aligned analyzed applied arranged
-assembled assessed assisted automated balanced boosted brought built carried cleaned collaborated combined completed configured
-connected contributed converted coordinated created cut debugged delivered deployed designed detected developed diagnosed documented
-drove eliminated enabled enforced ensured established evaluated executed expanded facilitated finished fixed focused formed gathered
-generated handled helped identified implemented improved increased initiated integrated introduced investigated launched maintained
-measured merged migrated modernized monitored operated optimized organized performed planned prepared prevented produced progressed
-proposed provided raised reduced refactored released remodeled replaced reported researched resolved restructured reviewed revised
-rewrote scaled scheduled secured selected served set shaped shared shipped simplified solved sourced standardized streamlined
-strengthened supported sustained tested tracked transformed translated tuned updated upgraded used validated verified wrote quickly
-reliably successfully effectively directly closely independently together daily weekly regularly consistently across between during
-across while using via per cross functional end-to-end`
-
 const stripSuffix = (word: string): string => {
   if (word.length <= 3 || /[\d+#]/.test(word)) return word
   let out = word
@@ -60,48 +43,51 @@ export function hasUnicodeTrick(text: string): boolean {
   return false
 }
 
-export interface Vocab {
-  words: Set<string>
-  stems: Set<string>
-  /** The source as one lowercase string, to find a whole phrase in. */
-  text: string
+/** A clause ends at a comma (not inside a number like 1,000), `;`, `:`, a line break or a sentence end. */
+const CLAUSE_END = /(?<!\p{Nd}),|,(?!\p{Nd})|[;:\n]+|[.!?]+(?=\s|$)/u
+const EDGE = /^[^\p{L}\p{N}$\u20ac\u00a3\u00a5]+|[^\p{L}\p{N}%+#]+$/gu
+const FIGURE = /[\p{N}$\u20ac\u00a3\u00a5%]/u
+
+/** The clauses of a text in the form they are compared in: folded, lowercase, one space, no edge punctuation. */
+export function clausesOf(text: string): string[] {
+  return comparable(text.replace(/\n+/g, ";"))
+    .split(CLAUSE_END)
+    .map((clause) => clause.replace(/\s+/g, " ").replace(EDGE, "").trim())
+    .filter(Boolean)
 }
 
-const PLAIN = tokens(PLAIN_WORDS)
-const PLAIN_STEMS = new Set(PLAIN.map(stem))
-export const isPlainWord = (word: string): boolean => PLAIN_STEMS.has(stem(word))
+/** What a piece of new text may be copied from: whole clauses, and the words of each clause in order. */
+export interface Scope {
+  whole: Set<string>
+  words: string[][]
+}
 
-/** Everything the applicant has written: only words found here (or plain connectors) may appear in reworded text. */
-export function buildVocab(texts: readonly string[]): Vocab {
-  const words = new Set<string>()
-  const stems = new Set<string>()
-  const parts: string[] = []
-  for (const text of texts) {
-    const list = tokens(text)
-    for (const word of list) {
-      words.add(word)
-      stems.add(stem(word))
-    }
-    parts.push(list.join(" "))
+export function buildScope(units: readonly string[]): Scope {
+  const clauses = units.flatMap(clausesOf)
+  return { whole: new Set(clauses), words: clauses.map((clause) => clause.match(TOKEN) ?? []) }
+}
+
+const hasRun = (haystack: readonly string[], needle: readonly string[]): boolean => {
+  for (let at = 0; at + needle.length <= haystack.length; at++) {
+    if (needle.every((word, i) => haystack[at + i] === word)) return true
   }
-  return { words, stems, text: ` ${parts.join(" ")} ` }
+  return false
 }
 
-/** The words of `text` that are not in the source: a number must match exactly, any other word may differ only by ending. */
-export function newWords(text: string, vocab: Vocab): string[] {
-  const unknown: string[] = []
-  for (const word of tokens(text)) {
-    if (/\d/.test(word)) {
-      if (!vocab.words.has(word)) unknown.push(word)
-    } else if (!vocab.words.has(word) && !vocab.stems.has(stem(word)) && !isPlainWord(word)) unknown.push(word)
-  }
-  return unknown
-}
-
-/** Whole-phrase match in the source, so `postgres` is found in "built on Postgres and Redis" but not inside `postgresql`. */
-export function hasPhrase(phrase: string, vocab: Vocab): boolean {
-  const words = tokens(phrase)
-  return words.length > 0 && vocab.text.includes(` ${words.join(" ")} `)
+/**
+ * Whether every clause of `text` is the applicant's own. A clause with a number, a percent or a currency sign must be
+ * copied whole, so a figure keeps its unit, its words and its entry. Any other clause may be copied whole or be a
+ * stretch of two or more words from inside one clause, in the same order. Nothing is rewritten and no word is added.
+ */
+export function isCopied(text: string, scope: Scope): boolean {
+  const clauses = clausesOf(text)
+  if (clauses.length === 0) return false
+  return clauses.every((clause) => {
+    if (scope.whole.has(clause)) return true
+    if (FIGURE.test(clause)) return false
+    const words = clause.match(TOKEN) ?? []
+    return words.length >= 2 && scope.words.some((source) => hasRun(source, words))
+  })
 }
 
 export const squash = (text: string): string => normalize(text).replace(/\s+/g, " ").trim()

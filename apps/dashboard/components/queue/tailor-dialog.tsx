@@ -23,7 +23,7 @@ import { useMutation, useQuery } from "@tanstack/react-query"
 import { DownloadIcon, ExternalLinkIcon, FileUserIcon, TriangleAlertIcon } from "lucide-react"
 import Link from "next/link"
 import { type CSSProperties, useState } from "react"
-import { diffLines, diffWords, rejectedSummary, scoreChange } from "@/lib/cv-copy"
+import { diffLines, diffWords, rejectedSummary, reorderedOnly, scoreChange } from "@/lib/cv-copy"
 
 const MISSING_SHOWN = 14
 
@@ -58,7 +58,7 @@ function Lines({
   removed,
 }: {
   title: string
-  lines: Array<{ text: string; kept: boolean }>
+  lines: Array<{ text: string; kept: boolean; moved: boolean }>
   removed: boolean
 }) {
   return (
@@ -70,10 +70,17 @@ function Lines({
             key={`${index}-${line.text}`}
             dir="auto"
             className={`break-words border-l-2 pl-2 ${
-              line.kept ? "border-transparent text-muted-foreground" : removed ? "border-destructive" : "border-primary"
+              line.moved
+                ? "border-primary"
+                : line.kept
+                  ? "border-transparent text-muted-foreground"
+                  : removed
+                    ? "border-destructive"
+                    : "border-primary"
             }`}
           >
-            {line.kept ? null : <span className="sr-only">{removed ? "removed or reworded: " : "new wording: "}</span>}
+            {line.moved ? <span className="sr-only">moved: </span> : null}
+            {line.kept || line.moved ? null : <span className="sr-only">{removed ? "removed: " : "new: "}</span>}
             {line.text || "(empty)"}
           </li>
         ))}
@@ -94,6 +101,9 @@ function ChangeItem({ change }: { change: CvChange }) {
           {change.before[0]} <span aria-hidden="true">→</span>
           <span className="sr-only">to</span> <strong>{change.after[0]}</strong>
         </p>
+      )}
+      {change.kind === "list" && reorderedOnly(change) && (
+        <p className="font-medium text-primary text-xs">Same items, new order. The marked ones moved.</p>
       )}
       {change.kind === "list" && (
         <div className="grid gap-3 md:grid-cols-2">
@@ -440,11 +450,33 @@ function Body({ job, onClose }: { job: Job; onClose: () => void }) {
   )
 }
 
+const FOCUSABLE =
+  'a[href],button:not([disabled]),textarea:not([disabled]),input:not([disabled]),select:not([disabled]),[tabindex]:not([tabindex="-1"])'
+
+/** Tab and Shift+Tab go round inside the dialog: the page behind it is not reachable while it is open. */
+function keepFocusInside(event: React.KeyboardEvent<HTMLElement>) {
+  if (event.key !== "Tab") return
+  const nodes = [...event.currentTarget.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(
+    (node) => node.getClientRects().length > 0,
+  )
+  const first = nodes[0]
+  const last = nodes.at(-1)
+  if (!first || !last) return
+  const active = document.activeElement
+  if (event.shiftKey && (active === first || !event.currentTarget.contains(active))) {
+    event.preventDefault()
+    last.focus()
+  } else if (!event.shiftKey && (active === last || !event.currentTarget.contains(active))) {
+    event.preventDefault()
+    first.focus()
+  }
+}
+
 /** Tailors the base resume to a queued job: paste the posting, read every change and the keyword score, then make the copy. Nothing is written until the last button. */
 export function TailorDialog({ job, onClose }: { job: Job | null; onClose: () => void }) {
   return (
     <Dialog open={job !== null} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-h-11/12 w-full gap-4 overflow-y-auto sm:max-w-3xl">
+      <DialogContent onKeyDown={keepFocusInside} className="max-h-11/12 w-full gap-4 overflow-y-auto sm:max-w-3xl">
         {job && (
           <>
             <DialogHeader>

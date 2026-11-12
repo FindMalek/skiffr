@@ -5,24 +5,14 @@ import { applyOps, type PatchOp } from "./json-patch"
 import {
   bulletsHtml,
   type ExperienceView,
+  hasSection,
   paragraphsHtml,
   parseBullets,
   type ResumeView,
   type SkillView,
   sectionItems,
 } from "./resume"
-import {
-  buildVocab,
-  hasPhrase,
-  hasUnicodeTrick,
-  isPlainWord,
-  newWords,
-  normalize,
-  squash,
-  stem,
-  tokens,
-  type Vocab,
-} from "./text"
+import { buildScope, hasUnicodeTrick, isCopied, normalize, type Scope, squash } from "./text"
 
 export type Rejection = (typeof CV_REJECTIONS)[number]
 export interface Rejected {
@@ -33,10 +23,7 @@ export interface Rejected {
 export const HEADLINE_MAX = 120
 export const SUMMARY_MAX = 800
 export const BULLET_MAX = 400
-export const KEYWORD_MAX = 60
 export const KEYWORDS_MAX = 40
-/** A reworded bullet must share at least this much of its meaning-bearing words with a bullet it replaces. */
-const SIMILARITY_MIN = 0.25
 
 type ListName = "skills" | "experience"
 
@@ -45,11 +32,11 @@ type Target =
   | { kind: "summary" }
   | { kind: "field"; list: ListName; at: number; field: "keywords" | "hidden" | "bullets" }
   | { kind: "section"; name: string }
-  | { kind: "move"; list: ListName; at: number }
+  | { kind: "move"; at: number }
 
 const INDEX = "(0|[1-9]\\d{0,3})"
 
-/** The allowlist. A path that matches none of these is out, whatever the operation says. */
+/** The allowlist. A path that matches none of these is out, whatever the operation says. Only skill groups can be moved. */
 function targetOf(path: string, op: string): Target | null {
   if (op === "replace") {
     if (path === "/headline") return { kind: "headline" }
@@ -60,66 +47,75 @@ function targetOf(path: string, op: string): Target | null {
     if (section) return { kind: "section", name: section[1] as string }
   }
   if (op === "move") {
-    const move = new RegExp(`^/(skills|experience)/${INDEX}$`).exec(path)
-    if (move) return { kind: "move", list: move[1] as ListName, at: Number(move[2]) }
+    const move = new RegExp(`^/skills/${INDEX}$`).exec(path)
+    if (move) return { kind: "move", at: Number(move[1]) }
   }
   return null
 }
 
-/** Everything the applicant has written, in the resume and the profile: the only place a word, a number or a skill may come from. */
+/**
+ * Where new text may come from, and nothing else does. The headline and the summary may copy from the visible headline,
+ * summary, bullets and skills. A bullet may copy only from its own entry. A skill group may only reorder and drop its
+ * own keywords, plus add what the profile lists as skills. Hidden entries, hidden sections and custom sections are
+ * not in any of it: the applicant chose not to show them.
+ */
 export interface Source {
-  vocab: Vocab
+  overall: Scope
+  entries: Map<number, Scope>
+  skills: Map<number, Map<string, string>>
+  profileSkills: Map<string, string>
 }
 
-export const buildSource = (texts: readonly string[]): Source => ({ vocab: buildVocab(texts) })
+const key = (text: string) => squash(text).toLowerCase()
+const keyed = (list: readonly string[]) => new Map(list.map((entry) => [key(entry), entry] as const))
+
+export function buildSource(view: ResumeView, profileSkills: readonly string[] = []): Source {
+  const entries = new Map<number, Scope>()
+  const skills = new Map<number, Map<string, string>>()
+  const units: string[] = [view.headline]
+  if (!view.summaryHidden) units.push(view.summary)
+  for (const entry of view.experience) {
+    if (entry.hidden || !entry.bullets) continue
+    entries.set(entry.origin, buildScope(entry.bullets))
+    units.push(...entry.bullets)
+  }
+  for (const group of view.skills) {
+    if (group.hidden) continue
+    skills.set(group.origin, keyed(group.keywords))
+    units.push(...group.keywords)
+  }
+  return { overall: buildScope(units), entries, skills, profileSkills: keyed(profileSkills) }
+}
 
 type Checked<T> = { ok: true; value: T } | { ok: false; reason: Rejection }
 const fail = (reason: Rejection): { ok: false; reason: Rejection } => ({ ok: false, reason })
 
-function checkText(value: unknown, max: number, source: Source): Checked<string> {
+function checkText(value: unknown, max: number, scope: Scope, oneLine: boolean): Checked<string> {
   if (typeof value !== "string") return fail("invalid_value")
   if (hasUnicodeTrick(value)) return fail("unicode")
-  const text = normalize(value)
-    .replace(/[ \t]+/g, " ")
-    .trim()
+  const folded = normalize(value)
+  const text = oneLine ? squash(folded) : folded.replace(/[ \t]+/g, " ").trim()
   if (!text) return fail("invalid_value")
   if (text.length > max) return fail("too_long")
-  return newWords(text, source.vocab).length > 0 ? fail("invented_fact") : { ok: true, value: text }
+  return isCopied(text, scope) ? { ok: true, value: text } : fail("invented_fact")
 }
 
-function checkKeywords(value: unknown, source: Source): Checked<string[]> {
+/** Keywords are stored as the applicant wrote them, so a symbol or a change of case can't come in with them. */
+function checkKeywords(value: unknown, own: Map<string, string>, profile: Map<string, string>): Checked<string[]> {
   if (!Array.isArray(value) || value.some((entry) => typeof entry !== "string")) return fail("invalid_value")
   if (value.length > KEYWORDS_MAX) return fail("too_long")
   const out: string[] = []
   for (const entry of value as string[]) {
     if (hasUnicodeTrick(entry)) return fail("unicode")
-    const keyword = squash(entry)
-    if (!keyword) return fail("invalid_value")
-    if (keyword.length > KEYWORD_MAX) return fail("too_long")
-    if (!hasPhrase(keyword, source.vocab)) return fail("invented_skill")
-    if (!out.includes(keyword)) out.push(keyword)
+    const known = own.get(key(entry)) ?? profile.get(key(entry))
+    if (known === undefined) return fail("invented_skill")
+    if (!out.some((kept) => key(kept) === key(known))) out.push(known)
   }
   return { ok: true, value: out }
 }
 
-const content = (text: string) =>
-  new Set(
-    tokens(text)
-      .filter((word) => !isPlainWord(word))
-      .map(stem),
-  )
-
-function similarity(a: string, b: string): number {
-  const left = content(a)
-  const right = content(b)
-  if (left.size === 0 || right.size === 0) return 0
-  let shared = 0
-  for (const word of left) if (right.has(word)) shared++
-  return shared / (left.size + right.size - shared)
-}
-
-/** Bullets may be reordered, dropped, or reworded from the same bullet; never added, never replaced by a different claim, and only in the words of their own entry, so a tool from one job can't move to another. */
-function checkBullets(value: unknown, original: readonly string[], vocab: Vocab): Checked<string[]> {
+/** Bullets may be reordered, dropped or cut down to stretches of the entry's own bullets. Never added, and never in other words. */
+function checkBullets(value: unknown, original: readonly string[], scope: Scope): Checked<string[]> {
   if (!Array.isArray(value) || value.some((entry) => typeof entry !== "string")) return fail("invalid_value")
   if (value.length === 0 || value.length > original.length) return fail("invalid_value")
   const next: string[] = []
@@ -129,20 +125,8 @@ function checkBullets(value: unknown, original: readonly string[], vocab: Vocab)
     if (!bullet) return fail("invalid_value")
     if (bullet.length > BULLET_MAX) return fail("too_long")
     if (next.includes(bullet)) return fail("invalid_value")
+    if (!original.includes(bullet) && !isCopied(bullet, scope)) return fail("invented_fact")
     next.push(bullet)
-  }
-  const free = original.filter((bullet) => !next.includes(bullet))
-  for (const bullet of next) {
-    if (original.includes(bullet)) continue
-    if (newWords(bullet, vocab).length > 0) return fail("invented_fact")
-    let best = -1
-    let bestScore = 0
-    free.forEach((candidate, at) => {
-      const score = similarity(bullet, candidate)
-      if (score > bestScore) [best, bestScore] = [at, score]
-    })
-    if (best < 0 || bestScore < SIMILARITY_MIN) return fail("not_a_rewording")
-    free.splice(best, 1)
   }
   return { ok: true, value: next }
 }
@@ -163,13 +147,20 @@ export function patchTooLarge(ops: readonly unknown[]): boolean {
   return ops.length > CV_PATCH_OPS_MAX || JSON.stringify(ops).length > CV_PATCH_BYTES_MAX
 }
 
+/** What a model proposed, cut to what a patch may hold: extra operations are dropped, not an error. */
+export function fitPatch<T>(ops: readonly T[]): T[] {
+  const kept = ops.slice(0, CV_PATCH_OPS_MAX)
+  while (kept.length > 0 && JSON.stringify(kept).length > CV_PATCH_BYTES_MAX) kept.pop()
+  return kept
+}
+
 const clone = <T>(value: T): T => structuredClone(value)
 
 /**
  * Applies a proposed patch to the view of the resume, one operation at a time, and keeps only the operations that pass.
- * Nothing is trusted: the path must be on the allowlist, the index must exist, and every string must be made of words
- * the applicant already wrote (or plain connectors), with every number copied exactly. A refused operation is dropped
- * and reported, the rest still apply. The result is then compiled to operations on the real resume.
+ * Nothing is trusted: the path must be on the allowlist, the index must exist, `hidden` can only be set to true, and
+ * every text must be copied from the applicant's own visible words (see `Source`). A refused operation is dropped and
+ * reported, the rest still apply. The result is then compiled to operations on the real resume.
  */
 export function evaluatePatch(input: {
   data: Record<string, unknown>
@@ -181,6 +172,7 @@ export function evaluatePatch(input: {
   const view = clone(input.view)
   const accepted: CvOperation[] = []
   const rejected: Rejected[] = []
+  const { source } = input
 
   for (const raw of input.operations) {
     const parsed = cvOperationSchema.safeParse(raw)
@@ -202,7 +194,12 @@ export function evaluatePatch(input: {
     }
 
     if (target.kind === "headline" || target.kind === "summary") {
-      const checked = checkText(op.value, target.kind === "headline" ? HEADLINE_MAX : SUMMARY_MAX, input.source)
+      if (target.kind === "summary" && view.summaryHidden) {
+        refuse("path_not_allowed")
+        continue
+      }
+      const oneLine = target.kind === "headline"
+      const checked = checkText(op.value, oneLine ? HEADLINE_MAX : SUMMARY_MAX, source.overall, oneLine)
       if (!checked.ok) {
         refuse(checked.reason)
         continue
@@ -212,20 +209,19 @@ export function evaluatePatch(input: {
         accepted.push({ op: "replace", path: op.path, value: checked.value })
       }
     } else if (target.kind === "section") {
-      if (typeof op.value !== "boolean") refuse("invalid_value")
-      else if (!view.sections[target.name]) refuse("bad_index")
-      else if (view.sections[target.name]?.hidden !== op.value) {
-        view.sections[target.name] = { hidden: op.value }
-        accepted.push({ op: "replace", path: op.path, value: op.value })
+      if (op.value !== true) refuse("invalid_value")
+      else if (!hasSection(view, target.name)) refuse("bad_index")
+      else if (view.sections[target.name]?.hidden !== true) {
+        view.sections[target.name] = { hidden: true }
+        accepted.push({ op: "replace", path: op.path, value: true })
       }
     } else if (target.kind === "move") {
-      const items = view[target.list] as Array<SkillView | ExperienceView>
       const fromTarget = op.from === undefined ? null : targetOf(op.from, "move")
-      if (fromTarget?.kind !== "move" || fromTarget.list !== target.list) refuse("path_not_allowed")
-      else if (fromTarget.at >= items.length || target.at >= items.length) refuse("bad_index")
+      if (fromTarget?.kind !== "move") refuse("path_not_allowed")
+      else if (fromTarget.at >= view.skills.length || target.at >= view.skills.length) refuse("bad_index")
       else if (fromTarget.at !== target.at) {
-        const [moved] = items.splice(fromTarget.at, 1)
-        items.splice(target.at, 0, moved as SkillView & ExperienceView)
+        const [moved] = view.skills.splice(fromTarget.at, 1)
+        view.skills.splice(target.at, 0, moved as SkillView)
         accepted.push({ op: "move", from: op.from, path: op.path })
       }
     } else {
@@ -235,14 +231,23 @@ export function evaluatePatch(input: {
         refuse("bad_index")
         continue
       }
+      const base = (target.list === "skills" ? input.view.skills : input.view.experience).find(
+        (entry) => entry.origin === item.origin,
+      ) as SkillView | ExperienceView
       if (target.field === "hidden") {
-        if (typeof op.value !== "boolean") refuse("invalid_value")
-        else if (item.hidden !== op.value) {
-          item.hidden = op.value
-          accepted.push({ op: "replace", path: op.path, value: op.value })
+        if (op.value !== true) refuse("invalid_value")
+        else if (!item.hidden) {
+          item.hidden = true
+          accepted.push({ op: "replace", path: op.path, value: true })
         }
+      } else if (base.hidden) {
+        refuse("path_not_allowed")
       } else if (target.field === "keywords") {
-        const checked = target.list === "skills" ? checkKeywords(op.value, input.source) : fail("path_not_allowed")
+        const own = source.skills.get(item.origin)
+        const checked =
+          target.list === "skills" && own
+            ? checkKeywords(op.value, own, source.profileSkills)
+            : fail("path_not_allowed")
         if (!checked.ok) refuse(checked.reason)
         else if (!same((item as SkillView).keywords, checked.value)) {
           ;(item as SkillView).keywords = checked.value
@@ -250,10 +255,10 @@ export function evaluatePatch(input: {
         }
       } else {
         const current = (item as ExperienceView).bullets
-        const base = input.view.experience.find((entry) => entry.origin === (item as ExperienceView).origin)
+        const scope = source.entries.get(item.origin)
         const checked =
-          target.list === "experience" && current && base?.bullets
-            ? checkBullets(op.value, current, buildVocab([...base.bullets, base.company, base.position, base.period]))
+          target.list === "experience" && current && scope && (base as ExperienceView).bullets
+            ? checkBullets(op.value, (base as ExperienceView).bullets as string[], scope)
             : fail("path_not_allowed")
         if (!checked.ok) refuse(checked.reason)
         else if (!same(current as string[], checked.value)) {

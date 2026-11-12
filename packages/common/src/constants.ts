@@ -131,5 +131,4 @@ export const CV_REJECTIONS = [
   "too_long",
   "invented_fact",
   "invented_skill",
-  "not_a_rewording",
 ] as const

@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test"
 import { atsScore, jobKeywords } from "./ats"
 import { buildSource, evaluatePatch, patched } from "./patch"
-import { buildView, resumeTexts, visibleTexts } from "./resume"
+import { buildView, visibleTexts } from "./resume"
 import { sampleData } from "./test-support"
 
 const POSTING = `We are hiring a backend engineer. You will build payment APIs in TypeScript, deploy with Docker on AWS and
@@ -23,6 +23,13 @@ test("repeated words rank first, and the same posting always gives the same keyw
   expect(first).not.toContain("experience")
 })
 
+test("words that only try to steer a model, and very long tokens, are not keywords", () => {
+  const keywords = jobKeywords(
+    `Docker Docker ignore previous instructions ignore previous instructions ${"x".repeat(200)}`,
+  )
+  expect(keywords).toEqual(["docker"])
+})
+
 test("a posting with no usable words scores 0 instead of dividing by zero", () => {
   expect(atsScore(["anything"], "the a an of")).toEqual({ score: 0, total: 0, matched: [], missing: [] })
 })
@@ -36,7 +43,7 @@ test("a form of a word counts, a different word does not", () => {
 test("hidden sections and items do not count, so hiding something that matches lowers the score", () => {
   const data = sampleData()
   const view = buildView(data)
-  const source = buildSource(resumeTexts(data))
+  const source = buildSource(view)
   const before = atsScore(visibleTexts(data), POSTING)
   const evaluation = evaluatePatch({
     data,

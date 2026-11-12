@@ -5,7 +5,7 @@ description: Every command in the root package.json.
 
 | Command | What it does |
 | --- | --- |
-| `pnpm dev` | all apps |
+| `pnpm dev` | all apps and the extension dev server |
 | `pnpm dev:web` | web and api |
 | `pnpm dev:dashboard` | dashboard and api |
 | `pnpm build` | build everything with turbo |
@@ -13,6 +13,8 @@ description: Every command in the root package.json.
 | `pnpm lint` | biome and oxlint, no fixes |
 | `pnpm check-types` | typescript across the repo |
 | `pnpm test` | tests in every package |
+| `pnpm e2e` | build the extension and run the playwright suite in `apps/e2e` |
+| `pnpm zip` | zip the extension |
 | `pnpm db:up` / `db:down` | local postgres |
 | `pnpm db:generate` | write a migration from the schema |
 | `pnpm db:migrate` | apply migrations |

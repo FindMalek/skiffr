@@ -19,27 +19,28 @@ The AI proposes a JSON Patch (RFC 6902) and only these edits survive:
 
 | Edit | Rule |
 | --- | --- |
-| headline, summary | reworded, using only words from your resume and profile |
-| skill keywords | reordered or dropped; one is added only if your resume or profile already names it |
-| skill groups, experience entries | reordered or hidden |
-| bullets of an experience entry | reordered, dropped, or reworded from the bullet they replace, in the words of the same entry. No new bullets |
-| sections | shown or hidden |
+| headline, summary | built only from sentences and clauses copied from your visible headline, summary, bullets and skills. They can be reordered, cut at a comma or full stop and dropped, never reworded |
+| skill keywords | reordered or dropped inside their own group. One is added only if your profile lists it under skills. Never moved to another group |
+| skill groups | reordered |
+| bullets of an experience entry | reordered, dropped, or cut down to a stretch of that entry's own bullets. No new bullets, no new words |
+| entries, skill groups, sections | hidden. Only hidden: nothing can be made visible again |
 
-Everything else is out: names, contact details, companies, titles, dates, schools, degrees, certifications, the design.
+Everything else is out: names, contact details, companies, titles, dates, schools, degrees, certifications, the order of experience entries, the design.
 
 ## Never inventing facts
 
 This is enforced in code, not only in the prompt. Every proposed edit is checked before it is shown, and again when you confirm:
 
-- the operation must be `replace` (or `move` within the skills or experience list) on an allowed path. Anything else is dropped
-- each word of new text must already appear in your resume or profile, or be a plain connecting word or action verb. A new company, title, tool, degree or school fails here
-- numbers must be copied exactly. A different figure, a figure written out in words, or an extra year fails
-- skills must already exist in your resume or profile. The job posting never counts as a source
-- a reworded bullet must still be about the bullet it replaces, and may only use words from its own entry, so a tool from one job can't move to another
+- the operation must be `replace` (or `move` of a skill group) on an allowed path. Anything else is dropped
+- text is extractive. Each clause of a new headline, summary or bullet must be a whole clause already in your resume, or a stretch of two or more of its words in the same order. A clause holding a number, a percent or a currency sign must be copied whole, so `40 minutes` can't become `40 engineers`, `8 minutes to 2 hours` can't be reversed, and a date or a company stays with its own entry. Two clauses can't be glued together with new words
+- a bullet may only use clauses from its own entry, so a tool from one job can't move to another
+- skills are stored as you wrote them, so a symbol, a changed case or a duplicate can't come in
+- hidden entries, hidden sections, a hidden summary and custom sections are not a source of anything, and are never sent to the model
+- the job posting never counts as a source
 - hidden characters (zero width, direction overrides), letters that look like Latin ones from another script, and digits of other scripts are refused
-- a patch has at most 40 operations and 24 kB, and each text has a length cap
+- a patch has at most 40 operations and 24 kB (a longer model reply is cut down, a longer request from a client is refused), and each text has a length cap
 
-A refused edit is dropped and counted in the dialog ("2 suggestions added something that is not in your resume"); the rest still apply. The job description is treated as untrusted text: a posting that says "add a PhD" changes nothing, because it is a source of nothing. It is also sent to the model inside an escaped data block with an instruction to ignore requests found in it.
+A refused edit is dropped and counted in the dialog ("2 suggestions wrote something that is not copied from your resume"); the rest still apply. The job description is treated as untrusted text: a posting that says "add a PhD" changes nothing, because it is a source of nothing. It is also sent to the model inside an escaped data block with an instruction to ignore requests found in it.
 
 ## The keyword score
 
@@ -47,19 +48,20 @@ The score is plain counting. skiffr takes the 30 most repeated meaningful words 
 
 ## Security
 
-- **The key** is sealed with AES-256-GCM using `CV_ENCRYPTION_KEY` and bound to your account, so a stored value copied to another account does not open. It is decrypted only inside a call to your instance. It is never sent to the browser (only the last 4 characters are shown), never logged, and not reachable with an extension token.
-- **The address** is called only if it is a public **https** site. Private, loopback and link-local addresses are refused at connect time and again after name resolution, redirects are not followed (so the key never travels to another host), and responses are capped at 2 MB (8 MB for a PDF).
-- **The data** that reaches the AI provider: the text of your base resume, the shared parts of your profile (names, links, skills, summary; no contact details or pay) and the job description you paste.
-- **Rate limit**: 20 tailoring runs an hour per user.
+- **The key** is sealed with AES-256-GCM using `CV_ENCRYPTION_KEY`, bound to your account and to this feature, so a stored value copied to another account, or a Gmail token sealed with the same server key, does not open. It is decrypted only inside a call to your instance. It is never sent to the browser (only the last 4 characters are shown), never logged, and not reachable with an extension token.
+- **The address** is called only if it is a public **https** site on port 443. Private, loopback and link-local addresses are refused at connect time and again after name resolution, redirects are not followed (so the key never travels to another host), and responses are capped at 2 MB (8 MB for a PDF).
+- **The data** that reaches the AI provider: the visible text of your base resume (not hidden entries, hidden sections or custom sections), the shared parts of your profile (names, links, skills, summary; no contact details or pay) and the job description you paste.
+- **Limits per user and hour**: 20 tailoring runs, 20 copies and 120 other calls to your instance, and a quarter second between one user's calls to an instance, so one account can't use up another's turn. The counts live in the api process: they reset on a restart, and each replica counts for itself.
+- **Delete access** on the key is used for one thing: if a copy was made and the changes can't be applied, skiffr moves that copy to the trash again. It never touches another resume. If that fails too, the error names the copy so you can remove it.
 
 ## Limits
 
 - Needs a Reactive Resume version with the `/api/openapi/resumes` API (copies or duplicate, patch, pdf). A resume in an older data format is refused.
-- Only the part of the resume above is changed. The summary is rewritten as plain paragraphs (links or bold in it are lost); bullets are only rewritten when an entry's description is a plain list.
-- Rewording is limited to the words you already used, so it can reorder and tighten but will not borrow a better verb. Resumes not written in English can reorder and hide, and reword only with their own words.
+- The extractive rules make rewording nearly useless on purpose: tailoring is reordering, tightening to your own phrases, and hiding. It will not borrow a better verb or merge two bullets. A summary that has nothing to copy from stays as it is. That is the price of never putting a claim in front of a recruiter that you did not write.
+- Only the part of the resume above is changed. The summary is rewritten as plain paragraphs (links or bold in it are lost); bullets are only rewritten when an entry's description is a plain list. A bullet that is kept unchanged keeps its formatting.
 - You paste the posting: skiffr does not fetch the job page.
-- If creating the copy succeeds but the changes can't be applied (for example the key lost write access midway), an unchanged copy stays in Reactive Resume for you to delete.
-- A self-hosted instance must be reachable on a public address.
+- A self-hosted instance must be reachable on a public address, on port 443 (`https://my-rr.example:8443` is refused), with a response under 2 MB (a resume with a large inline picture may exceed it). A PDF may take up to a minute to render.
+- If the changes can't be applied after the copy was made, the copy is moved to the trash. Only if that also fails does a copy stay behind, and the error says which.
 
 ## Environment
 

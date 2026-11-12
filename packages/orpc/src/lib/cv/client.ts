@@ -1,7 +1,7 @@
 import { CV_RESUMES_MAX } from "@skiffr/common/constants"
 import { FetchError } from "../watch/errors"
 import { fetchPage, type GuardDeps } from "../watch/guard"
-import type { UserBudget } from "../watch/limits"
+import { HostGate, type UserBudget } from "../watch/limits"
 import { CvError } from "./errors"
 import type { PatchOp } from "./json-patch"
 import { assertResumeOps } from "./patch"
@@ -13,6 +13,25 @@ export interface CvRuntime {
   guard: GuardDeps
   /** Tailoring runs a user may start per window: each one is a model call. */
   budget: UserBudget
+  /** Copies a user may make per window. */
+  copies: UserBudget
+  /** Every other call to an instance a user may start per window. */
+  calls: UserBudget
+  /** One gate per user, so one user's calls to an instance never queue up another's. */
+  gapMs: number
+  gates: Map<string, HostGate>
+}
+
+const GATES_MAX = 5_000
+
+function gateOf(runtime: CvRuntime, userId: string): HostGate {
+  let gate = runtime.gates.get(userId)
+  if (!gate) {
+    if (runtime.gates.size >= GATES_MAX) runtime.gates.clear()
+    gate = new HostGate(runtime.gapMs)
+    runtime.gates.set(userId, gate)
+  }
+  return gate
 }
 
 export const PDF_BYTES_MAX = 8 * 1024 * 1024
@@ -65,17 +84,22 @@ function json(body: string): unknown {
 }
 
 /** A client for one user's Reactive Resume. Every call goes through the guard: https only, public addresses only, no redirect followed, response size capped. */
-export function reactiveResume(runtime: CvRuntime, connection: RrConnection) {
+export function reactiveResume(runtime: CvRuntime, connection: RrConnection, userId: string) {
   const headers = { "x-api-key": connection.apiKey }
 
   async function send(
-    method: "GET" | "POST" | "PATCH",
+    method: "GET" | "POST" | "PATCH" | "DELETE",
     path: string,
-    options: { body?: unknown; accept?: string; media?: readonly string[]; maxBytes?: number } = {},
+    options: { body?: unknown; accept?: string; media?: readonly string[]; slow?: boolean } = {},
   ) {
-    const guard: GuardDeps = options.maxBytes
-      ? { ...runtime.guard, limits: { ...runtime.guard.limits, maxBytes: options.maxBytes } }
-      : runtime.guard
+    const guard: GuardDeps = {
+      ...runtime.guard,
+      gate: gateOf(runtime, userId),
+      // A pdf is rendered on demand, so it may take a while to start and is bigger than json.
+      ...(options.slow
+        ? { limits: { ...runtime.guard.limits, maxBytes: PDF_BYTES_MAX, idleMs: 30_000, totalMs: 60_000 } }
+        : {}),
+    }
     try {
       const page = await fetchPage(guard, {
         url: `${connection.baseUrl}${PREFIX}${path}`,
@@ -127,11 +151,16 @@ export function reactiveResume(runtime: CvRuntime, connection: RrConnection) {
       await send("PATCH", pathOf(id), { body: { operations, expectedUpdatedAt } })
     },
 
+    /** Moves a resume to the trash. Only ever used on a copy skiffr has just made and could not finish. */
+    async trash(id: string): Promise<void> {
+      await send("DELETE", pathOf(id), { media: [""] })
+    },
+
     async pdf(id: string): Promise<Buffer> {
       const page = await send("GET", `${pathOf(id)}/pdf`, {
         accept: "application/pdf",
         media: ["application/pdf"],
-        maxBytes: PDF_BYTES_MAX,
+        slow: true,
       })
       if (page.raw.subarray(0, 5).toString("latin1") !== "%PDF-") throw new CvError("upstream")
       return page.raw

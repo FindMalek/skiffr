@@ -1,13 +1,12 @@
 import type { CvChange } from "@skiffr/common/schemas"
 
 const REJECTIONS: Record<string, string> = {
-  invented_fact: "added something that is not in your resume or profile",
+  invented_fact: "wrote something that is not copied from your resume",
   invented_skill: "added a skill you have not listed",
-  not_a_rewording: "replaced a bullet with a different one",
   path_not_allowed: "touched a part of the resume that is never edited",
   op_not_allowed: "used an edit that is not allowed",
   bad_index: "pointed at something that does not exist",
-  invalid_value: "was not a valid edit",
+  invalid_value: "was not a valid edit (for example showing something hidden)",
   unicode: "used hidden or look-alike characters",
   too_long: "was too long",
 }
@@ -59,13 +58,22 @@ export function diffWords(before: string, after: string): Piece[] {
   return out
 }
 
-/** For a list change: the lines that are gone or changed on the left, and the ones that are new or changed on the right. */
+/** For a list change: lines that are gone on the left, lines that are new, and lines that only moved, on the right. */
 export function diffLines(change: Pick<CvChange, "before" | "after">) {
   return {
-    before: change.before.map((text) => ({ text, kept: change.after.includes(text) })),
-    after: change.after.map((text) => ({ text, kept: change.before.includes(text) })),
+    before: change.before.map((text) => ({ text, kept: change.after.includes(text), moved: false })),
+    after: change.after.map((text, index) => ({
+      text,
+      kept: change.before.includes(text),
+      moved: change.before.includes(text) && change.before[index] !== text,
+    })),
   }
 }
+
+/** The same lines in another order: nothing was added or dropped. */
+export const reorderedOnly = (change: Pick<CvChange, "before" | "after">): boolean =>
+  change.before.length === change.after.length &&
+  [...change.before].sort().join("\n") === [...change.after].sort().join("\n")
 
 export const scoreChange = (before: number, after: number): string =>
   after === before ? "no change" : `${after > before ? "+" : ""}${after - before} points`

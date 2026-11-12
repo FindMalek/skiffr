@@ -23,6 +23,7 @@ import { patchTooLarge } from "../lib/cv/patch"
 import { apply, connect, openConnection, preview, setBaseResume, testConnection } from "../lib/cv/service"
 import { CryptoError } from "../lib/gmail/crypto"
 import { mine, orNotFound } from "../lib/owned"
+import type { UserBudget } from "../lib/watch/limits"
 import { protectedProcedure } from "../procedures"
 import { guarded } from "./ai"
 
@@ -32,7 +33,10 @@ const FAILURES: Record<CvErrorKind, [ConstructorParameters<typeof ORPCError>[0],
   forbidden: ["PRECONDITION_FAILED", "That API key can't change resumes. Create one with write access."],
   not_found: ["NOT_FOUND", "That resume was not found. Pick the base resume again in settings."],
   conflict: ["CONFLICT", "The resume changed in the meantime. Preview the changes again."],
-  rate_limited: ["TOO_MANY_REQUESTS", "Reactive Resume asked to slow down. Try again later."],
+  rate_limited: [
+    "TOO_MANY_REQUESTS",
+    "Too many tailoring runs or Reactive Resume asked to slow down. Try again later.",
+  ],
   upstream: ["BAD_GATEWAY", "Reactive Resume answered with an error. Try again."],
   network: ["BAD_GATEWAY", "Reactive Resume could not be reached. Check the address and try again."],
   too_large: ["BAD_GATEWAY", "Reactive Resume answered with more data than skiffr reads."],
@@ -55,7 +59,10 @@ async function guard<T>(route: string, run: () => Promise<T>): Promise<T> {
     if (!(error instanceof CvError)) throw error
     logCvFailure(route, error)
     const [code, message] = FAILURES[error.kind]
-    throw new ORPCError(code, { message })
+    const left = error.leftover
+      ? ` A copy named "${error.leftover}" was made and could not be removed: delete it in Reactive Resume.`
+      : ""
+    throw new ORPCError(code, { message: `${message}${left}` })
   }
 }
 
@@ -63,6 +70,15 @@ function needCv(context: Context) {
   if (!context.cv)
     throw new ORPCError("SERVICE_UNAVAILABLE", { message: "CV tailoring is not configured on this server." })
   return context.cv
+}
+
+/** Every call that reaches an instance is counted per user, so one account can't turn the api into a request cannon. */
+function spend(budget: UserBudget, context: Context & { user: { id: string } }) {
+  if (!budget.take(context.user.id, context.now())) {
+    throw new ORPCError("TOO_MANY_REQUESTS", {
+      message: "Too many requests to Reactive Resume this hour. Try again later.",
+    })
+  }
 }
 
 async function jobOf(context: Context & { user: { id: string } }, id: string) {
@@ -114,6 +130,7 @@ export const cvRouter = {
     .output(okSchema)
     .handler(async ({ context, input }) => {
       const runtime = needCv(context)
+      spend(runtime.calls, context)
       await guard("cv.connect", () => connect(context.db, runtime, context.user.id, input, context.now()))
       return { ok: true as const }
     }),
@@ -123,6 +140,7 @@ export const cvRouter = {
     .output(cvTestSchema)
     .handler(async ({ context }) => {
       const runtime = needCv(context)
+      spend(runtime.calls, context)
       const resumes = await guard("cv.test", () => testConnection(context.db, runtime, context.user.id))
       return { ok: true as const, resumes }
     }),
@@ -137,8 +155,9 @@ export const cvRouter = {
     .output(cvResumesSchema)
     .handler(async ({ context }) => {
       const runtime = needCv(context)
+      spend(runtime.calls, context)
       return guard("cv.resumes", async () =>
-        reactiveResume(runtime, await openConnection(context.db, runtime, context.user.id)).list(),
+        reactiveResume(runtime, await openConnection(context.db, runtime, context.user.id), context.user.id).list(),
       )
     }),
 
@@ -148,6 +167,7 @@ export const cvRouter = {
     .output(okSchema)
     .handler(async ({ context, input }) => {
       const runtime = needCv(context)
+      spend(runtime.calls, context)
       await guard("cv.setBase", () =>
         setBaseResume(context.db, runtime, context.user.id, input.resumeId, context.now()),
       )
@@ -175,9 +195,6 @@ export const cvRouter = {
       const runtime = needCv(context)
       if (!context.model) throw new ORPCError("SERVICE_UNAVAILABLE", { message: "No AI provider key is configured." })
       const target = await jobOf(context, input.jobId)
-      if (!runtime.budget.take(context.user.id, context.now())) {
-        throw new ORPCError("TOO_MANY_REQUESTS", { message: "Too many tailoring runs this hour. Try again later." })
-      }
       const model = context.model
       const result = await guard("cv.preview", () =>
         preview({
@@ -187,6 +204,7 @@ export const cvRouter = {
           userId: context.user.id,
           job: target,
           description: input.description,
+          spend: () => runtime.budget.take(context.user.id, context.now()),
         }),
       )
       return {
@@ -213,6 +231,7 @@ export const cvRouter = {
       const runtime = needCv(context)
       if (patchTooLarge(input.operations)) throw new ORPCError("BAD_REQUEST", { message: "That patch is too large." })
       const target = await jobOf(context, input.jobId)
+      spend(runtime.copies, context)
       const result = await guard("cv.apply", () =>
         apply({
           db: context.db,
@@ -244,8 +263,11 @@ export const cvRouter = {
     .output(cvPdfSchema)
     .handler(async ({ context, input }) => {
       const runtime = needCv(context)
+      spend(runtime.calls, context)
       const pdf = await guard("cv.pdf", async () =>
-        reactiveResume(runtime, await openConnection(context.db, runtime, context.user.id)).pdf(input.resumeId),
+        reactiveResume(runtime, await openConnection(context.db, runtime, context.user.id), context.user.id).pdf(
+          input.resumeId,
+        ),
       )
       return { filename: "resume.pdf", base64: pdf.toString("base64") }
     }),

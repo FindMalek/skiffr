@@ -2,6 +2,7 @@ import type { CvAts } from "@skiffr/common/schemas"
 import { stem } from "./text"
 
 const KEYWORDS_MAX = 30
+const WORD_MAX = 24
 
 /** Words that say nothing about fit: connectors and the boilerplate every posting has. */
 const SKIP = new Set(
@@ -9,6 +10,7 @@ const SKIP = new Set(
   for from get give had has have having help how i if in into is it its just like make may more most must need new no not of on
   one only or our out over own per should so some such than that the their them then there these they this those through to
   up us use used using very want was we well were what when where which while who will with within without would you your
+  ignore ignored previous instruction instructions disregard override pretend assistant prompt system resume cv
   ability about apply applicant applicants benefits candidate candidates career careers company culture day deliver
   description diverse employer employees equal excellent experience experienced following full good great growing
   include including inclusive job join knowledge looking love opportunities opportunity part passion passionate people
@@ -27,7 +29,7 @@ const words = (text: string): string[] =>
 export function jobKeywords(description: string): string[] {
   const seen = new Map<string, { word: string; count: number; first: number }>()
   words(description).forEach((word, first) => {
-    if (word.length < 2 || /^\d/.test(word) || SKIP.has(word)) return
+    if (word.length < 2 || word.length > WORD_MAX || /^\d/.test(word) || SKIP.has(word)) return
     const key = stem(word)
     const entry = seen.get(key)
     if (entry) entry.count++
