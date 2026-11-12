@@ -257,12 +257,65 @@ describe("learning session", () => {
     expect(byLabel(sent[0], "City")).toMatchObject({ filledValue: "Lisbon", finalValue: "Porto" })
   })
 
-  test("a field that left the page is dropped", async () => {
-    const { sent, submit, $ } = await setup()
+  test("a field that left the page goes out as a batch of its own with what the person left in it", async () => {
+    const { sent, type, submit, $ } = await setup()
+    type("#city", "Porto")
     $("#city").remove()
     submit()
-    expect(byLabel(sent[0], "City")).toBeUndefined()
-    expect(byLabel(sent[0], "First name")).toBeDefined()
+    await Bun.sleep(5)
+    expect(sent).toHaveLength(2)
+    expect(sent[0]?.events.map((event) => event.label)).toEqual(["City"])
+    expect(byLabel(sent[0], "City")).toMatchObject({ filledValue: "Lisbon", finalValue: "Porto" })
+    expect(byLabel(sent[1], "City")).toBeUndefined()
+    expect(byLabel(sent[1], "First name")).toBeDefined()
+  })
+
+  test("a multi step form: step one goes out when the step is replaced and filled again, step two on submit", async () => {
+    const { sent, type, submit, $, document, session } = await setup()
+    type("#first", "Grace")
+    $("#app").outerHTML = `<form id="app"><label for="phone">Phone</label><input id="phone" type="text"></form>`
+    const [phone] = collectFields(document).filter((field) => field.descriptor.label === "Phone")
+    const field = phone as NonNullable<typeof phone>
+    const mapping = [{ id: field.id, action: "profile" as const, key: "p", confidence: 1, reason: "" }]
+    const summary = await fillPage({ root: document, fields: [field], mapping, values: { p: "+351 1" } })
+    session.begin({ root: document, fields: [field], mapping, summary })
+    await Bun.sleep(5)
+    expect(sent).toHaveLength(1)
+    expect(byLabel(sent[0], "First name")).toMatchObject({ filledValue: "Ada", finalValue: "Grace" })
+
+    type("#phone", "+351 2")
+    submit()
+    await Bun.sleep(5)
+    expect(sent).toHaveLength(2)
+    expect(sent[1]?.events.map((event) => event.label)).toEqual(["Phone"])
+    expect(byLabel(sent[1], "Phone")).toMatchObject({ filledValue: "+351 1", finalValue: "+351 2" })
+  })
+
+  test("a follow-up carries only what changed: one correction is one corrected event", async () => {
+    const { sent, type, submit } = await setup()
+    type("#city", "Porto")
+    submit()
+    await Bun.sleep(5)
+    type("#first", "Grace")
+    submit()
+    await Bun.sleep(5)
+    type("#why", "Because")
+    submit()
+    await Bun.sleep(5)
+
+    expect(sent).toHaveLength(3)
+    const corrected = (label: string) =>
+      sent.filter((message) => {
+        const event = byLabel(message, label)
+        return event && event.finalValue !== "" && event.finalValue !== event.filledValue
+      }).length
+    expect(corrected("City")).toBe(1)
+    expect(corrected("First name")).toBe(1)
+    expect(corrected("Why us")).toBe(1)
+    const labels = (message: LearningRecordMessage | undefined) => message?.events.map((event) => event.label)
+    expect(labels(sent[1])).toEqual(labels(sent[0]))
+    expect(labels(sent[2])).toEqual(labels(sent[0]))
+    expect(byLabel(sent[2], "City")).toMatchObject({ filledValue: "", finalValue: "" })
   })
 
   test("text typed in an empty field before the fill landed is not recorded as empty", async () => {
@@ -272,11 +325,35 @@ describe("learning session", () => {
     expect(byLabel(sent[0], "Why us")).toMatchObject({ filledValue: "", finalValue: "typed during fill" })
   })
 
-  test("a search box is never recorded", async () => {
-    const html = `${FORM}<form id="more"><label for="s">Search jobs</label><input id="s" type="text"></form>`
-    const { sent, submit } = await setup(undefined, { html })
+  test("a search box in the form is kept as a blank entry, never with its text", async () => {
+    const html = `<form id="app"><label for="first">First name</label><input id="first" type="text">
+      <label for="s">Quick search</label><input id="s" type="text"></form>`
+    const { sent, type, submit } = await setup(undefined, { html })
+    type("#s", "my secret search")
     submit()
-    expect(JSON.stringify(sent)).not.toContain("Search")
+    expect(byLabel(sent[0], "Quick search")).toMatchObject({ filledValue: "", finalValue: "" })
+    expect(JSON.stringify(sent)).not.toContain("secret search")
+  })
+
+  test("a field of another form is kept as a blank entry, never with its text", async () => {
+    const html = `<form id="app"><label for="first">First name</label><input id="first" type="text">
+      <label for="city">City</label><input id="city" type="text"></form>
+      <form id="other"><label for="nick">Nickname</label><input id="nick" type="text"></form>`
+    const { sent, type, submit } = await setup(undefined, { html })
+    type("#nick", "Gracie")
+    submit()
+    expect(byLabel(sent[0], "Nickname")).toMatchObject({ filledValue: "", finalValue: "" })
+    expect(JSON.stringify(sent)).not.toContain("Gracie")
+  })
+
+  test("a field relabelled to something harmless is kept as a blank entry, never with its text", async () => {
+    const { sent, type, submit, document } = await setup()
+    type("#city", "Porto")
+    ;(document.querySelector("label[for=city]") as HTMLElement).textContent = "Favorite color"
+    submit()
+    expect(byLabel(sent[0], "City")).toMatchObject({ filledValue: "", finalValue: "" })
+    expect(JSON.stringify(sent)).not.toContain("Porto")
+    expect(JSON.stringify(sent)).not.toContain("Favorite color")
   })
 
   test("at most 60 events go out in a batch", async () => {

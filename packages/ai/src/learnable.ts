@@ -238,6 +238,17 @@ const PHRASES = [
   "رقم التعريف الضريبي",
   "رقم الضمان الاجتماعي",
   "الضمان الاجتماعي",
+  "etat civil",
+  "n ss",
+  "num ss",
+  "numero ss",
+  "mutuelle",
+  "seguro medico",
+  "obra social",
+  "التأمين الصحي",
+  "registro de antecedentes",
+  "antecedents judiciaires",
+  "سجل جنائي",
   // birth
   "dob",
   "d o b",
@@ -410,6 +421,9 @@ const SQUASHED = [
   "numerodeseguridadsocial",
   "sozialversicherung",
   "rentenversicherung",
+  "krankenversicherung",
+  "strafregister",
+  "reisepass",
   "steueridentifikation",
   "steuerid",
   "fuhrerschein",
@@ -434,11 +448,17 @@ function isPinSecret(padded: string): boolean {
 }
 
 /** Whether a field's value may be stored and filled back later. Case, spaces and zero-width characters in `type` can't dodge it. */
+/** The label and each tail of it after a section prefix (`Payment details: Code` also reads `Code`), normalized. */
+function ownLabels(label: string): string[] {
+  const parts = label.split(/:\s+/)
+  return parts.map((_, index) => normalizeLabel(parts.slice(index).join(" ")))
+}
+
 export function isLearnableField(field: { label: string; type?: string; autocomplete?: string }): boolean {
   if (!controlKind(field.type)) return false
   if (field.autocomplete && SENSITIVE_AUTOCOMPLETE.test(field.autocomplete)) return false
   const label = normalizeLabel(field.label)
-  if (label.length === 0 || BARE_LABELS.has(label)) return false
+  if (label.length === 0 || ownLabels(field.label).some((own) => BARE_LABELS.has(own))) return false
   const padded = ` ${label} `
   if (PHRASES.some((phrase) => padded.includes(phrase)) || isPinSecret(padded)) return false
   const squashed = squash(field.label)
@@ -487,9 +507,12 @@ function nirValid(compact: string): boolean {
   return 97 - (Number(body) % 97) === Number(compact.slice(13))
 }
 
-/** Nine digits shaped like a US social security number: no area of 000, 666 or 900 and up, no group of 00, no serial of 0000. */
-function ssnShaped(compact: string): boolean {
-  const match = /^(\d{3})(\d{2})(\d{4})$/.exec(compact)
+/**
+ * Nine digits grouped 3-2-4 like a US social security number: no area of 000, 666 or 900 and up, no group of 00, no
+ * serial of 0000. Nine digits with no grouping are left alone, they are as likely a phone number.
+ */
+function ssnShaped(value: string): boolean {
+  const match = /^(\d{3})[\s.-](\d{2})[\s.-](\d{4})$/.exec(value.trim())
   if (!match) return false
   const [, area, group, serial] = match
   return area !== "000" && area !== "666" && Number(area) < 900 && group !== "00" && serial !== "0000"
@@ -504,6 +527,6 @@ export function isSensitiveValue(value: string): boolean {
   if (/^\d{3}-\d{2}-\d{4}$/.test(value.trim())) return true
   const compact = compactOf(value)
   if (/^\d{13,19}$/.test(compact) && luhn(compact)) return true
-  if (ssnShaped(compact) || nirValid(compact)) return true
+  if (ssnShaped(value) || nirValid(compact)) return true
   return /^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$/.test(compact) && ibanValid(compact)
 }

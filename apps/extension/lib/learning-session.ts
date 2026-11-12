@@ -2,7 +2,7 @@ import { siteKey } from "./detect/ats"
 import { type CollectedField, type FieldMapping, type FillSummary, watchEdits } from "./fill"
 import { type FillErrorCode, LEARNING_BATCHES_MAX, LEARNING_IDLE_MS, LEARNING_RETRY_DELAYS_MS } from "./fill-config"
 import { buildEvents } from "./learning-events"
-import { liveFields } from "./learning-fields"
+import { type LiveField, liveFields } from "./learning-fields"
 import { type LearningRecordMessage, learningRecordResponseSchema } from "./messages"
 
 export type LearningStart = {
@@ -31,15 +31,16 @@ export type LearningSession = {
 
 const RETRY: ReadonlySet<FillErrorCode> = new Set(["busy", "unavailable", "unreachable", "timeout"])
 
-/** The form that holds at least half of the watched fields. A field in another form (a header search) is not part of the application. */
-function mainForm(fields: CollectedField[]): HTMLFormElement | null {
+/** The form that holds at least half of the fields on the page now. A field in another form (a header search) is not part of the application. */
+function mainForm(entries: LiveField[]): HTMLFormElement | null {
+  const here = entries.filter((entry) => !entry.gone)
   const counts = new Map<HTMLFormElement, number>()
-  for (const { el } of fields) {
-    const form = (el as HTMLInputElement).form
+  for (const { field } of here) {
+    const form = (field.el as HTMLInputElement).form
     if (form) counts.set(form, (counts.get(form) ?? 0) + 1)
   }
   const [best] = [...counts].sort((a, b) => b[1] - a[1])
-  return best && best[1] * 2 >= fields.length ? best[0] : null
+  return best && best[1] * 2 >= here.length ? best[0] : null
 }
 
 type Active = {
@@ -50,6 +51,9 @@ type Active = {
   /** What the person left in a field they edited, from trusted gestures only. */
   finals: Map<string, string>
   mappings: Map<string, FieldMapping>
+  /** The value each field had in the last batch that was delivered. A follow-up repeats only what changed since. */
+  sent: Map<string, string>
+  retiring?: Promise<void>
   stops: (() => void)[]
   detach: () => void
   idle?: ReturnType<typeof setTimeout>
@@ -77,27 +81,35 @@ export function createLearningSession({
 }: LearningSessionDeps): LearningSession {
   let current: Active | null = null
 
-  function build(active: Active): LearningRecordMessage | null {
+  type Built = { message: LearningRecordMessage; values: Map<string, string> }
+
+  function build(active: Active, entries: LiveField[]): Built | null {
     const site = siteKey(url())
     if (!site) return null
-    const main = mainForm(active.fields)
-    const own = liveFields(active.roots, active.fields).filter((entry) => {
-      const form = (entry.field.el as HTMLInputElement).form
-      return !main || !form || form === main
-    })
-    const live = new Map(own.map((entry) => [entry.field.id, entry]))
+    const main = mainForm(entries)
+    const byId = new Map(entries.map((entry) => [entry.field.id, entry]))
+    const values = new Map<string, string>()
     const events = buildEvents(
-      Array.from(live.values(), (entry) => entry.field),
+      entries.map((entry) => entry.field),
       (field) => {
-        const { value, replaced } = live.get(field.id) as { value: string; replaced: boolean }
+        const entry = byId.get(field.id) as LiveField
+        const mapping = active.mappings.get(field.id)
+        const form = (field.el as HTMLInputElement).form
+        if (entry.blank || (main && !entry.gone && form && form !== main)) return { filled: "", final: "", mapping }
         const filled = active.baseline.get(field.id) ?? ""
         const edited = active.finals.get(field.id)
         // a control the page swapped in was never watched, and a field the fill left empty holds what was typed in it
-        const final = replaced || (edited === undefined && filled === "") ? value : (edited ?? filled)
-        return { filled, final, mapping: active.mappings.get(field.id) }
+        const read = entry.replaced || (edited === undefined && filled === "")
+        const final = entry.gone ? (edited ?? filled) : read ? entry.value : (edited ?? filled)
+        values.set(field.id, final)
+        // a field that did not change since the last delivered batch stays in the form but counts for nothing
+        if (active.sent.get(field.id) === final) return { filled: "", final: "", mapping }
+        return { filled, final, mapping }
       },
     )
-    return events.length > 0 ? { type: "learning-record", siteKey: site, batchId: newBatchId(), events } : null
+    return events.length > 0
+      ? { message: { type: "learning-record", siteKey: site, batchId: newBatchId(), events }, values }
+      : null
   }
 
   /** "refused": the worker did not answer at all (the tab is not the active one), so nothing was recorded. */
@@ -125,15 +137,41 @@ export function createLearningSession({
     if (current === active) current = null
   }
 
+  /** Fields whose control left the page (the next step of a form) go out as a batch of their own, then leave the session. */
+  function retire(active: Active): Promise<void> {
+    active.retiring ??= (async () => {
+      const gone = liveFields(active.roots, active.fields).filter((entry) => entry.gone)
+      const built = gone.length > 0 ? build(active, gone) : null
+      if (!built || (await deliver(built.message)) === "refused") return
+      const ids = new Set(gone.map((entry) => entry.field.id))
+      active.fields = active.fields.filter((field) => !ids.has(field.id))
+      for (const id of ids) {
+        active.baseline.delete(id)
+        active.finals.delete(id)
+        active.mappings.delete(id)
+        active.sent.delete(id)
+      }
+    })().finally(() => {
+      active.retiring = undefined
+    })
+    return active.retiring
+  }
+
   async function sendBatch(active: Active): Promise<void> {
     clearTimeout(active.idle)
+    let entries = liveFields(active.roots, active.fields)
+    if (entries.some((entry) => entry.gone)) {
+      await retire(active)
+      entries = liveFields(active.roots, active.fields)
+    }
     active.dirty = false
-    const message = build(active)
-    if (!message) return end(active)
-    if ((await deliver(message)) === "refused") {
+    const built = build(active, entries)
+    if (!built) return end(active)
+    if ((await deliver(built.message)) === "refused") {
       active.dirty = true
       return
     }
+    for (const [id, value] of built.values) active.sent.set(id, value)
     active.batches++
     if (active.batches >= LEARNING_BATCHES_MAX) end(active)
   }
@@ -166,6 +204,7 @@ export function createLearningSession({
   }
 
   function absorb(active: Active, start: LearningStart): void {
+    void retire(active)
     if (!active.roots.includes(start.root)) active.roots.push(start.root)
     const known = new Set(active.fields.map((field) => field.id))
     for (const field of start.fields) if (!known.has(field.id)) active.fields.push(field)
@@ -187,19 +226,17 @@ export function createLearningSession({
       baseline: new Map(),
       finals: new Map(),
       mappings: new Map(),
+      sent: new Map(),
       stops: [],
       detach: () => {},
       dirty: true,
       batches: 0,
     }
     const onSubmit = (event: Event) => {
-      const main = mainForm(active.fields)
-      if (
-        main
-          ? event.target === main
-          : active.fields.some((field) => (field.el as HTMLInputElement).form === event.target)
-      )
-        flush(active)
+      const entries = liveFields(active.roots, active.fields)
+      const main = mainForm(entries)
+      const holds = entries.some((entry) => !entry.gone && (entry.field.el as HTMLInputElement).form === event.target)
+      if (main ? event.target === main : holds) flush(active)
     }
     const onHide = () => {
       if (doc.visibilityState === "hidden") flush(active)

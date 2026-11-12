@@ -15,6 +15,7 @@ import {
   SidebarRail,
 } from "@skiffr/ui/components/sidebar"
 import {
+  BarChart3Icon,
   InboxIcon,
   LayoutDashboardIcon,
   ListChecksIcon,
@@ -39,6 +40,7 @@ interface Me {
 const NAV: { href: Route; label: string; icon: typeof LayoutDashboardIcon; admin?: boolean }[] = [
   { href: "/", label: "Overview", icon: LayoutDashboardIcon },
   { href: "/queue", label: "Queue", icon: InboxIcon },
+  { href: "/stats", label: "Stats", icon: BarChart3Icon },
   { href: "/notes", label: "Notes", icon: NotebookPenIcon },
   { href: "/answers", label: "Answers", icon: ListChecksIcon },
   { href: "/extension", label: "Extension", icon: PuzzleIcon },

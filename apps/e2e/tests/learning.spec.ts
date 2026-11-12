@@ -161,6 +161,10 @@ test("private fields and card numbers never reach the api", async ({
       `<div class="field"><label for="ssn">Social security number</label><input id="ssn" type="text"></div>
        <div class="field"><label for="ref">Reference</label><input id="ref" type="text"></div>
        <div class="field"><label for="pw">Account password</label><input id="pw" type="password"></div>
+       <fieldset><legend>Payment details</legend>
+         <div class="field"><label for="bare_code">Code</label><input id="bare_code" type="text"></div>
+         <div class="field"><label for="bare_bic">BIC</label><input id="bare_bic" type="text"></div>
+       </fieldset>
        <div class="field"><label for="iban">Compte bancaire</label><input id="iban" type="text"></div>
        <div class="field"><label for="masked">Anything</label><input id="masked" type="text" style="-webkit-text-security: disc"></div>`,
     )
@@ -171,6 +175,8 @@ test("private fields and card numbers never reach the api", async ({
 
   await page.locator("#ssn").fill("078-05-1120")
   await page.locator("#ref").fill("4242.4242.4242.4242")
+  await page.locator("#bare_code").fill("LEAK-code-1")
+  await page.locator("#bare_bic").fill("LEAK-bic-2")
   await page.locator("#iban").fill("LEAK-bank-9981")
   await page.locator("#masked").fill("LEAK-masked-7731")
   await page.locator("#pw").fill("hunter2-secret")
@@ -178,11 +184,14 @@ test("private fields and card numbers never reach the api", async ({
   await page.locator(FIELDS.submit).click()
 
   await expect.poll(() => mockApi.records.length).toBe(1)
+  const lookup = JSON.stringify(mockApi.requests.find((request) => request.path === "/rpc/learning/lookup")?.body)
+  expect(lookup).toContain("Payment details: BIC")
   const sent = JSON.stringify(mockApi.requests.filter((request) => request.path === RECORD_PATH))
-  for (const secret of ["078-05", "4242", "hunter2", "LEAK", "Social security", "password", "Compte", "Anything"]) {
+  for (const secret of ["078-05", "4242", "hunter2", "LEAK", "Social security", "password", "Compte"]) {
     expect(sent).not.toContain(secret)
   }
   expect(sent).toContain("+351 000 111 222")
+  expect(eventFor(mockApi.records[0], "Anything")).toMatchObject({ filledValue: "", finalValue: "" })
 })
 
 test("an api that is down does not break the page", async ({ context, serviceWorker, fixtureServer, mockApi }) => {
@@ -360,5 +369,83 @@ test("a control the page swapped in after the fill is read as typed, not as acce
   expect(eventFor(mockApi.records[0], "Phone")).toMatchObject({
     filledValue: "+351 912 345 678",
     finalValue: "+351 000 111 222",
+  })
+})
+
+test("one correction is one corrected event across follow-up batches, a later edit is still sent", async ({
+  context,
+  serviceWorker,
+  fixtureServer,
+  mockApi,
+}) => {
+  await connect(serviceWorker, mockApi)
+  const { page, toast } = await openApplication(context, fixtureServer.origin)
+  await toast.click("yes")
+  await toast.waitFor((s) => s.title !== null && FILLED.test(s.title))
+  await page.evaluate(() =>
+    document.querySelector("form")?.addEventListener("submit", (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+    }),
+  )
+
+  const edits: [string, string][] = [
+    [FIELDS.phone, "+351 000 111 222"],
+    [FIELDS.last, "Costa"],
+    [FIELDS.email, "edited@example.com"],
+  ]
+  for (const [index, [selector, value]] of edits.entries()) {
+    await page.locator(selector).fill(value)
+    await page.locator(FIELDS.submit).click()
+    await expect.poll(() => mockApi.records.length).toBe(index + 1)
+  }
+
+  const corrected = (label: string) =>
+    mockApi.records.filter((batch) => {
+      const event = eventFor(batch, label)
+      return event && event.finalValue !== "" && event.finalValue !== event.filledValue
+    }).length
+  expect([corrected("Phone"), corrected("Last Name"), corrected("Email")]).toEqual([1, 1, 1])
+  expect(eventFor(mockApi.records[2], "Phone")).toMatchObject({ filledValue: "", finalValue: "" })
+  expect(eventFor(mockApi.records[2], "First Name")).toMatchObject({ filledValue: "", finalValue: "" })
+  const labels = mockApi.records.map((batch) => batch.events.map((event) => event.label))
+  expect(labels[1]).toEqual(labels[0])
+  expect(labels[2]).toEqual(labels[0])
+})
+
+test("a multi step form: step one is sent when step two is filled, step two on submit", async ({
+  context,
+  serviceWorker,
+  fixtureServer,
+  mockApi,
+}) => {
+  await connect(serviceWorker, mockApi)
+  const { page, toast } = await openApplication(context, fixtureServer.origin, "/scope/multi-step.html")
+  await toast.click("yes")
+  await toast.waitFor((s) => s.title !== null && FILLED.test(s.title))
+  await page.locator("#ln").fill("Costa")
+  await page.locator("#next").click()
+  await serviceWorker.evaluate(async () => {
+    const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true })
+    if (tab?.id === undefined) throw new Error("no active tab")
+    await chrome.tabs.sendMessage(tab.id, { type: "fill" }, { frameId: 0 })
+  })
+  await expect(page.locator("#li")).toHaveValue(/linkedin/)
+  await expect.poll(() => mockApi.records.length).toBe(1)
+
+  await page.locator("#ci").fill("Porto")
+  await keepPageOnSubmit(page)
+  await page.locator("#send").click()
+
+  await expect.poll(() => mockApi.records.length).toBe(2)
+  const own = (batch: RecordedBatch | undefined) => batch?.events.map((event) => event.label.replace(/^.*: /, ""))
+  expect(own(mockApi.records[0])).toEqual(["First name", "Last name", "Email address", "Phone"])
+  expect(mockApi.records[0]?.events.find((event) => event.label.endsWith("Last name"))).toMatchObject({
+    finalValue: "Costa",
+  })
+  expect(own(mockApi.records[1])).toEqual(["City", "LinkedIn Profile"])
+  expect(mockApi.records[1]?.events.find((event) => event.label.endsWith("City"))).toMatchObject({
+    filledValue: "Lisbon",
+    finalValue: "Porto",
   })
 })
