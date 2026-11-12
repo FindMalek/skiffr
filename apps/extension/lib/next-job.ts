@@ -15,6 +15,11 @@ import {
   nextDecisionMessageSchema,
 } from "./messages"
 
+const apiCode = (error: unknown) => {
+  const code = classify(error)
+  return code === "invalid" ? "failed" : code
+}
+
 const BRIEF_MAX = 60
 const STORAGE_KEY = "nextJobOffers"
 const ASKED_PER_TAB_MAX = 20
@@ -199,7 +204,7 @@ export function createNextJobHandler(deps: NextJobDeps): NextJobHandler {
         tabId,
         (asked.get(tabId) ?? []).filter((id) => id !== pageId),
       )
-      return { ok: false, code: classify(error) }
+      return { ok: false, code: apiCode(error) }
     } finally {
       busy.delete(tabId)
       await save()
@@ -256,7 +261,7 @@ export function createNextJobHandler(deps: NextJobDeps): NextJobHandler {
       await save()
       return { ok: true }
     } catch (error) {
-      return { ok: false, code: classify(error) }
+      return { ok: false, code: apiCode(error) }
     } finally {
       busy.delete(tabId)
     }

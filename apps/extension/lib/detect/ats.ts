@@ -70,7 +70,6 @@ export function siteKey(url: string): string | null {
 /** Shared hosts where each tenant is a path (not a subdomain) and which `MULTI_TENANT` does not cover: how many path segments name the tenant. */
 const PATH_TENANT_SEGMENTS: Readonly<Record<string, number>> = {
   "sites.google.com": 2,
-  "forms.office.com": 2,
   "www.notion.so": 1,
   "airtable.com": 2,
 }

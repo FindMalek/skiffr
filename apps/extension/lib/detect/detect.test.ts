@@ -150,7 +150,6 @@ test("an offer scope is the site key, plus the tenant path on a shared host that
   expect(offerScope("https://job-boards.greenhouse.io/acme/jobs/1")).toBe("job-boards.greenhouse.io/acme")
   expect(offerScope("https://careers.example.com/jobs/1")).toBe("careers.example.com")
   expect(offerScope("https://sites.google.com/view/Acme/jobs")).toBe("sites.google.com/view/acme")
-  expect(offerScope("https://forms.office.com/r/abc123")).toBe("forms.office.com/r/abc123")
   expect(offerScope("https://www.notion.so/")).toBe("www.notion.so")
   expect(offerScope("not a url")).toBeNull()
 })

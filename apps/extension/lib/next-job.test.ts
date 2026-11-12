@@ -297,6 +297,11 @@ test("a job that already has its application counts as marked", async () => {
   expect(await handler.handle(decision("mark"), sender())).toEqual({ ok: true })
 })
 
+test("a 400 from the api is a failed mark, not an expired offer", async () => {
+  const { handler } = await offered({ markFail: new ORPCError("BAD_REQUEST", { status: 400 }) })
+  expect(await handler.handle(decision("mark"), sender())).toEqual({ ok: false, code: "failed" })
+})
+
 test("an api that is down fails the mark and keeps the offer for another try", async () => {
   const { handler, calls } = await offered({ markFail: new TypeError("fetch failed") })
   expect(await handler.handle(decision("mark"), sender())).toEqual({ ok: false, code: "unreachable" })
