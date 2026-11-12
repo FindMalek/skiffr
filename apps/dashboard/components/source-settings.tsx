@@ -85,7 +85,7 @@ function AddSource({ count }: { count: number }) {
       </CardHeader>
       <CardContent>
         <form onSubmit={submit} className="flex flex-wrap items-end gap-3">
-          <Field className="min-w-64 flex-[2]">
+          <Field className="min-w-64 flex-2">
             <FieldLabel htmlFor="source-url">Address</FieldLabel>
             <Input
               id="source-url"
