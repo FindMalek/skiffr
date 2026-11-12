@@ -7,10 +7,11 @@ on:
   pull_request:
     types: [closed]
 
-# shares the group of the preview workflow so a running preview is cancelled instead of recreating what is being deleted
+# its own group, never the one of the preview workflow, and a cleanup in progress is never cancelled
+# (a reopened pull request must not stop half a delete). The preview workflow cancels its own run on close.
 concurrency:
-  group: preview-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  group: preview-cleanup-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -18,7 +19,8 @@ permissions:
 jobs:
   cleanup:
     name: remove preview
-    if: vars.PREVIEW_ENABLED == 'true' && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
+    # not gated by PREVIEW_ENABLED: turning previews off must still delete what exists
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:

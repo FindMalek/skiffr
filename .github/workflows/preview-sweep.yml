@@ -23,7 +23,7 @@ permissions:
 jobs:
   sweep:
     name: sweep previews
-    if: vars.PREVIEW_ENABLED == 'true'
+    # not gated by PREVIEW_ENABLED: turning previews off must still delete what exists
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:

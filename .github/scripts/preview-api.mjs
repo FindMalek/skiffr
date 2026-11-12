@@ -8,7 +8,8 @@ export const isDry = () => process.env.PREVIEW_DRY_RUN === "1"
 async function call(url, init, label) {
   const res = await fetch(url, init)
   const text = await res.text()
-  if (!res.ok) throw new Error(`${label} failed (${res.status}): ${text.slice(0, 300)}`)
+  if (!res.ok)
+    throw Object.assign(new Error(`${label} failed (${res.status}): ${text.slice(0, 300)}`), { status: res.status })
   return text ? JSON.parse(text) : {}
 }
 
@@ -56,7 +57,8 @@ export function github(method, path, body) {
 export async function findStickyComment(repo, pr) {
   for (let page = 1; page < 10; page++) {
     const comments = await github("GET", `repos/${repo}/issues/${pr}/comments?per_page=100&page=${page}`)
-    const hit = comments.find((c) => c.body?.includes(`<!-- ${MARKER} -->`))
+    // only the bot's own comment: a marker posted by anyone else must not be edited
+    const hit = comments.find((c) => c.user?.login === "github-actions[bot]" && c.body?.includes(`<!-- ${MARKER} -->`))
     if (hit) return hit.id
     if (comments.length < 100) break
   }

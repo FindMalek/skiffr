@@ -45,6 +45,10 @@ if (missing.length > 0) {
 output("ready", "true")
 
 const repo = env.GITHUB_REPOSITORY
+if (["plan", "up", "down"].includes(command) && !/^[1-9][0-9]*$/.test(env.PR_NUMBER ?? "")) {
+  console.error(`PR_NUMBER must be a positive integer, got ${JSON.stringify(env.PR_NUMBER ?? null)}`)
+  process.exit(1)
+}
 const pr = Number(env.PR_NUMBER)
 const s3 = s3FromEnv(env)
 const productionKeys = APPS.map((a) => a.key)
@@ -60,8 +64,17 @@ function discover() {
 
 function plan() {
   const apps = discover()
-  const affected = args.affected ? parseAffected(readFileSync(args.affected, "utf8")) : []
-  const { build, reuse } = planApps({ apps, affected, buildAll: !args.affected || env.PREVIEW_BUILD_ALL === "true" })
+  let affected = []
+  let buildAll = !args.affected || env.PREVIEW_BUILD_ALL === "true"
+  if (args.affected) {
+    try {
+      affected = parseAffected(readFileSync(args.affected, "utf8"))
+    } catch (error) {
+      console.warn(`could not read the turbo output, building every app: ${error.message}`)
+      buildAll = true
+    }
+  }
+  const { build, reuse } = planApps({ apps, affected, buildAll })
   output("build", JSON.stringify(build))
   output("has_build", String(build.length > 0))
   output("tag", previewTag(pr, env.HEAD_SHA))
@@ -106,8 +119,11 @@ if (command === "plan") {
   const errors = await previewDown({ pr, repo, s3, appKeys: productionKeys })
   if (errors.length > 0) process.exit(1)
 } else if (command === "sweep") {
-  const removed = await previewSweep({ repo, s3, appKeys: productionKeys })
-  summary(`### Preview sweep\n\nremoved: ${removed.map((n) => `#${n}`).join(", ") || "nothing"}`)
+  const { removed, errors } = await previewSweep({ repo, s3, appKeys: productionKeys })
+  summary(
+    `### Preview sweep\n\nremoved: ${removed.map((n) => `#${n}`).join(", ") || "nothing"}${errors.length ? `\n\nerrors:\n${errors.map((e) => `- ${e}`).join("\n")}` : ""}`,
+  )
+  if (errors.length > 0) process.exit(1)
 } else {
   console.error("usage: preview.mjs <plan|up|down|sweep> [--dry-run] [--affected file]")
   process.exit(1)

@@ -5,11 +5,11 @@ description: A running copy of every pull request, with its own database and buc
 
 Every pull request from this repository gets a preview of all apps on the self-hosted Dokploy: the landing page, the dashboard, the api and the docs (and the e2e playground once it has a Dockerfile). One sticky comment on the pull request lists the links, a test login and the extension build. Closing or merging the pull request deletes all of it.
 
-Nothing runs until the repo variable `PREVIEW_ENABLED` is `true`. Pull requests from forks and from dependabot get no preview: they cannot read the secrets.
+Nothing is created until the repo variable `PREVIEW_ENABLED` is `true`. Cleanup and the sweep do not check it, so turning previews off still removes what exists. Pull requests from forks and from dependabot get no preview: they cannot read the secrets.
 
 ## What a push does
 
-1. **plan** asks turbo which packages the pull request changes (`turbo ls --affected`, dependents included). An app is built when it is in that list. A change to a shared package such as `@skiffr/orpc` or `@skiffr/db` rebuilds every app that uses it. If turbo cannot answer, every app is built.
+1. **plan** asks turbo which packages the pull request changes (`turbo ls --affected`, dependents included). An app is built when it is in that list. A change to a shared package such as `@skiffr/orpc` or `@skiffr/db` rebuilds every app that uses it. If turbo fails or its output cannot be read, every app is built.
 2. **build** builds the changed apps on GitHub runners with docker buildx and pushes `ghcr.io/findmalek/skiffr-<app>:pr-<number>-<short sha>`. It uses the same build args as the production build, so the layers and the turbo remote cache (`TURBO_API`, `TURBO_TEAM`, `TURBO_TOKEN`) that `main` already warmed are reused.
 3. **dokploy** creates or updates the preview in the Dokploy project `skiffr-previews`: a bucket, a postgres, then the apps, the api first. An app that was not built runs the production image `ghcr.io/findmalek/skiffr-<app>:main`, wired to the preview's own env. The images are env agnostic: the Next apps read `API_URL` per request, so the production image works behind a preview api.
 4. it waits for the deploys, checks `/health` of the api (the database answers and `env` is `pr-<number>`) and every other app, then edits the sticky comment and the GitHub deployment `preview-pr-<number>`.
@@ -41,8 +41,8 @@ The comment links the CI run that holds the artifact `extension-chrome-pr-<numbe
 
 ## Cleanup
 
-- `preview-cleanup` runs when a pull request is closed or merged. It deletes the apps (their domains go with them), the postgres and its volume, the bucket with its objects, the `pr-<number>-*` image tags on ghcr, and marks the GitHub deployments inactive. It is safe to run twice.
-- `preview-sweep` runs daily, or by hand with `dry_run` to only list. It removes previews of closed pull requests the cleanup missed, previews idle for more than `PREVIEW_TTL_DAYS` (default 7) even when the pull request is open (a push brings it back), and orphans: postgres volumes and buckets no preview owns. Dokploy's `postgres.remove` leaves the data volume behind, so both paths remove it through `dockerVolume.removeVolume`.
+- `preview-cleanup` runs when a pull request is closed or merged. It deletes the apps (their domains go with them), the postgres and its volume, the bucket with its objects, the `pr-<number>-*` image tags on ghcr (best effort, a failure only leaves registry clutter), and marks the GitHub deployments inactive. It is safe to run twice and a cleanup in progress is never cancelled. A failed `up` leaves its apps and postgres in place, they count toward `PREVIEW_MAX` until the pull request closes or the idle limit hits.
+- `preview-sweep` runs daily, or by hand with `dry_run` to only list. It removes previews of closed pull requests the cleanup missed, previews idle for more than `PREVIEW_TTL_DAYS` (default 7) even when the pull request is open (a push brings it back), and the leftover postgres volumes and buckets of those pull requests. A github answer other than closed or 404 (an outage, a rate limit) stops the sweep with an error instead of deleting anything. Dokploy's `postgres.remove` leaves the data volume behind, so both paths remove it through `dockerVolume.removeVolume`.
 - at most `PREVIEW_MAX` previews (default 6) run at once. A new one over the limit is skipped, the comment says so, and it starts on the next push once there is room.
 
 Image layers of old previews stay in the box's docker cache: turn on Dokploy's daily docker cleanup in Settings, Server.
@@ -94,6 +94,14 @@ Never log Dokploy into ghcr with a workflow token: it expires with the run and e
 ## Limits
 
 - previews are public: anyone with a link can sign in with the test login. Only same-repo pull requests get one, the data is fake and the model and mail are off, but do not put anything real in a preview.
-- one S3 key owns all preview buckets, and a bucket has no quota. The daily sweep and the idle limit bound the space.
+- one S3 key owns all preview buckets, and a bucket has no quota. The daily sweep and the idle limit bound the space. There is no isolation between previews: the key sits in every preview api env, so pull request code running in one preview can read, write and delete the buckets of all the others.
+- the previews are public on the internet with a published test login, and each one runs five containers with no resource limits.
 - the preview of an app that was not rebuilt runs the latest `main` image, which can be newer than the pull request's base.
 - the `web` and `docs` builds bake the production site url into their metadata. The previews tell search engines not to index.
+
+## Threat model
+
+Under `pull_request` the workflow file comes from the merge ref, so anyone who can push a branch to this repository can change the workflow or the scripts and read `DOKPLOY_TOKEN`, `PREVIEW_S3_*` and `GHCR_READ_TOKEN`, whatever the checkout ref is. Checking out `main` for the scripts does not change that, and `pull_request_target` would be worse. Forks and dependabot are skipped, and nothing a branch name or title carries reaches a shell.
+
+- `DOKPLOY_TOKEN` is a full admin key, the same power as production. Whoever can push a branch can delete `skiffr-db`. If Dokploy lets you create a key scoped to the `skiffr-previews` project, use that one. Otherwise keep write access to the repository tight.
+- all previews share one S3 key (see the limits) and are public.

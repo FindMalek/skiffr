@@ -249,7 +249,7 @@ export async function previewUp(o, deps = {}) {
       apps: keys,
       domain,
       apiInternalHost,
-      databaseUrl: `postgresql://${pg.databaseUser}:${pg.databasePassword}@${pg.appName}:5432/${pg.databaseName}`,
+      databaseUrl: `postgresql://${encodeURIComponent(pg.databaseUser)}:${encodeURIComponent(pg.databasePassword)}@${pg.appName}:5432/${pg.databaseName}`,
       secrets,
       seed,
       s3: s3 && { ...s3.config, bucket: bucketName(pr) },
@@ -354,7 +354,9 @@ export async function removePreview(pr, { slot, volumes = [], s3, repo, note, ap
     await step(`app ${key}`, () => dokploy("POST", "application.delete", { applicationId }))
   }
   if (slot?.pg) await step("postgres", () => dokploy("POST", "postgres.remove", { postgresId: slot.pg.postgresId }))
-  await step("volumes", () => removeVolumes(volumes.filter((v) => parseDbVolume(v) === pr)))
+  for (const volume of volumes.filter((v) => parseDbVolume(v) === pr)) {
+    await step(`volume ${volume}`, () => removeVolumes([volume]))
+  }
   if (s3) await step("bucket", () => s3.client.deleteBucket(bucketName(pr)))
   await step("registry tags", () => pruneImageTags(repo, pr, appKeys))
   await step("github deployments", () => deactivateDeployments(repo, pr))
@@ -374,7 +376,22 @@ export async function listVolumes() {
   return (Array.isArray(volumes) ? volumes : []).map((v) => v.Name).filter((n) => parseDbVolume(n) !== null)
 }
 
-/** Closed or unknown pull requests, previews idle past the TTL and leftovers (volumes, buckets) nobody owns any more. */
+/** Only a closed pull request or a 404 counts as gone. Any other answer (500, 403, a network error) aborts the sweep. */
+async function isClosed(repo, pr) {
+  try {
+    return (await github("GET", `repos/${repo}/pulls/${pr}`)).state === "closed"
+  } catch (error) {
+    if (error.status === 404) return true
+    throw error
+  }
+}
+
+/**
+ * Closed or unknown pull requests and previews idle past the TTL, with their leftover volumes and buckets.
+ * Every volume and bucket belongs to a pull request number, so there is no separate orphan pass: the volumes of an open
+ * pull request are never touched, even when the previews project lookup came back empty.
+ * Returns the removed pull requests and the errors that did not stop the sweep.
+ */
 export async function previewSweep({ repo, s3, env = process.env, now = Date.now(), appKeys = [] }) {
   const ttlDays = Number(env.PREVIEW_TTL_DAYS || DEFAULT_TTL_DAYS)
   const resources = await listResources(await findEnvironment())
@@ -382,26 +399,21 @@ export async function previewSweep({ repo, s3, env = process.env, now = Date.now
   const buckets = s3 ? (await s3.client.listBuckets()).filter((b) => parseBucket(b) !== null) : []
   const prs = new Set([...resources.keys(), ...volumes.map(parseDbVolume), ...buckets.map(parseBucket)])
   const removed = []
+  const errors = []
   for (const pr of [...prs].sort((a, b) => a - b)) {
-    const pull = await github("GET", `repos/${repo}/pulls/${pr}`).catch(() => null)
+    const closed = await isClosed(repo, pr)
     const slot = resources.get(pr)
     let note
-    if (!pull || pull.state === "closed") note = "Removed, the pull request is closed."
+    if (closed) note = "Removed, the pull request is closed."
     else if (slot && isExpired((await apiEnvOf(slot)).PREVIEW_DEPLOYED_AT, now, ttlDays)) {
       note = `Removed after ${ttlDays} idle days. Push a commit to bring it back.`
     }
     if (!note) continue
     log(`pr ${pr}: ${note}`)
-    await removePreview(pr, { slot, volumes, s3, repo, note, appKeys })
+    errors.push(...(await removePreview(pr, { slot, volumes, s3, repo, note, appKeys })))
     removed.push(pr)
   }
-  const live = new Set([...resources.values()].filter((s) => s.pg).map((s) => `${s.pg.appName}-data`))
-  for (const name of volumes) {
-    if (removed.includes(parseDbVolume(name)) || live.has(name)) continue
-    log(`orphan volume ${name}`)
-    await removeVolumes([name])
-  }
-  return removed
+  return { removed, errors }
 }
 
 export async function previewDown({ pr, repo, s3, appKeys = [] }) {

@@ -1,5 +1,7 @@
 import assert from "node:assert/strict"
+import { spawnSync } from "node:child_process"
 import { afterEach, beforeEach, describe, test } from "node:test"
+import { findStickyComment } from "./preview-api.mjs"
 import {
   discoverApps,
   parseAffected,
@@ -56,6 +58,30 @@ describe("pure helpers", () => {
     assert.equal(parseAppResource("skiffr-api"), null)
     assert.equal(parseDbVolume("skiffr-db-pr-12-ab12cd-data"), 12)
     assert.equal(parseDbVolume("skiffr-db-data"), null)
+    // leading zeros are another name, never pr 1
+    assert.equal(parseAppResource("skiffr-api-pr-01"), null)
+    assert.equal(parseDbVolume("skiffr-db-pr-01-ab12cd-data"), null)
+  })
+
+  test("an unsafe object key is never deleted", async () => {
+    const mock = await startMock()
+    try {
+      const config = { endpoint: `${mock.origin}/s3`, region: "garage", accessKeyId: "key", secretAccessKey: "secret" }
+      mock.s.buckets.set("skiffr-pr-1", new Set(["../skiffr-pr-2"]))
+      mock.s.buckets.set("skiffr-pr-2", new Set())
+      await assert.rejects(s3Client(config).deleteBucket("skiffr-pr-1"), /unsafe key/)
+      assert.deepEqual(mock.s.writes, [])
+    } finally {
+      await mock.close()
+    }
+  })
+
+  test("PR_NUMBER must be a positive integer", () => {
+    const run = (PR_NUMBER) =>
+      spawnSync(process.execPath, [new URL("./preview.mjs", import.meta.url).pathname, "down"], {
+        env: { PATH: process.env.PATH, DOKPLOY_URL: "http://127.0.0.1:1", DOKPLOY_TOKEN: "t", PR_NUMBER },
+      })
+    for (const bad of ["", "0", "012", "abc", "1;2", "1e1", "-1", " 12 "]) assert.equal(run(bad).status, 1, bad)
   })
 
   test("preview env carries no production secret and points at the preview", () => {
@@ -238,20 +264,126 @@ describe("against the mock servers", () => {
     mock.s.pulls.set(9, "closed")
     mock.s.buckets.set("skiffr-pr-9", new Set(["a&b.png"]))
     mock.s.volumes.add("skiffr-db-pr-9-zzzzzz-data")
-    // a volume of an old incarnation of pr 1's database
+    // a volume of an old incarnation of pr 1's database, kept while pr 1 is open
     mock.s.volumes.add("skiffr-db-pr-1-old000-data")
     const eightDays = Date.now() + 8 * 86_400_000
-    assert.deepEqual(await previewSweep({ repo: "o/r", s3, env: { PREVIEW_TTL_DAYS: "7" }, now: Date.now() }), [9])
+    const first = await previewSweep({ repo: "o/r", s3, env: { PREVIEW_TTL_DAYS: "7" }, now: Date.now() })
+    assert.deepEqual(first, { removed: [9], errors: [] })
     assert.equal(mock.s.buckets.has("skiffr-pr-9"), false)
-    // only the live databases keep their volume
-    assert.equal(mock.s.volumes.size, 2)
+    // the volumes of open pull requests stay, the old one goes with the pull request
+    assert.equal(mock.s.volumes.size, 3)
     assert.equal(appsOf(1).length, 4)
     // a week and a day later both are idle
-    assert.deepEqual(await previewSweep({ repo: "o/r", s3, env: { PREVIEW_TTL_DAYS: "7" }, now: eightDays }), [1, 2])
+    const second = await previewSweep({ repo: "o/r", s3, env: { PREVIEW_TTL_DAYS: "7" }, now: eightDays })
+    assert.deepEqual(second.removed, [1, 2])
     assert.equal(mock.s.apps.size, 0)
     assert.equal(mock.s.pgs.size, 0)
     assert.equal(mock.s.volumes.size, 0)
     assert.equal(mock.s.buckets.size, 0)
     assert.match(mock.s.comments.find((c) => c.pr === 1).body, /idle days/)
+  })
+
+  test("sweep removes nothing when github fails, only a closed state or a 404 means closed", async () => {
+    await up({ pr: 1 })
+    await up({ pr: 2 }, { fetch: async () => new Response(JSON.stringify({ ok: true, db: true, env: "pr-2" })) })
+    mock.s.pulls.set(1, "open")
+    mock.s.pulls.set(2, "open")
+    mock.s.writes.length = 0
+    for (const status of [500, 403]) {
+      mock.s.pullError = status
+      await assert.rejects(previewSweep({ repo: "o/r", s3, now: Date.now() }), new RegExp(`\\(${status}\\)`))
+      assert.deepEqual(mock.s.writes, [], `status ${status}`)
+    }
+    assert.equal(mock.s.apps.size, 8)
+    // a pull request github does not know any more (404) is gone
+    mock.s.pullError = null
+    mock.s.pulls.delete(2)
+    assert.deepEqual((await previewSweep({ repo: "o/r", s3, now: Date.now() })).removed, [2])
+    assert.equal(appsOf(1).length, 4)
+  })
+
+  test("sweep never touches the volumes of open pull requests and one busy volume does not stop it", async () => {
+    for (const [pr, state] of [
+      [7, "open"],
+      [9, "closed"],
+      [10, "closed"],
+    ])
+      mock.s.pulls.set(pr, state)
+    for (const v of ["skiffr-db-pr-7-aaaaaa-data", "skiffr-db-pr-9-bbbbbb-data", "skiffr-db-pr-10-cccccc-data"]) {
+      mock.s.volumes.add(v)
+    }
+    mock.s.volumeError.add("skiffr-db-pr-9-bbbbbb-data")
+    // the previews project lookup finds nothing, the open pull request must still keep its volume
+    mock.s.noProject = true
+    const result = await previewSweep({ repo: "o/r", s3, now: Date.now(), env: {} })
+    assert.deepEqual(result.removed, [9, 10])
+    assert.match(result.errors.join(), /skiffr-db-pr-9-bbbbbb-data/)
+    assert.deepEqual([...mock.s.volumes].filter((v) => v !== "unrelated-data").sort(), [
+      "skiffr-db-pr-7-aaaaaa-data",
+      "skiffr-db-pr-9-bbbbbb-data",
+    ])
+  })
+
+  test("down and sweep dry runs make no write call", async () => {
+    await up({ pr: 1 })
+    mock.s.pulls.set(1, "closed")
+    mock.s.buckets.set("skiffr-pr-9", new Set())
+    mock.s.volumes.add("skiffr-db-pr-9-zzzzzz-data")
+    mock.s.pulls.set(9, "closed")
+    mock.s.writes.length = 0
+    process.env.PREVIEW_DRY_RUN = "1"
+    await previewDown({ pr: 1, repo: "o/r", s3, appKeys: ["api"] })
+    await previewSweep({ repo: "o/r", s3, now: Date.now() })
+    assert.deepEqual(mock.s.writes, [])
+    assert.equal(appsOf(1).length, 4)
+  })
+
+  test("production like names survive down and sweep", async () => {
+    await up({ pr: 1 })
+    const keep = [
+      "skiffr-api",
+      "skiffr-api-pr-1x",
+      "skiffr-api-pr-1-extra",
+      "xskiffr-api-pr-1",
+      "skiffr-api-pr-01",
+      "lodesong-pr-543",
+    ]
+    for (const name of keep) mock.s.apps.set(`keep-${name}`, { applicationId: `keep-${name}`, name, appName: name })
+    mock.s.foreign.set("other-1", { applicationId: "other-1", name: "ceraghit-api-pr-1" })
+    mock.s.foreign.set("prod-1", { applicationId: "prod-1", name: "skiffr-api" })
+    for (const name of ["skiffr-db", "skiffr-db-pr-1-extra", "ceraghit-db-pr-1"]) {
+      mock.s.pgs.set(`keep-${name}`, { postgresId: `keep-${name}`, name, appName: name })
+    }
+    const volumes = [
+      "skiffr-db-abcdef-data",
+      "skiffr-db-pr-1-data",
+      "ceraghit-db-pr-1-abcdef-data",
+      "skiffr-db-pr-01-abcdef-data",
+    ]
+    for (const v of volumes) mock.s.volumes.add(v)
+    mock.s.buckets.set("skiffr-prod", new Set(["a"]))
+    mock.s.buckets.set("skiffr-pr-1-x", new Set(["a"]))
+    mock.s.buckets.set("skiffr-pr-12", new Set(["a"]))
+    mock.s.pulls.set(1, "closed")
+    mock.s.pulls.set(12, "open")
+    await previewDown({ pr: 1, repo: "o/r", s3, appKeys: ["api"] })
+    await previewSweep({ repo: "o/r", s3, now: Date.now() })
+    assert.deepEqual([...mock.s.apps.keys()].sort(), keep.map((n) => `keep-${n}`).sort())
+    assert.deepEqual([...mock.s.foreign.keys()].sort(), ["other-1", "prod-1"])
+    assert.deepEqual([...mock.s.pgs.keys()].sort(), [
+      "keep-ceraghit-db-pr-1",
+      "keep-skiffr-db",
+      "keep-skiffr-db-pr-1-extra",
+    ])
+    for (const v of volumes) assert.equal(mock.s.volumes.has(v), true, v)
+    assert.deepEqual([...mock.s.buckets.keys()].sort(), ["skiffr-pr-1-x", "skiffr-pr-12", "skiffr-prod"])
+  })
+
+  test("the sticky comment is only trusted from the actions bot", async () => {
+    process.env.GITHUB_REPOSITORY = "o/r"
+    mock.s.comments.push({ id: 1, pr: 4, body: "<!-- skiffr-preview -->", user: { login: "someone" } })
+    assert.equal(await findStickyComment("o/r", 4), null)
+    mock.s.comments.push({ id: 2, pr: 4, body: "<!-- skiffr-preview -->", user: { login: "github-actions[bot]" } })
+    assert.equal(await findStickyComment("o/r", 4), 2)
   })
 })

@@ -106,6 +106,10 @@ export function s3Client({ endpoint, region = "garage", accessKeyId, secretAcces
       const probe = await request("HEAD", `/${bucket}`, { okStatuses: [404] })
       if (probe.status === 404) return removed
       for (const key of await listKeys(bucket)) {
+        // fetch resolves dot segments, so `../x` would delete another bucket
+        if (key.startsWith("/") || key.split("/").some((part) => part === "." || part === "..")) {
+          throw new Error(`refusing to delete the unsafe key ${JSON.stringify(key)} in ${bucket}`)
+        }
         await request("DELETE", `/${bucket}/${key.split("/").map(encode).join("/")}`)
         removed++
       }

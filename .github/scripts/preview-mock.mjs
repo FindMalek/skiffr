@@ -14,6 +14,10 @@ export async function startMock() {
     statuses: [],
     buckets: new Map(),
     pulls: new Map(),
+    pullError: null, // status the pulls endpoint answers with, to test a failing github
+    volumeError: new Set(), // volumes dokploy refuses to remove
+    foreign: new Map(), // applications of another dokploy project, must never be deleted
+    noProject: false, // the skiffr-previews project is not found
     tags: [],
     seq: 0,
   }
@@ -43,7 +47,16 @@ export async function startMock() {
   })
 
   const dokployRoutes = {
-    "GET project.all": (res) => json(res, [{ name: "skiffr", environments: [] }, project()]),
+    "GET project.all": (res) =>
+      json(res, [
+        {
+          name: "skiffr",
+          environments: [
+            { environmentId: "e0", applications: [...s.foreign.values()].map((a) => ({ ...a })), postgres: [] },
+          ],
+        },
+        ...(s.noProject ? [] : [project()]),
+      ]),
     "POST application.create": (res, _q, body) => {
       const app = {
         applicationId: id("app"),
@@ -74,6 +87,7 @@ export async function startMock() {
     },
     "POST application.delete": (res, _q, body) => {
       s.apps.delete(body.applicationId)
+      s.foreign.delete(body.applicationId)
       json(res, {})
     },
     "GET deployment.all": (res, q) => json(res, s.deployments.get(q.applicationId) ?? []),
@@ -100,6 +114,7 @@ export async function startMock() {
     "GET dockerVolume.getVolumes": (res) =>
       json(res, [{ Name: "unrelated-data" }, ...[...s.volumes].map((Name) => ({ Name }))]),
     "POST dockerVolume.removeVolume": (res, _q, body) => {
+      if (s.volumeError.has(body.volumeName)) return json(res, { message: "volume is in use" }, 500)
       s.volumes.delete(body.volumeName)
       json(res, {})
     },
@@ -121,7 +136,12 @@ export async function startMock() {
         s.comments.filter((c) => c.pr === Number(comments[1])),
       )
     if (comments) {
-      const comment = { id: s.comments.length + 1, pr: Number(comments[1]), body: body.body }
+      const comment = {
+        id: s.comments.length + 1,
+        pr: Number(comments[1]),
+        body: body.body,
+        user: { login: "github-actions[bot]" },
+      }
       s.comments.push(comment)
       return json(res, comment)
     }
@@ -145,6 +165,7 @@ export async function startMock() {
     }
     const pull = /^repos\/o\/r\/pulls\/(\d+)/.exec(path)
     if (pull) {
+      if (s.pullError) return json(res, { message: "boom" }, s.pullError)
       const state = s.pulls.get(Number(pull[1]))
       return state ? json(res, { state }) : json(res, { message: "Not Found" }, 404)
     }

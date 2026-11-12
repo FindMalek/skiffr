@@ -21,20 +21,20 @@ export const previewHost = (pr, key, domain) => `pr-${pr}-${key}.${String(domain
 export const previewTag = (pr, sha) => `pr-${pr}-${String(sha).slice(0, 7)}`
 
 export function parseAppResource(name) {
-  const m = /^skiffr-([a-z0-9]+(?:-[a-z0-9]+)*)-pr-(\d+)$/.exec(name ?? "")
+  const m = /^skiffr-([a-z0-9]+(?:-[a-z0-9]+)*)-pr-([1-9]\d*)$/.exec(name ?? "")
   return m ? { key: m[1], pr: Number(m[2]) } : null
 }
 export const parseDbResource = (name) => {
-  const m = /^skiffr-db-pr-(\d+)$/.exec(name ?? "")
+  const m = /^skiffr-db-pr-([1-9]\d*)$/.exec(name ?? "")
   return m ? Number(m[1]) : null
 }
 /** Dokploy appends a random suffix to the postgres service name and mounts `<appName>-data`. */
 export const parseDbVolume = (name) => {
-  const m = /^skiffr-db-pr-(\d+)-[a-z0-9]+-data$/.exec(name ?? "")
+  const m = /^skiffr-db-pr-([1-9]\d*)-[a-z0-9]+-data$/.exec(name ?? "")
   return m ? Number(m[1]) : null
 }
 export const parseBucket = (name) => {
-  const m = /^skiffr-pr-(\d+)$/.exec(name ?? "")
+  const m = /^skiffr-pr-([1-9]\d*)$/.exec(name ?? "")
   return m ? Number(m[1]) : null
 }
 
