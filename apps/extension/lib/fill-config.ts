@@ -22,6 +22,8 @@ export const RECORD_TIMEOUT_MS = 15_000
 /** A fill session with no edit for this long is sent as it stands. */
 export const LEARNING_IDLE_MS = 300_000
 /** Pauses before each resend of a batch that failed for a reason worth repeating. */
+/** A session sends a first batch and at most this many follow-ups after, each for edits made since the last one. */
+export const LEARNING_BATCHES_MAX = 3
 export const LEARNING_RETRY_DELAYS_MS = [2_000, 10_000] as const
 /** How long a content script waits for the worker before it gives up on a fill. */
 export const ROUND_TRIP_TIMEOUT_MS = 60_000

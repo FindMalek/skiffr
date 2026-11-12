@@ -4,19 +4,22 @@ import { mount, trusted } from "./fill/test-dom"
 import { createLearningSession } from "./learning-session"
 import type { LearningRecordMessage } from "./messages"
 
-const FORM = `
+const FORM = `<form id="app">
   <label for="first">First name</label><input id="first" type="text">
   <label for="city">City</label><input id="city" type="text">
   <label for="why">Why us</label><textarea id="why"></textarea>
   <label for="pw">Password</label><input id="pw" type="password">
-`
+</form>
+<form id="header"><input id="q" type="text" aria-label="Search the site"></form>`
 
 async function setup(
   reply: (attempt: number) => unknown = () => ({ ok: true }),
   options: { html?: string; idleMs?: number; retryDelaysMs?: number[] } = {},
 ) {
   const { document, window, $ } = mount(options.html ?? FORM)
-  const fields = collectFields(document).filter((field) => field.descriptor.type !== "password")
+  const fields = collectFields(document).filter(
+    (field) => field.descriptor.type !== "password" && field.descriptor.label !== "Search the site",
+  )
   const ids = new Map(fields.map((field) => [field.descriptor.label, field.id]))
   const mapping = [
     { id: ids.get("First name") as string, action: "profile" as const, key: "first", confidence: 1, reason: "" },
@@ -52,7 +55,9 @@ async function setup(
     session,
     sent,
     type,
-    submit: () => fire(document, "submit"),
+    $,
+    fields,
+    submit: (selector = "#app") => fire($(selector), "submit"),
     fire,
     document,
     window: window as unknown as Window,
@@ -103,11 +108,11 @@ describe("learning session", () => {
   })
 
   test("a batch is sent once, whatever fires next", async () => {
-    const { sent, session, submit, fire, window } = await setup()
+    const { sent, submit, fire, window } = await setup()
     submit()
     submit()
     fire(window, "pagehide")
-    await session.flush()
+    await Bun.sleep(5)
     expect(sent).toHaveLength(1)
   })
 
@@ -183,15 +188,126 @@ describe("learning session", () => {
     expect(byLabel(sent[1], "First name")?.finalValue).toBe("Grace")
   })
 
-  test("a new fill sends the session still open before it starts its own", async () => {
-    const { session, sent, document } = await setup()
-    session.begin({
-      root: document,
-      fields: [],
-      mapping: [],
-      summary: { fields: [], counts: {} as never, clearHighlights: () => {} },
-    })
+  test("a second fill adds its fields to the open session and sends nothing yet", async () => {
+    const { session, sent, type, submit, document, fields } = await setup()
+    type("#first", "Grace")
+    const why = fields.find((field) => field.descriptor.label === "Why us") as (typeof fields)[number]
+    const mapping = [{ id: why.id, action: "profile" as const, key: "why", confidence: 1, reason: "" }]
+    const summary = await fillPage({ root: document, fields: [why], mapping, values: { why: "Because" } })
+    session.begin({ root: document, fields: [why], mapping, summary })
+    expect(sent).toHaveLength(0)
+
+    submit()
     expect(sent).toHaveLength(1)
+    expect(byLabel(sent[0], "First name")?.finalValue).toBe("Grace")
+    expect(byLabel(sent[0], "Why us")).toMatchObject({ filledValue: "Because", finalValue: "Because" })
+  })
+
+  test("a submit of a form that holds none of the fields sends nothing", async () => {
+    const { sent, submit, type, $ } = await setup()
+    type("#first", "Grace")
+    ;($("#q") as HTMLInputElement).value = "my secret search"
+    submit("#header")
+    expect(sent).toHaveLength(0)
+    submit()
+    expect(JSON.stringify(sent)).not.toContain("secret search")
+  })
+
+  test("a submit stopped by the page is still seen, and the fixed value goes out in a follow-up", async () => {
+    const { sent, type, submit, $ } = await setup()
+    $("#app").addEventListener("submit", (event) => event.stopPropagation())
+    type("#city", "Lisbon typo")
+    submit()
+    await Bun.sleep(5)
+    type("#city", "Lisbon fixed")
+    submit()
+
+    expect(sent).toHaveLength(2)
+    expect(sent[1]?.batchId).not.toBe(sent[0]?.batchId)
+    expect(byLabel(sent[0], "City")?.finalValue).toBe("Lisbon typo")
+    expect(byLabel(sent[1], "City")).toMatchObject({ filledValue: "Lisbon", finalValue: "Lisbon fixed" })
+  })
+
+  test("follow-ups stop after a few batches", async () => {
+    const { sent, type, submit } = await setup()
+    for (let i = 0; i < 6; i++) {
+      type("#city", `City ${i}`)
+      submit()
+      await Bun.sleep(5)
+    }
+    expect(sent).toHaveLength(3)
+  })
+
+  test("a field relabelled after the fill is not recorded", async () => {
+    const { sent, type, submit, document } = await setup()
+    type("#first", "X1234567")
+    ;(document.querySelector("label[for=first]") as HTMLElement).textContent = "Passport number"
+    submit()
+    expect(JSON.stringify(sent)).not.toContain("X1234567")
+    expect(byLabel(sent[0], "City")).toBeDefined()
+  })
+
+  test("a control the page swapped in after the fill is read where it stands, not recorded as accepted", async () => {
+    const { sent, submit, $ } = await setup()
+    const old = $<HTMLInputElement>("#city")
+    const swapped = old.cloneNode() as HTMLInputElement
+    swapped.value = "Porto"
+    old.replaceWith(swapped)
+    submit()
+    expect(byLabel(sent[0], "City")).toMatchObject({ filledValue: "Lisbon", finalValue: "Porto" })
+  })
+
+  test("a field that left the page is dropped", async () => {
+    const { sent, submit, $ } = await setup()
+    $("#city").remove()
+    submit()
+    expect(byLabel(sent[0], "City")).toBeUndefined()
+    expect(byLabel(sent[0], "First name")).toBeDefined()
+  })
+
+  test("text typed in an empty field before the fill landed is not recorded as empty", async () => {
+    const { sent, submit, $ } = await setup()
+    $<HTMLTextAreaElement>("#why").value = "typed during fill"
+    submit()
+    expect(byLabel(sent[0], "Why us")).toMatchObject({ filledValue: "", finalValue: "typed during fill" })
+  })
+
+  test("a search box is never recorded", async () => {
+    const html = `${FORM}<form id="more"><label for="s">Search jobs</label><input id="s" type="text"></form>`
+    const { sent, submit } = await setup(undefined, { html })
+    submit()
+    expect(JSON.stringify(sent)).not.toContain("Search")
+  })
+
+  test("at most 60 events go out in a batch", async () => {
+    const inputs = Array.from({ length: 70 }, (_, i) => `<label for="q${i}">Question ${i}</label><input id="q${i}">`)
+    const { sent, submit } = await setup(undefined, { html: `<form id="app">${inputs.join("")}</form>` })
+    submit()
+    expect(sent[0]?.events).toHaveLength(60)
+  })
+
+  test("a batch stays under the request size the api takes", async () => {
+    const options = Array.from({ length: 50 }, (_, i) => `<option>${String(i).padEnd(100, "x")}</option>`).join("")
+    const selects = Array.from(
+      { length: 40 },
+      (_, i) => `<label for="s${i}">Pick ${i}</label><select id="s${i}">${options}</select>`,
+    )
+    const { sent, submit } = await setup(undefined, { html: `<form id="app">${selects.join("")}</form>` })
+    submit()
+    const size = (sent[0]?.events ?? []).reduce(
+      (sum, event) =>
+        sum + event.label.length + event.options.join("").length + event.filledValue.length + event.finalValue.length,
+      0,
+    )
+    expect(size).toBeLessThanOrEqual(100_000)
+    expect(sent[0]?.events.length).toBeLessThan(40)
+  })
+
+  test("a long value is cut just past the autofill limit", async () => {
+    const { sent, type, submit } = await setup()
+    type("#why", "y".repeat(500))
+    submit()
+    expect(byLabel(sent[0], "Why us")?.finalValue).toHaveLength(301)
   })
 
   test("passwords, private labels and card numbers never leave the frame", async () => {

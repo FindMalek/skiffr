@@ -76,7 +76,14 @@ function askable(field: CollectedField, isNoise: NoiseFilter): boolean {
 let clearOutlines: () => void = () => {}
 
 export async function handleFill(root: ParentNode = document): Promise<FillOutcome> {
-  const outcome = await run(root)
+  const { outcome, done } = await run(root)
+  if (done) {
+    try {
+      observer?.(done)
+    } catch {
+      // learning from the fill must never turn a good fill into a failed one
+    }
+  }
   if (import.meta.env.DEV)
     console.debug("[skiffr] fill requested", outcome.ok ? outcome.summary.counts : outcome.reason)
   return outcome
@@ -84,7 +91,9 @@ export async function handleFill(root: ParentNode = document): Promise<FillOutco
 
 const hrefOf = (root: ParentNode): string => ((root as Document).location ?? root.ownerDocument?.location)?.href ?? ""
 
-async function run(start: ParentNode): Promise<FillOutcome> {
+type Run = { outcome: FillOutcome; done?: Parameters<FillObserver>[0] }
+
+async function run(start: ParentNode): Promise<Run> {
   try {
     clearOutlines()
     const root = start
@@ -94,11 +103,11 @@ async function run(start: ParentNode): Promise<FillOutcome> {
       .filter((field) => askable(field, isNoise))
       .slice(0, FILL_FIELDS_MAX)
     const mapped = asked.length > 0 ? await provider(asked) : { mapping: [], values: {} }
-    if (!mapped) return { ok: false, code: "failed", reason: "no mapping provider" }
+    if (!mapped) return { outcome: { ok: false, code: "failed", reason: "no mapping provider" } }
     // the page moved on while the worker was busy: what it answered is for a form that is no longer there
     const fields = asked.filter((field) => field.el.isConnected)
     if (hrefOf(start) !== href || (asked.length > 0 && fields.length === 0)) {
-      return { ok: false, code: "changed", reason: "page changed" }
+      return { outcome: { ok: false, code: "changed", reason: "page changed" } }
     }
     const summary = await fillPage({
       mapping: mapped.mapping,
@@ -119,20 +128,23 @@ async function run(start: ParentNode): Promise<FillOutcome> {
     clearOutlines = () => {
       for (const undo of release.splice(0)) undo()
     }
-    if (fields.length > 0) observer?.({ root, fields, mapping: mapped.mapping, summary })
     const alive = new Set(fields.filter((field) => field.el.isConnected).map((field) => field.id))
     const filled = summary.fields.filter((f) => f.status === "filled" && alive.has(f.id))
     const review = filled.filter((f) => f.lowConfidence).length
     return {
-      ok: true,
-      summary,
-      filled: filled.length,
-      review,
-      suggested,
-      ...(mapped.problem ? { problem: mapped.problem } : {}),
+      outcome: {
+        ok: true,
+        summary,
+        filled: filled.length,
+        review,
+        suggested,
+        ...(mapped.problem ? { problem: mapped.problem } : {}),
+      },
+      ...(fields.length > 0 ? { done: { root, fields, mapping: mapped.mapping, summary } } : {}),
     }
   } catch (error) {
-    if (error instanceof FillRequestError) return { ok: false, code: error.code, reason: error.code }
-    return { ok: false, code: "failed", reason: error instanceof Error ? error.message : "fill failed" }
+    if (error instanceof FillRequestError) return { outcome: { ok: false, code: error.code, reason: error.code } }
+    const reason = error instanceof Error ? error.message : "fill failed"
+    return { outcome: { ok: false, code: "failed", reason } }
   }
 }

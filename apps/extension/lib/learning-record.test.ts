@@ -34,6 +34,7 @@ const sender = (extra: Partial<FillSender> = {}): FillSender => ({
 
 function setup(options: { trusted?: boolean; fail?: unknown; hold?: Promise<void> } = {}) {
   const recorded: unknown[] = []
+  const signals: AbortSignal[] = []
   let time = 0
   const handler = createLearningRecordHandler({
     extensionId: "ext",
@@ -43,8 +44,9 @@ function setup(options: { trusted?: boolean; fail?: unknown; hold?: Promise<void
     call: async (run) =>
       run({
         learning: {
-          record: async (input: unknown) => {
+          record: async (input: unknown, call?: { signal?: AbortSignal }) => {
             recorded.push(input)
+            if (call?.signal) signals.push(call.signal)
             await options.hold
             if (options.fail) throw options.fail
             return {}
@@ -55,6 +57,7 @@ function setup(options: { trusted?: boolean; fail?: unknown; hold?: Promise<void
   return {
     handler,
     recorded,
+    signals,
     advance: (ms: number) => {
       time += ms
     },
@@ -154,4 +157,17 @@ test("a tab is held to its cap per minute", async () => {
 test("an api failure comes back as a class, never its text", async () => {
   const { handler } = setup({ fail: new ORPCError("INTERNAL_SERVER_ERROR", { status: 503, message: "secret detail" }) })
   expect(await handler.handle(message(), sender())).toEqual({ ok: false, code: "unavailable" })
+})
+
+test("closing the tab does not cut off a batch on its way", async () => {
+  let release: () => void = () => {}
+  const hold = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const { handler, signals } = setup({ hold })
+  const pending = handler.handle(message(), sender())
+  handler.forgetTab(1)
+  release()
+  expect(await pending).toEqual({ ok: true })
+  expect(signals[0]?.aborted).toBe(false)
 })

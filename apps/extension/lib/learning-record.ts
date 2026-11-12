@@ -23,12 +23,12 @@ export function isLearningRecordMessage(message: unknown): boolean {
 
 /**
  * Same door as a fill request: a content script of the active tab, in the top frame or a trusted child frame, for its
- * own site. One batch per tab at a time, and a cap per minute. The answer is ok or a failure class, never an error text.
+ * own site. One batch per tab at a time, and a cap per minute. Closing the tab does not stop a batch on its way: it is
+ * sent while the page goes away, and the timeout bounds it. The answer is ok or a failure class, never an error text.
  */
 export function createLearningRecordHandler(deps: LearningRecordDeps): LearningRecordHandler {
   const limits = new Map<number, () => boolean>()
   const busy = new Set<number>()
-  const stops = new Map<number, AbortController>()
 
   async function respond(message: unknown, tabId: number, sender: FillSender): Promise<LearningRecordResponse> {
     const allow = limits.get(tabId) ?? createRateLimiter(RECORD_LIMIT.max, RECORD_LIMIT.windowMs, deps.now)
@@ -48,9 +48,7 @@ export function createLearningRecordHandler(deps: LearningRecordDeps): LearningR
       if (kept.length === 0) return { ok: true }
       const input = recordInputSchema.safeParse({ siteKey: site, batchId, events: kept })
       if (!input.success) return { ok: false, code: "invalid" }
-      const stop = stops.get(tabId) ?? new AbortController()
-      stops.set(tabId, stop)
-      const signal = AbortSignal.any([AbortSignal.timeout(RECORD_TIMEOUT_MS), stop.signal])
+      const signal = AbortSignal.timeout(RECORD_TIMEOUT_MS)
       await deps.call((client) => client.learning.record(input.data, { signal }))
       return { ok: true }
     } catch (error) {
@@ -68,9 +66,6 @@ export function createLearningRecordHandler(deps: LearningRecordDeps): LearningR
     },
     forgetTab: (tabId) => {
       limits.delete(tabId)
-      busy.delete(tabId)
-      stops.get(tabId)?.abort()
-      stops.delete(tabId)
     },
   }
 }
