@@ -5,7 +5,7 @@ description: A running copy of every pull request, with its own database and buc
 
 Every pull request from this repository gets a preview of all apps on the self-hosted Dokploy: the landing page, the dashboard, the api and the docs (and the e2e playground once it has a Dockerfile). One sticky comment on the pull request lists the links, a test login and the extension build. Closing or merging the pull request deletes all of it.
 
-Nothing is created until the repo variable `PREVIEW_ENABLED` is `true`. Cleanup and the sweep do not check it, so turning previews off still removes what exists. Pull requests from forks and from dependabot get no preview: they cannot read the secrets.
+Nothing is created until the repo variable `PREVIEW_ENABLED` is `true`. Cleanup and the sweep do not check it, so turning previews off still removes what exists, and they run against the real Dokploy as soon as the secrets are set, even before previews are enabled. After merging, run the `preview-sweep` workflow once with `dry_run` and read what it would remove before you enable previews. Pull requests from forks and from dependabot get no preview: they cannot read the secrets.
 
 ## What a push does
 
@@ -41,7 +41,7 @@ The comment links the CI run that holds the artifact `extension-chrome-pr-<numbe
 
 ## Cleanup
 
-- `preview-cleanup` runs when a pull request is closed or merged. It deletes the apps (their domains go with them), the postgres and its volume, the bucket with its objects, the `pr-<number>-*` image tags on ghcr (best effort, a failure only leaves registry clutter), and marks the GitHub deployments inactive. It is safe to run twice and a cleanup in progress is never cancelled. A failed `up` leaves its apps and postgres in place, they count toward `PREVIEW_MAX` until the pull request closes or the idle limit hits.
+- `preview-cleanup` runs when a pull request is closed or merged. It deletes the apps (their domains go with them), the postgres and its volume, the bucket with its objects, the `pr-<number>-*` image tags on ghcr (best effort, a failure only leaves registry clutter), and marks the GitHub deployments inactive. It is safe to run twice and a cleanup in progress is never cancelled. A bucket that holds an object key with a dot segment (`..` or `.`) is refused and stays, which turns the nightly sweep red until someone empties and deletes it by hand. A failed `up` leaves its apps and postgres in place, they count toward `PREVIEW_MAX` until the pull request closes or the idle limit hits.
 - `preview-sweep` runs daily, or by hand with `dry_run` to only list. It removes previews of closed pull requests the cleanup missed, previews idle for more than `PREVIEW_TTL_DAYS` (default 7) even when the pull request is open (a push brings it back), and the leftover postgres volumes and buckets of those pull requests. A github answer other than closed or 404 (an outage, a rate limit) stops the sweep with an error instead of deleting anything. Dokploy's `postgres.remove` leaves the data volume behind, so both paths remove it through `dockerVolume.removeVolume`.
 - at most `PREVIEW_MAX` previews (default 6) run at once. A new one over the limit is skipped, the comment says so, and it starts on the next push once there is room.
 

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
-import { spawnSync } from "node:child_process"
+import { execFile } from "node:child_process"
 import { afterEach, beforeEach, describe, test } from "node:test"
+import { promisify } from "node:util"
 import { findStickyComment } from "./preview-api.mjs"
 import {
   discoverApps,
@@ -74,14 +75,6 @@ describe("pure helpers", () => {
     } finally {
       await mock.close()
     }
-  })
-
-  test("PR_NUMBER must be a positive integer", () => {
-    const run = (PR_NUMBER) =>
-      spawnSync(process.execPath, [new URL("./preview.mjs", import.meta.url).pathname, "down"], {
-        env: { PATH: process.env.PATH, DOKPLOY_URL: "http://127.0.0.1:1", DOKPLOY_TOKEN: "t", PR_NUMBER },
-      })
-    for (const bad of ["", "0", "012", "abc", "1;2", "1e1", "-1", " 12 "]) assert.equal(run(bad).status, 1, bad)
   })
 
   test("preview env carries no production secret and points at the preview", () => {
@@ -253,6 +246,43 @@ describe("against the mock servers", () => {
     )
     assert.ok(mock.s.statuses.includes("inactive"))
     assert.match(mock.s.comments[0].body, /Removed/)
+  })
+
+  test("PR_NUMBER must be a positive integer of at most 9 digits", async () => {
+    const run = (PR_NUMBER) =>
+      promisify(execFile)(process.execPath, [new URL("./preview.mjs", import.meta.url).pathname, "down"], {
+        env: {
+          PATH: process.env.PATH,
+          DOKPLOY_URL: mock.origin,
+          DOKPLOY_TOKEN: "token",
+          GITHUB_REPOSITORY: "o/r",
+          GITHUB_API_URL: `${mock.origin}/gh`,
+          GITHUB_TOKEN: "gh",
+          PR_NUMBER,
+        },
+      }).then(
+        () => ({ code: 0, stderr: "" }),
+        (error) => ({ code: error.code, stderr: error.stderr }),
+      )
+    for (const bad of ["", "0", "012", "abc", "1;2", "1e1", "-1", " 12 ", "1234567890"]) {
+      const result = await run(bad)
+      assert.equal(result.code, 1, bad)
+      assert.match(result.stderr, /PR_NUMBER must be/, bad)
+    }
+    assert.equal((await run("123456789")).stderr, "")
+  })
+
+  test("down keeps a registry version that also carries a production tag", async () => {
+    await up()
+    mock.s.tags = [
+      { id: 1, metadata: { container: { tags: ["main", "pr-5-abcdef1"] } } },
+      { id: 2, metadata: { container: { tags: ["pr-5-abcdef1"] } } },
+    ]
+    await previewDown({ pr: 5, repo: "o/r", s3, appKeys: ["api"] })
+    assert.deepEqual(
+      mock.s.tags.map((t) => t.id),
+      [1],
+    )
   })
 
   test("sweep drops closed and idle previews and orphans, keeps live ones", async () => {

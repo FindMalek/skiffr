@@ -45,8 +45,10 @@ if (missing.length > 0) {
 output("ready", "true")
 
 const repo = env.GITHUB_REPOSITORY
-if (["plan", "up", "down"].includes(command) && !/^[1-9][0-9]*$/.test(env.PR_NUMBER ?? "")) {
-  console.error(`PR_NUMBER must be a positive integer, got ${JSON.stringify(env.PR_NUMBER ?? null)}`)
+if (["plan", "up", "down"].includes(command) && !/^[1-9][0-9]{0,8}$/.test(env.PR_NUMBER ?? "")) {
+  console.error(
+    `PR_NUMBER must be a positive integer of at most 9 digits, got ${JSON.stringify(env.PR_NUMBER ?? null)}`,
+  )
   process.exit(1)
 }
 const pr = Number(env.PR_NUMBER)
