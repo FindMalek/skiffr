@@ -4,10 +4,10 @@ name: PR link issue
 # GitHub's native "Closes #N" detection to link a PR to its issue (shows in
 # the issue's Development sidebar, drives project board status automation,
 # auto-closes the issue on merge). That detection only fires if the PR body
-# actually contains a closing keyword, which nobody was doing consistently.
+# actually contains a closing keyword.
 #
 # This infers the issue number from the branch name (existing convention:
-# `type/NNN-slug` or `NNN-slug`, e.g. `fix/593-sharp-pin-regression`) and
+# `type/NNN-slug` or `NNN-slug`, e.g. `feat/58-record-edits`) and
 # appends "Closes #N" to the PR body if nothing already links an issue.
 
 on:

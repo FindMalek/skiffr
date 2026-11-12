@@ -27,7 +27,7 @@ jobs:
           COMMIT_LOGINS=$(gh api "repos/$REPO/pulls/$PR/commits" --paginate --jq '.[].author.login // empty')
 
           LOGINS=$(printf '%s\n%s\n' "$AUTHOR" "$COMMIT_LOGINS" \
-            | sort -u | grep -v '\[bot\]$' | grep -v '^$')
+            | sort -u | grep -v '\[bot\]$' | grep -v '^$' || true)
 
           for login in $LOGINS; do
             echo "Assigning $login to #$PR"
