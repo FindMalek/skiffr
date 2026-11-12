@@ -11,7 +11,7 @@ Applying for jobs is mostly retyping the same facts into forms that all behave d
 
 1. **You stay the applicant.** It fills, you review, you press submit. It never invents a fact and never bypasses a captcha or a login.
 2. **It gets better with use.** Corrections become answers, and it shows where every value came from.
-3. **Your data stays yours.** Open source, self hosted, no analytics, a model only for the small slice you allow.
+3. **Your data stays yours.** Open source, self hosted, no analytics. A model is optional: it runs on your server with the key you configure, and it only sees what a feature needs, when you press it. Importing a CV sends the CV text, and you review the result before anything is saved.
 4. **It covers the whole journey**, not only the form: finding jobs, checking they are real, the CV, the form, tracking replies, following up.
 
 ## Who it is for
@@ -26,52 +26,52 @@ Applying for jobs is mostly retyping the same facts into forms that all behave d
 
 ## What job seekers say
 
-Method and honest limits: Reddit blocks the research crawler, so there are no first hand Reddit threads here. The evidence is Hacker News threads, Trustpilot pages, Firefox add-on reviews, the README of an open source Workday filler, community forums of two password managers and a set of surveys. Many comparison blogs are written by competitors, and those are marked as such and used only where nothing better exists. Ratings and prices move: check the vendor before you trust a number. Trustpilot pages are unclaimed or not curated by the vendors and are self selected.
+Method and honest limits: Reddit blocks the research crawler, so there are no first hand Reddit threads here. The evidence is Hacker News threads, Trustpilot pages, Firefox add-on reviews, the README of an open source Workday filler, community forums of two password managers and a set of surveys. Trustpilot and add-on reviews are self selected and not fact checked: a claim about a named product below is what its reviewers report, with the month of the review, not a finding of ours. Many comparison blogs are written by competitors, and those are marked as such and used only where nothing better exists. Ratings and prices move: prices were read in November 2026, check the vendor before you trust a number.
 
 ### Top 25 pains and desires
 
 | # | Pain or desire | Evidence |
 | --- | --- | --- |
 | 1 | Retyping the same CV data into every form | [HN: Upload your resume and then type it out](https://news.ycombinator.com/item?id=30291081) (184 points, "if I have to retype my CV in your obnoxious web form, its just not worth the effort") |
-| 2 | Workday and Taleo: an account per employer, many pages, repeated sections | [HN thread](https://news.ycombinator.com/item?id=30291081), [Workday filler README](https://github.com/pixotags/workday-application-autofill) ("the same 40-odd fields from scratch") |
+| 2 | Workday: an account per employer, many pages, repeated sections | [HN thread](https://news.ycombinator.com/item?id=30291081) ("a new Workday account thing for each company"), [Workday filler README](https://github.com/pixotags/workday-application-autofill) ("the same 40-odd fields from scratch") |
 | 3 | Workday widgets break fillers: React components, custom dropdowns, date spinners, value saved only on blur, multi step | [Workday filler README](https://github.com/pixotags/workday-application-autofill) |
-| 4 | Autofill that makes things up or fills irrelevant fields | [Simplify on Trustpilot](https://uk.trustpilot.com/review/simplify.jobs) ("will lie by default"), [LazyApply on Trustpilot](https://ca.trustpilot.com/review/lazyapply.com) |
-| 5 | Dangerous defaults on visa, sponsorship and veteran questions | [LazyApply on Trustpilot](https://ca.trustpilot.com/review/lazyapply.com) (incorrect default "yes" on visa or veteran questions) |
-| 6 | Dropdowns, radios, education and demographic options missed or wrong | [Simplify Firefox reviews](https://addons.mozilla.org/en-US/firefox/addon/simplify-jobs/reviews/?page=2) (degree dropdown, radio buttons, wrong ethnicity box, Workday education) |
-| 7 | Blank or wrong name fields, an invented middle name | [LazyApply on Trustpilot](https://ca.trustpilot.com/review/lazyapply.com), [review roundup](https://www.wobo.ai/blog/lazyapply-review/) (competitor blog) |
-| 8 | Spam: bots applying to roles outside the person's scope | [LazyApply on Trustpilot](https://uk.trustpilot.com/review/lazyapply.com?page=3), [Sonara review](https://noxjobs.com/compare/sonara-ai-review-application-failure-rate) (competitor blog) |
+| 4 | Autofill that makes things up or fills irrelevant fields | [Simplify on Trustpilot](https://uk.trustpilot.com/review/simplify.jobs) (a June 2026 reviewer says the AI "will lie by default"), [LazyApply on Trustpilot](https://ca.trustpilot.com/review/lazyapply.com) (a June 2026 reviewer reports consistent mistakes when applying) |
+| 5 | Dangerous defaults on visa, sponsorship and veteran questions | [LazyApply on Trustpilot](https://ca.trustpilot.com/review/lazyapply.com) (a May 2026 reviewer reports a default "yes" that was incorrect on visa and veteran questions) |
+| 6 | Dropdowns and education options missed or wrong, demographic answers wrong | [Simplify Firefox reviews](https://addons.mozilla.org/en-US/firefox/addon/simplify-jobs/reviews/) (December 2024: the degree dropdown is not filled when the degree is missing from the list; July 2023: skills and education fills fail when list options do not match; December 2021: no education on Workday forms), [review roundup](https://www.wobo.ai/blog/lazyapply-review/) (competitor blog, relays a report of wrong demographic data) |
+| 7 | Blank or wrong name fields, an invented middle name | [LazyApply on Trustpilot](https://ca.trustpilot.com/review/lazyapply.com) (February and May 2026 reviewers report first and last name not entered or blanked), [review roundup](https://www.wobo.ai/blog/lazyapply-review/) (competitor blog, quotes a Reddit comment about a middle name added when there is none) |
+| 8 | Spam: bots applying to roles outside the person's scope | [LazyApply on Trustpilot](https://uk.trustpilot.com/review/lazyapply.com?page=3) (2024 reviewers report applications to jobs outside their profile or filters) |
 | 9 | Fear of account restrictions from automation on LinkedIn | [Scoutify](https://scoutify.com/blog/linkedin-auto-apply/) and [FastApply](https://blog.fastapply.co/can-you-get-banned-for-auto-applying-on-linkedin-2026) (both vendors, mostly temporary Easy Apply pauses, no independent count) |
 | 10 | Ghost jobs: postings that never lead anywhere | [Enhancv survey](https://enhancv.com/blog/ghost-jobs-survey-2026-bls-data-comparison/) (47 percent say they applied to a role that did not exist), [Greenhouse via HR Review](https://hrreview.co.uk/hr-news/recruitment/one-in-three-uk-job-ads-may-be-fake-as-ghost-jobs-erode-trust-in-recruitment/385524), [Resume Genius via CPA Practice Advisor](https://www.cpapracticeadvisor.com/2026/04/30/ghost-jobs-still-haunting-67-of-job-seekers-report-finds/) |
 | 11 | Applications vanish into a black hole, no status | [HN thread](https://news.ycombinator.com/item?id=30291081) ("black holes"), the praise for trackers in [Teal on Trustpilot](https://uk.trustpilot.com/review/tealhq.com) |
-| 12 | Refusals of refunds, trial to subscription traps | [Simplify](https://uk.trustpilot.com/review/simplify.jobs), [LazyApply](https://ca.trustpilot.com/review/lazyapply.com), [Jobscan](https://uk.trustpilot.com/review/jobscan.co) on Trustpilot; [Sonara pricing](https://noxjobs.com/compare/sonara-ai-review-application-failure-rate) (competitor blog) |
-| 13 | Price and paywalls: autofill free, everything else paid | [pricing roundup](https://jobshinobi.com/compare/best-job-tracking-app-2026) (third party): Huntr free to 100 jobs then about 40 a month, Teal+ about 29 a month, Simplify Pro about 40 a month, [AIApply credit packs on top](https://www.resumly.ai/best/best-job-application-bots) |
-| 14 | A tool that is slow or heavy in the browser | [Simplify Firefox reviews](https://addons.mozilla.org/en-US/firefox/addon/simplify-jobs/reviews/?page=2) (CPU and memory on Workday) |
-| 15 | Login loops, profile not connecting | [Simplify Firefox reviews](https://addons.mozilla.org/en-US/firefox/addon/simplify-jobs/reviews/?page=2) |
+| 12 | Refund and cancellation disputes, trial to subscription surprises | [Simplify](https://uk.trustpilot.com/review/simplify.jobs) (refunds denied or delayed, a "3 months free" offer that was a 50 percent discount), [LazyApply](https://ca.trustpilot.com/review/lazyapply.com) (a June 2026 reviewer waited two weeks for a refund inside the 30 day window), [Jobscan](https://uk.trustpilot.com/review/jobscan.co) (a September 2026 reviewer says a trial turned into a paid plan early) on Trustpilot, as reported by reviewers |
+| 13 | Price and paywalls: autofill free, everything else paid | [Huntr pricing](https://huntr.co/pricing) (free plan tracks up to 100 jobs, Pro $40 a month or $30 a month billed quarterly), [Simplify+ pricing](https://help.simplify.jobs/articles/5623502-whats-included-in-simplify-features-and-pricing) ($39.99 a month, $89.99 a quarter, basic autofill and tracker free), [Teal+ price](https://toolradar.com/tools/teal-hq/pricing) (third party, $29 a month as of October 2026), [AIApply credit packs on top](https://www.resumly.ai/best/best-job-application-bots) (third party reported, the vendor site shows no prices) |
+| 14 | A tool that is slow or heavy in the browser | [Simplify Firefox reviews](https://addons.mozilla.org/en-US/firefox/addon/simplify-jobs/reviews/) (June 2024 to October 2026: reviewers report RAM and CPU spikes and freezes, on Workday pages in two of them) |
+| 15 | Login loops, profile not connecting | [Simplify Firefox reviews](https://addons.mozilla.org/en-US/firefox/addon/simplify-jobs/reviews/) (December 2023, August 2025 and October 2025 reviewers say the extension keeps asking to log in or cannot reach their profile) |
 | 16 | Parsed or pre filled CV data comes out garbled | [HN thread](https://news.ycombinator.com/item?id=30291081) (LaTeX and multi column PDFs) |
 | 17 | File format friction and CV upload quirks | [HN thread](https://news.ycombinator.com/item?id=30291081) |
-| 18 | Generic, robotic cover letters that need a heavy edit | [Teal on Trustpilot](https://uk.trustpilot.com/review/tealhq.com), [Jobscan on Trustpilot](https://uk.trustpilot.com/review/jobscan.co) (stiff bullet points), recruiter side view in [Cake](https://www.cake.me/resources/job-searching-guide/ai-to-write-cover-letter) (vendor) |
-| 19 | Support that does not answer | [LazyApply](https://ca.trustpilot.com/review/lazyapply.com), [Simplify](https://uk.trustpilot.com/review/simplify.jobs) on Trustpilot |
-| 20 | Where does my CV go: unclear privacy and which AI vendor sees it | [extension privacy policies](https://jobwizard.ai/blog/are-job-application-autofill-extensions-safe-to-use) differ on local only vs sent to a model (OpenAI, Anthropic named in some) |
-| 21 | Password managers do not fill job forms: custom fields, textareas, no inline suggestions outside login, address and card | [1Password community](https://www.1password.community/discussions/1password/use-custom-fields-for-autofill-possible-in-1password/50832), [Bitwarden help](https://bitwarden.com/help/auto-fill-custom-fields/) |
-| 22 | Tools that report "applied" when it never reached the employer | [Sonara review](https://noxjobs.com/compare/sonara-ai-review-application-failure-rate) (competitor blog, a 25 to 40 percent failure figure that could not be verified) |
+| 18 | Generic, robotic cover letters that need a heavy edit | [Teal on Trustpilot](https://uk.trustpilot.com/review/tealhq.com) (a May 2026 reviewer: cover letters "usually need a heavy edit"), [Jobscan on Trustpilot](https://uk.trustpilot.com/review/jobscan.co) (a September 2026 reviewer: generated bullets "sound stiff and need manual editing"), recruiter side view in [Cake](https://www.cake.me/resources/job-searching-guide/ai-to-write-cover-letter) (vendor) |
+| 19 | Support that does not answer | [LazyApply](https://ca.trustpilot.com/review/lazyapply.com) (2026 reviewers report no replies to support emails), [Simplify](https://uk.trustpilot.com/review/simplify.jobs) (reviewers describe slow or unresponsive support) on Trustpilot |
+| 20 | Where does my CV go: unclear privacy and which AI vendor sees it | [JobWizard guide](https://jobwizard.ai/blog/are-job-application-autofill-extensions-safe-to-use) (vendor blog) tells people to check what an autofill extension reads and stores |
+| 21 | Password managers are built for logins, not job forms: custom fields need setup and are not offered inline | [1Password community](https://www.1password.community/1password-at-home-31/use-custom-fields-for-autofill-possible-in-1password-5285) (a September 2023 staff reply: custom fields "won't appear in the inline menu or be filled with a shortcut", the feature request was still open in September 2026), [Bitwarden help](https://bitwarden.com/help/auto-fill-custom-fields/) (custom fields are set per item and "typically" fill in form or input elements) |
+| 22 | Tools that report "applied" when it never reached the employer | [Remote Job Assistant on Sonara](https://www.remotejobassistant.com/blog/sonara-ai-review) (competitor blog, relays user reports of silent failures at email verification steps, could not reach the vendor site, unverified) |
 | 23 | Distrust of ATS scores and keyword games | mixed accuracy in [Jobscan on Trustpilot](https://uk.trustpilot.com/review/jobscan.co); [Jobscan on ATS and AI detection](https://www.jobscan.co/blog/can-ats-detect-ai-resume/) (vendor) |
 | 24 | A cheap way to tailor a CV per job and see missing keywords | the top praise for Huntr and Jobscan in [Huntr](https://uk.trustpilot.com/review/huntr.co) and [Jobscan](https://uk.trustpilot.com/review/jobscan.co) Trustpilot reviews |
-| 25 | Autofill that still leaves more cleanup than doing it by hand ("glorified autofill"), and the employer side backlash against auto apply | [JobCopilot on Simplify](https://jobcopilot.com/simplify-jobs-review/) (competitor), [Inquirer on employers and auto apply](https://www.inquirer.com/business/ai-resum-jobs-applications-employers-artificial-intelligence-hiring-20260301.html) |
+| 25 | Autofill that still leaves cleanup, and the employer side backlash against auto apply | [JobCopilot on Simplify](https://jobcopilot.com/simplify-jobs-review/) (competitor blog, quotes Reddit users: "glorified autofill", fixing errors "took longer than just applying manually"), [Inquirer on employers and auto apply](https://www.inquirer.com/business/ai-resum-jobs-applications-employers-artificial-intelligence-hiring-20260301.html) (an HR officer calls auto apply services "snake oil") |
 
 What people love, in short: free autofill that works on common systems (Simplify), a tracker that keeps the search organized (Teal, Huntr), keyword gap feedback (Jobscan, Huntr), and time saved when the fills are right.
 
 ### Competitors at a glance
 
-| Product | Kind | What users like | What users dislike | Price signal (verify) |
+| Product | Kind | What reviewers like | What reviewers report as problems | Price signal (verify) |
 | --- | --- | --- | --- | --- |
-| Simplify | Autofill and tracker, free core | Free autofill, broad ats coverage | Misses dropdowns and radios, Workday education, refunds, performance on Firefox | Pro about 40 a month, 90 for three months |
-| Teal | Tracker and resume tools | Free tracker without a cap, clean UI | Cover letters need heavy editing, ghost looking listings, email spam | Teal+ about 29 a month |
-| Huntr | Tracker and tailoring | Tailoring, kanban, keyword feedback | Auto fill hit or miss, free cap of 100 jobs | Pro about 40 a month |
-| LazyApply | Auto apply bot | Volume, some interviews | Wrong answers, spam, refunds, support, plan cuts | Subscription, tiers changed |
-| Sonara, JobCopilot, AIApply | Auto apply services | Hands off | Mismatched roles, billing complaints, credit packs | Trial then recurring, per day or credit pricing |
-| Jobscan, Rezi, Kickresume | Resume scoring and building | Keyword gap analysis | Billing and cancellation, stiff AI text, score trust | Subscription |
+| Simplify | Autofill and tracker, free core | Free autofill, broad ats coverage | Missed dropdowns and Workday education, refund disputes, performance on Firefox | Simplify+ $39.99 a month, $89.99 a quarter |
+| Teal | Tracker and resume tools | Easy tracker, keyword analysis | Cover letters needing heavy edits, listings that feel like ghost jobs, email volume | Teal+ about $29 a month (third party) |
+| Huntr | Tracker and tailoring | Tailoring, kanban, keyword feedback | One reviewer found auto fill hit or miss | Free up to 100 jobs, Pro $40 a month |
+| LazyApply | Auto apply bot | Volume, some interviews | Wrong or blank fields, jobs outside the person's profile, refund delays, little support | Subscription |
+| Sonara, JobCopilot, AIApply | Auto apply services | Hands off | Competitor blogs relay billing and renewal complaints, AIApply sells credit packs on top of a subscription | Trial then recurring, credit packs (third party reports) |
+| Jobscan | Resume scoring and building | Keyword gap analysis | Billing and cancellation disputes, stiff AI text, mixed score accuracy | Subscription |
 | LinkedIn Easy Apply bots | Automation | Easy Apply is liked by many | Account restriction risk, terms of service | Varies |
-| Chrome, Bitwarden, 1Password autofill | General form fill | Already installed | Not made for job forms: custom fields, textareas, repeated sections | Free or bundled |
+| Chrome, Bitwarden, 1Password autofill | General form fill | Already installed | Built for logins and addresses: custom fields need setup | Free or bundled |
 
 skiffr's lane: the autofill and answer memory of Simplify, the queue and funnel of Teal and Huntr, CV tailoring that cannot invent facts, all in a place the user owns.
 
@@ -83,7 +83,7 @@ Status is as of this page: solved means it works and is tested, partial means it
 | --- | --- | --- | --- | --- |
 | Detect forms, ask, fill | solved | Greenhouse, Lever, Ashby, Workable adapters, toast, shortcut, iframes (same origin) | Cross origin iframes | [#131](https://github.com/FindMalek/skiffr/issues/131) |
 | Fill engine (React safe, selects, comboboxes, shadow dom) | partial | Works on fixtures and the four ats | Known gaps in [#48](https://github.com/FindMalek/skiffr/issues/48) | [#48](https://github.com/FindMalek/skiffr/issues/48) |
-| Workday and account walls | unsolved | `myworkdayjobs.com` is detected | No adapter, no multi page flow, no hand over | [#127](https://github.com/FindMalek/skiffr/issues/127), [#128](https://github.com/FindMalek/skiffr/issues/128), [#129](https://github.com/FindMalek/skiffr/issues/129), [#130](https://github.com/FindMalek/skiffr/issues/130) |
+| Workday and account walls | unsolved | `myworkdayjobs.com`, `icims.com` and SmartRecruiters hosts are detected | No adapter for any of them, no multi page flow, no hand over | [#127](https://github.com/FindMalek/skiffr/issues/127), [#128](https://github.com/FindMalek/skiffr/issues/128), [#129](https://github.com/FindMalek/skiffr/issues/129), [#130](https://github.com/FindMalek/skiffr/issues/130) |
 | Never submit, honeypots, hidden fields | solved | Enforced and tested | Keep testing per adapter | |
 | Sensitive fields | partial | Central guard in five languages | Long tail of wording | [#98](https://github.com/FindMalek/skiffr/issues/98), [#120](https://github.com/FindMalek/skiffr/issues/120) |
 | Learning from corrections | solved | Log, lookup, suggestions, per site profile | Stale answers, scope, never learn | [#115](https://github.com/FindMalek/skiffr/issues/115), [#116](https://github.com/FindMalek/skiffr/issues/116), [#117](https://github.com/FindMalek/skiffr/issues/117) |
@@ -96,7 +96,7 @@ Status is as of this page: solved means it works and is tested, partial means it
 | Work authorization and visa | partial | Profile has the data | Deterministic answers per country | [#118](https://github.com/FindMalek/skiffr/issues/118) |
 | Salary expectations | partial | Min and max in the profile | Policy, currency, never fill default | [#126](https://github.com/FindMalek/skiffr/issues/126) |
 | Dates, phone, number formats | partial | Date and number helpers | Phone format, ambiguity rules by field | [#119](https://github.com/FindMalek/skiffr/issues/119) |
-| Names and address | unsolved | | Name parts, address widgets | [#107](https://github.com/FindMalek/skiffr/issues/107), [#121](https://github.com/FindMalek/skiffr/issues/121) |
+| Names and address | partial | First and last name, city, region, country and postal code | Middle and preferred name, street address lines, a full name composer, address widgets | [#107](https://github.com/FindMalek/skiffr/issues/107), [#121](https://github.com/FindMalek/skiffr/issues/121) |
 | Other languages | partial | Sensitive lists in en, fr, de, es, ar | Field matching synonyms | [#122](https://github.com/FindMalek/skiffr/issues/122) |
 | Captcha, bot checks | unsolved | Nothing is bypassed, but nothing is said | A calm hand over | [#129](https://github.com/FindMalek/skiffr/issues/129) |
 | Duplicate applications | partial | One queue row per canonical url | Same company and role, cooldown, toast warning | [#133](https://github.com/FindMalek/skiffr/issues/133) |
@@ -133,7 +133,7 @@ Short answers to the hard cases, with where each lands.
 - **Failure modes.** Offline cache and queued learning, model down falls back to saved answers, a version handshake between extension and api, and a "this site did not work" report that shows exactly what it would share ([#139](https://github.com/FindMalek/skiffr/issues/139), [#112](https://github.com/FindMalek/skiffr/issues/112), [#140](https://github.com/FindMalek/skiffr/issues/140)).
 - **Mobile and other browsers.** Extensions do not run on phones, so the phone adds jobs to the queue through a share target and the form is done on a laptop ([#142](https://github.com/FindMalek/skiffr/issues/142)). Edge and Firefox are builds, Safari is a plan ([#141](https://github.com/FindMalek/skiffr/issues/141)).
 - **Data rights.** Export everything, delete everything, import JSON Resume and the LinkedIn archive ([#111](https://github.com/FindMalek/skiffr/issues/111), [#109](https://github.com/FindMalek/skiffr/issues/109)).
-- **LinkedIn Easy Apply and Indeed Apply.** Open question. A person driven fill of those modals is not the same as a bot, but both sites forbid automation in their terms and users report restrictions. Until there is a clear reading of the terms skiffr does not touch them. Decide before building.
+- **LinkedIn Easy Apply and Indeed Apply.** Open question, listed in the ideas below and not an issue yet. A person driven fill of those modals is not the same as a bot, but both sites forbid automation in their terms and users report restrictions. Until there is a clear reading of the terms skiffr does not touch them. Decide before building.
 
 ## Roadmap
 
@@ -164,7 +164,7 @@ Why: a new person should reach a correct fill in minutes, see why a value was us
 
 ### Next
 
-Why: the answer bank gets smarter, the journey after the form gets tracked, and the project becomes easy to contribute to.
+Why: the answer bank gets smarter, the journey after the form gets tracked, and the project becomes easy to contribute to. [#120](https://github.com/FindMalek/skiffr/issues/120) is an evaluation only: it decides whether a model beats word lists for sensitive fields before anything is built.
 
 | Issue | Item | Size |
 | --- | --- | --- |
@@ -174,6 +174,7 @@ Why: the answer bank gets smarter, the journey after the form gets tracked, and 
 | [#117](https://github.com/FindMalek/skiffr/issues/117) | learning: answer scope per site, ats or global, with conflict view | M |
 | [#121](https://github.com/FindMalek/skiffr/issues/121) | fill: name parts and address autocomplete widgets | M |
 | [#122](https://github.com/FindMalek/skiffr/issues/122) | fill: match labels in other languages | M |
+| [#120](https://github.com/FindMalek/skiffr/issues/120) | fill: model assisted sensitive field classifier (evaluate regex vs embeddings vs llm) | eval |
 | [#124](https://github.com/FindMalek/skiffr/issues/124) | extension: draft free text answers for review | M |
 | [#125](https://github.com/FindMalek/skiffr/issues/125) | cv: cover letter draft per job, reviewed before use | M |
 | [#126](https://github.com/FindMalek/skiffr/issues/126) | profile: salary expectation policy and negotiation notes | M |
@@ -207,6 +208,7 @@ Already on the board and kept as they are: learned http replay recipes ([#18](ht
 - **Team and coach sharing.** A read only link to a person's queue and stats, with no profile and no answers. Large, depends on the data export work.
 - **Interview prep sheet per application.** Questions and stories drawn from the person's own answer bank and the posting, never invented experience.
 - **Learning quality replay.** A harness that replays correction logs and reports hit rate by source, correction rate and stale rate, run in ci on fixtures. Follows the recorded real model eval ([#41](https://github.com/FindMalek/skiffr/issues/41)).
+- **LinkedIn Easy Apply and Indeed Apply.** See the edge case above: a terms reading comes first, then maybe an issue.
 - **Safari.** An app store build costs money and a native wrapper. Only after Edge and Firefox.
 - **A browser independent fill bookmarklet** for pages where an extension is blocked. Low priority and hard to keep safe.
 
