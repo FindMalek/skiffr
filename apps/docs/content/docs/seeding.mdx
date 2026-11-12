@@ -1,0 +1,89 @@
+---
+title: Seeding
+description: Fill a preview or a local database with a realistic account to click through.
+---
+
+`SEED` decides what the api puts in an empty database when it starts.
+
+| `SEED` | What you get |
+| --- | --- |
+| `none` | nothing |
+| `demo` | the template's sample notes and users, in an empty database only |
+| `preview` | the whole product filled in, described below. Refused in production |
+
+## The preview dataset
+
+`SEED=preview` creates three accounts that share one password and fills the first one's account with a believable job search. Everything is generated from a fixed seed and dated relative to now, so the charts always end today and every run looks the same.
+
+| Account | Email | What it is |
+| --- | --- | --- |
+| demo | `demo@skiffr.test` | the account with all the data |
+| admin | `admin@skiffr.test` | an admin, with the users page filled by a dozen sample users |
+| second | `second@skiffr.test` | a small account of its own, for checking that nobody sees anyone else's data. It even saved one of the same postings |
+
+The password is `SEED_DEMO_PASSWORD`, or `skiffr-preview-demo` when it is not set. The default is public, which is why the seed refuses to run where real people could sign in.
+
+What the demo account holds:
+
+- **Profile**: name, contact, location, work authorization, links, salary expectation, plus experience, education, skills, languages and notice period as extra fields.
+- **Answers**: 65 answers in every status (learned, confirmed, rejected) from every source, with usage and correction counters, fingerprints and embeddings. Three of them show up under "Needs your call": one to keep, one that keeps changing and one that gets cleared.
+- **Site profiles**: saved forms for the playground host and for Greenhouse, Lever, Ashby and Workable boards, so autofill fills end to end on a page that asks the standard questions.
+- **Jobs**: 89 across queued, applied and skipped, from the extension, by hand, Gmail (LinkedIn, Indeed, Glassdoor, other) and three watched sources. The queue starts with a few stale jobs and has whole import batches sharing one timestamp, so "Open next" and the ordering have something to do. The queue also holds three twin postings under different sources, a very long title, a unicode company and one with a hostile title (bidi and zero-width characters, markup) to check escaping.
+- **Applications**: 40 over ten weeks with a weekly shape, replies, interviews, offers and rejections, match scores that rise with how far an application went, and queue-to-apply times from hours to weeks.
+- **Autofill history**: about 500 filled fields tied to those applications, with corrections getting rarer over time.
+- **Sources**: three healthy watched sources, one failing with backoff state, one paused and one never checked.
+- **Gmail**: a mailbox in the `needs_reconnect` state with a placeholder in place of a token (nothing ever calls Google) and the mails it "read", linked to the jobs they added.
+- **CV**: a connected Reactive Resume with a base resume, when `CV_ENCRYPTION_KEY` is set. The stored key only works against the mock Reactive Resume (`@skiffr/orpc/cv-test`); point `SEED_CV_URL` at wherever that mock runs, it defaults to `https://rr.test`.
+- **Extension tokens**: one active (its secret is in the links json, so the extension can connect), one active that was used long ago, one revoked and one expired.
+- **Notes**.
+
+Without an `OPENAI_API_KEY` the api uses a deterministic stand-in for embeddings when `SEED=preview`: questions that share their meaningful words (after stopwords, plurals and a few synonyms like salary and compensation) are near each other, so similar-question suggestions can be clicked through. It is not a model and says nothing about how real embeddings would behave.
+
+## Running it
+
+On start, set `SEED=preview` (and `SEED_RESET=on` to wipe and reseed on every start). Or run it by hand:
+
+```bash
+pnpm --filter api seed:preview             # seeds once, prints the links json
+pnpm --filter api seed:preview --reset     # wipes the preview users and their data first, dates move to now
+pnpm --filter api seed:preview --markdown  # prints a PR comment instead of json
+pnpm --filter api seed:preview --out seed-links.json
+```
+
+A rerun without `--reset` changes nothing except resetting the three passwords to the current one. `--reset` removes only the three accounts, the sample users and everything that belongs to them: any other user is left alone. If a real account already uses one of the three emails, the seed stops instead of replacing it.
+
+| Key | What it does |
+| --- | --- |
+| `SEED_DEMO_PASSWORD` | the shared password, at least 10 characters |
+| `SEED_RESET` | `on` wipes and reseeds on every start |
+| `SEED_LINKS_PATH` | where to write the links json on start |
+| `PLAYGROUND_URL` | queued jobs, their site profiles and the watched sources point at it. Unset, they use `example.invalid` hosts that never resolve |
+| `SEED_CV_URL` | the Reactive Resume the seeded connection points at |
+| `SEED_ALLOW_PRODUCTION_BUILD` | `yes` allows a production build outside a preview, for a throwaway docker run |
+
+Queued playground jobs look like `<PLAYGROUND_URL>/<ats>/<company>/jobs/<number>`, and the standard form the saved site profiles describe is `STANDARD_FORM` in `apps/api/src/seed/fixtures.ts`.
+
+## Where it runs
+
+The preview seed creates accounts with a known password, so it only runs where nothing real lives: locally, in tests and in `pr-<n>` previews (`DEPLOY_ENV`). It refuses to start when `DEPLOY_ENV=production`, whatever else is set, and on a production build (`NODE_ENV=production`) outside a `pr-<n>` preview unless `SEED_ALLOW_PRODUCTION_BUILD=yes`. A refusal stops the api with a clear message.
+
+## The links json
+
+The command and the api (with `SEED_LINKS_PATH`) write what the preview tooling needs to tell people where to click:
+
+```json
+{
+  "users": { "demo": { "email": "demo@skiffr.test", "password": "…", "role": "user" }, "admin": {}, "second": {} },
+  "extensionToken": "skp_…",
+  "dashboard": { "signIn": "…", "queue": "…", "stats": "…", "answers": "…", "sources": "…", "cv": "…", "gmail": "…" },
+  "playground": { "base": "…", "nextJob": "…", "jobs": ["…"] },
+  "dedupe": [{ "url": "…", "matches": "…" }],
+  "escaping": { "title": "…", "company": "…" }
+}
+```
+
+`playground` is `null` without `PLAYGROUND_URL`. Adding any `dedupe` url as a job returns the existing job instead of a new row. `escaping` is the queued job to look at when checking that titles are rendered as text.
+
+## Adding to the seed
+
+When a feature adds a state worth seeing, add it to the seed (`apps/api/src/seed`) and to `preview.test.ts` so every preview shows it. The seed is only for fake data: no real names, addresses, numbers or links.
