@@ -31,6 +31,199 @@ export function controlKind(type: string | undefined): ControlKind | null {
 }
 
 /**
+ * Whole words or phrases that make a question one the person answers themselves: what they consent to, agree to,
+ * certify or sign up for. Kept out of the bank and never filled for them. A page can ask these as a checkbox, a
+ * select, a radio row or a button row, so the list is matched on the label whatever the control is.
+ */
+const CONSENT_PHRASES = [
+  "terms",
+  "privacy",
+  "gdpr",
+  "cookie",
+  "cookies",
+  "hereby",
+  "opt in",
+  "opt out",
+  "unsubscribe",
+  "newsletter",
+  "marketing emails",
+  "marketing communications",
+  "marketing purposes",
+  "promotional",
+  "i understand",
+  "i accept",
+  "i confirm",
+  "i have read",
+  "have read and",
+  "read and understood",
+  "i authorize",
+  "i authorise",
+  "you authorize",
+  "authorize us",
+  "authorise us",
+  "keep me in the loop",
+  "stay in touch",
+  "talent community",
+  "talent network",
+  "talent pool",
+  "future opportunities",
+  "future roles",
+  "future positions",
+  "data retention",
+  "data processing",
+  "data protection",
+  "keeping your data",
+  "retain your",
+  "store your",
+  "processing of your",
+  "terms and conditions",
+  "conditions generales",
+  "consentement",
+  "j accepte",
+  "je certifie",
+  "je declare",
+  "j ai lu",
+  "je reconnais",
+  "confidentialite",
+  "politique de",
+  "politica de",
+  "einwilligung",
+  "zustimmung",
+  "ich stimme",
+  "einverstanden",
+  "datenschutz",
+  "nutzungsbedingungen",
+  "agb",
+  "ich erklare",
+  "ich bestatige",
+  "ich akzeptiere",
+  "consentimiento",
+  "acepto",
+  "terminos",
+  "condiciones",
+  "privacidad",
+  "proteccion de datos",
+  "declaro",
+  "certifico",
+  "he leido",
+  "autorizo",
+  "أوافق",
+  "موافقة",
+  "الموافقة",
+  "الشروط",
+  "الأحكام",
+  "الخصوصية",
+  "أقر",
+  "أصرح",
+  "أتعهد",
+  "أؤكد",
+  "سياسة",
+]
+
+/** Protected and personal categories beyond the equal opportunity lists above. */
+const IDENTITY_PHRASES = [
+  "age",
+  "edad",
+  "العمر",
+  "pronouns",
+  "pronoun",
+  "pronombres",
+  "الضمائر",
+  "nationality",
+  "nationalite",
+  "nacionalidad",
+  "staatsangehorigkeit",
+  "national origin",
+  "الجنسية",
+  "النوع الاجتماعي",
+  "الهوية الجنسية",
+  "eeo",
+  "eeoc",
+  "best describes you",
+  "describe yourself",
+  "identify as",
+  "identify your",
+  "i identify",
+  "how do you identify",
+]
+
+/** Beginnings of words: `certif` is certify, certified and certification. Matched where a word starts. */
+const STEMS = [
+  "consent",
+  "agree",
+  "acknowledg",
+  "certif",
+  "declar",
+  "arbitrat",
+  "self identif",
+  "equal employment",
+  "equal opportunit",
+  "subscri",
+  "pronoun",
+]
+const STEM_PATTERN = new RegExp(`(^| )(${STEMS.map(normalizeLabel).join("|")})`)
+
+/** Section headings under which every question is private: the equal opportunity, self identification and diversity blocks. */
+const SECTION_STEMS = [
+  "eeo",
+  "equal employment",
+  "equal opportunit",
+  "self identif",
+  "voluntary",
+  "demograph",
+  "diversit",
+  "veteran",
+  "disabilit",
+  "consent",
+  "agreement",
+  "privacy",
+  "terms",
+  "arbitrat",
+  "gdpr",
+  "data protection",
+]
+const SECTION_PATTERN = new RegExp(`(^| )(${SECTION_STEMS.map(normalizeLabel).join("|")})`)
+
+/** What a row of choices gives away about the question: the answers of a demographic or protected category. */
+const OPTION_PATTERN = new RegExp(
+  `(^| )(${[
+    "decline to self identify",
+    "decline to identify",
+    "prefer not to say",
+    "prefer not to answer",
+    "prefer not to disclose",
+    "prefer not to state",
+    "do not wish to",
+    "don t wish to",
+    "i do not want to answer",
+    "non binary",
+    "nonbinary",
+    "genderqueer",
+    "transgender",
+    "cisgender",
+    "hispanic",
+    "latino",
+    "latina",
+    "protected veteran",
+    "not a protected veteran",
+    "heterosexual",
+    "bisexual",
+    "homosexual",
+    "two or more races",
+    "native hawaiian",
+    "pacific islander",
+    "american indian",
+    "alaska native",
+    "african american",
+    "pas de reponse",
+    "keine angabe",
+    "prefiero no",
+  ]
+    .map(normalizeLabel)
+    .join("|")})`,
+)
+
+/**
  * Whole words or phrases of the normalized label (lowercase, no accents or punctuation), padded so a short word never
  * matches inside another. Skill questions stay learnable on purpose: `swift`, `bank`, `credit` and `routing` alone are
  * not here, only the payment phrases they appear in.
@@ -343,6 +536,8 @@ const PHRASES = [
   "union membership",
   "trade union",
   "salary history",
+  ...CONSENT_PHRASES,
+  ...IDENTITY_PHRASES,
 ].map((phrase) => ` ${normalizeLabel(phrase)} `)
 
 /** Whole labels that are private only when they stand alone: `Visa expiry date` and `Country code` are something else. */
@@ -460,9 +655,49 @@ export function isLearnableField(field: { label: string; type?: string; autocomp
   const label = normalizeLabel(field.label)
   if (label.length === 0 || ownLabels(field.label).some((own) => BARE_LABELS.has(own))) return false
   const padded = ` ${label} `
-  if (PHRASES.some((phrase) => padded.includes(phrase)) || isPinSecret(padded)) return false
+  if (PHRASES.some((phrase) => padded.includes(phrase)) || STEM_PATTERN.test(label) || isPinSecret(padded)) return false
   const squashed = squash(field.label)
   return !SQUASHED.some((word) => squashed.includes(word))
+}
+
+/** A section heading (equal opportunity, self identification, diversity, consent) under which every question is private. */
+export function isSensitiveSection(heading: string): boolean {
+  return SECTION_PATTERN.test(normalizeLabel(heading))
+}
+
+/** Answers that only a demographic or protected category question has: Male and Female, "Decline to self identify", "Hispanic". */
+export function isDemographicOptions(options: readonly string[]): boolean {
+  const texts = options.map(normalizeLabel)
+  if (texts.some((text) => OPTION_PATTERN.test(text))) return true
+  return (texts.includes("male") && texts.includes("female")) || (texts.includes("man") && texts.includes("woman"))
+}
+
+export type QuestionText = {
+  label?: string
+  /** The control's name or id, read as words (`job_application[gender]`). */
+  name?: string
+  autocomplete?: string
+  options?: readonly string[]
+  /** Headings and legends above the control. */
+  sections?: readonly string[]
+}
+
+/**
+ * Whether a question is one the person answers themselves, whatever control draws it (text, select, combobox, radio or
+ * button row): private by its own label or name, by the browser's hint, by the shape of its answers or by the section
+ * it sits under. It errs towards blocking: a question about age, terms or "agree to relocate" is left to the person too.
+ */
+export function isSensitiveQuestion({ label, name, autocomplete, options, sections }: QuestionText): boolean {
+  const privateText = (text: string | undefined, hint?: string) =>
+    text !== undefined && text.trim() !== "" && !isLearnableField({ label: text, type: "text", autocomplete: hint })
+  const named = (name ?? "").replace(/[_[\].-]+/g, " ")
+  return (
+    privateText(label) ||
+    privateText(named) ||
+    (autocomplete !== undefined && privateText("field", autocomplete)) ||
+    (options !== undefined && isDemographicOptions(options)) ||
+    (sections ?? []).some(isSensitiveSection)
+  )
 }
 
 function luhn(digits: string): boolean {

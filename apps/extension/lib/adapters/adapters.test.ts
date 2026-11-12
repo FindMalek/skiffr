@@ -1,16 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { collectFields, fillCollected, readField } from "../fill"
 import { toFillField } from "../fill-client"
-import {
-  adapterChoices,
-  adapterFill,
-  adapterFor,
-  adapterKind,
-  adapterLabel,
-  adapterScope,
-  adapterSkips,
-  isPrivateField,
-} from "."
+import { adapterChoices, adapterFill, adapterFor, adapterKind, adapterLabel, adapterScope, adapterSkips } from "."
 import { type Board, mountBoard } from "./test-pages"
 import type { Adapter } from "./types"
 
@@ -23,11 +14,11 @@ const PRIVATE = /gender|ethnic|veteran|disab|age range|current age|pronoun|diver
 const BOARDS: Board[] = ["greenhouse", "lever", "ashby", "workable"]
 
 describe("registry", () => {
-  test("a page that is not a known board gets no adapter, and its fields are read as before", () => {
+  test("a page that is not a known board gets no adapter, and the private questions are still kept out", () => {
     for (const board of BOARDS) {
       const { document } = mountBoard(board, SOMEWHERE_ELSE)
       expect(adapterFor(document)).toBeNull()
-      expect(labels(document).some((label) => PRIVATE.test(label ?? ""))).toBe(true)
+      expect(labels(document).some((label) => PRIVATE.test(label ?? ""))).toBe(false)
     }
   })
 
@@ -69,18 +60,12 @@ describe("registry", () => {
     expect(field && (await adapterFill(broken, field, "Ana"))).toBeUndefined()
   })
 
-  test("a field private by its label, name or autocomplete is never read, wherever it sits on the page", () => {
-    expect(isPrivateField({ label: "I identify my gender as" })).toBe(true)
-    expect(isPrivateField({ label: "Anything", name: "job_application[gender]" })).toBe(true)
-    expect(isPrivateField({ label: "Anything", autocomplete: "bday" })).toBe(true)
-    expect(isPrivateField({ label: "Why do you want to work here?", name: "question_4001" })).toBe(false)
-
-    const { document } = mountBoard("ashby")
-    document.querySelector("form")?.insertAdjacentHTML("beforeend", '<input aria-label="Veteran status">')
-    expect(labels(document)).not.toContain("Veteran status")
-    const plain = mountBoard("ashby", SOMEWHERE_ELSE).document
-    plain.querySelector("form")?.insertAdjacentHTML("beforeend", '<input aria-label="Veteran status">')
-    expect(labels(plain)).toContain("Veteran status")
+  test("a field private by its label is not read, wherever it sits on the page and on whatever host", () => {
+    for (const url of [undefined, SOMEWHERE_ELSE]) {
+      const { document } = mountBoard("ashby", url)
+      document.querySelector("form")?.insertAdjacentHTML("beforeend", '<input aria-label="Veteran status">')
+      expect(labels(document)).not.toContain("Veteran status")
+    }
   })
 })
 
@@ -92,7 +77,7 @@ describe("greenhouse", () => {
     expect(seen.some((label) => /Acknowledge/.test(label ?? ""))).toBe(false)
     expect(seen).toContain("Location (City)")
     expect(seen).toContain("How did you initially hear about this job?")
-    expect(labels(mountBoard("greenhouse", SOMEWHERE_ELSE).document)).toHaveLength(seen.length + 5)
+    expect(labels(mountBoard("greenhouse", SOMEWHERE_ELSE).document)).toEqual(seen)
   })
 
   test("the city search that answers after the generic wait is waited for", async () => {
@@ -112,7 +97,7 @@ describe("lever", () => {
     expect(seen.filter((label) => PRIVATE.test(label ?? "") || /^(Name|Date)$/.test(label ?? ""))).toEqual([])
     const plain = labels(mountBoard("lever", SOMEWHERE_ELSE).document)
     expect(plain).toContain("Current location No location found. Try entering a different location Loading")
-    expect(plain).toContain("Name")
+    expect(plain).not.toContain("Name")
   })
 
   test("the location is typed and a suggestion picked, because the page wipes what was only typed", async () => {

@@ -4,7 +4,14 @@ import { normalizeLabel } from "@skiffr/common/utils"
 import { draftAnswer, fitLength } from "./draft-answer"
 import { embedTexts } from "./embeddings"
 import { AiInputError, AiModelError, ModelBudgetError } from "./errors"
-import { controlKind, isLearnableField, isSensitiveValue } from "./learnable"
+import {
+  controlKind,
+  isDemographicOptions,
+  isLearnableField,
+  isSensitiveQuestion,
+  isSensitiveSection,
+  isSensitiveValue,
+} from "./learnable"
 import { mapFields } from "./map-fields"
 import { profileSkills, tailorResume } from "./tailor"
 import { mockEmbeddingModel, mockModel } from "./testing"
@@ -306,7 +313,8 @@ test("only known input kinds with harmless labels are learnable", () => {
   const learnable = (label: string, type: string | undefined = "text", autocomplete?: string) =>
     isLearnableField({ label, type, autocomplete })
   expect(learnable("Notice period")).toBe(true)
-  expect(learnable("Pronouns", "Select-One")).toBe(true)
+  expect(learnable("Pronouns", "Select-One")).toBe(false)
+  expect(learnable("Preferred name", "Select-One")).toBe(true)
   expect(learnable("PIN code")).toBe(true)
   expect(learnable("Postal code", "text", "postal-code")).toBe(true)
   for (const type of [undefined, "", "password", "hidden", "file", "submit", " pass\u200bword "]) {
@@ -377,9 +385,7 @@ test("secrets, payment, ids, birth dates and equal-opportunity answers are never
     "Website",
     "Years of experience",
     "Preferred name",
-    "Nationality",
     "Postal code",
-    "Pronouns",
     "Visa sponsorship required",
   ]) {
     expect(isLearnableField({ label, type: "text" }), label).toBe(true)
@@ -644,7 +650,6 @@ test("skill questions and near misses stay learnable", () => {
     "ZIP code",
     "Area code",
     "Code review experience",
-    "Nationalité",
     "Code of conduct",
     "Billing: Country code",
     "Application: Postal code",
@@ -724,4 +729,93 @@ test("a model that refuses for a spent budget leaves as its own kind, so callers
   await expect(
     draftAnswer({ model: mockModel(new ModelBudgetError()), question: "Why us?", profile }),
   ).rejects.toMatchObject({ kind: "budget" })
+})
+
+test("consent, agreement, certification and opt-in questions are the person's own, in any control and language", () => {
+  const labels = [
+    "I understand",
+    "I certify that the above is true",
+    "I declare the information is accurate",
+    "I accept the talent community terms",
+    "Keep me in the loop for future roles",
+    "Do you consent to us keeping your data?",
+    "Please read the arbitration agreement below",
+    "Agreement to Arbitrate",
+    "I agree to the Privacy Policy",
+    "Subscribe to our newsletter",
+    "I acknowledge receipt of the notice",
+    "Data retention",
+    "Do you consent to the processing of your personal data?",
+    "J'accepte les conditions générales",
+    "Je certifie l'exactitude des informations",
+    "Ich stimme der Datenschutzerklärung zu",
+    "Ich bestätige die Richtigkeit",
+    "Acepto la política de privacidad",
+    "Declaro que la información es veraz",
+    "أوافق على الشروط والأحكام",
+    "أقر بصحة المعلومات",
+    "أوافق على سياسة الخصوصية",
+  ]
+  for (const label of labels) expect(isSensitiveQuestion({ label }), label).toBe(true)
+  for (const label of labels) expect(isLearnableField({ label, type: "select" }), label).toBe(false)
+})
+
+test("pronouns, self identification, age, nationality and equal opportunity wording are never read", () => {
+  for (const label of [
+    "Pronouns",
+    "Self-identification",
+    "Voluntary Self-Identification",
+    "Which of the following best describes you?",
+    "How would you describe yourself?",
+    "I identify as",
+    "النوع الاجتماعي",
+    "Age",
+    "What is your age?",
+    "Nationality",
+    "Nationalité",
+    "Equal Employment Opportunity",
+    "EEOC question",
+  ]) {
+    expect(isSensitiveQuestion({ label }), label).toBe(true)
+  }
+})
+
+test("ordinary questions stay readable, and what is accepted as an over-block is listed", () => {
+  for (const label of [
+    "Country code",
+    "Years of experience",
+    "Postal code",
+    "Preferred name",
+    "Are you authorized to work in the United States?",
+    "Will you now or in the future require visa sponsorship?",
+    "Please confirm you're based in the USA",
+    "How did you initially hear about this job?",
+    "Marketing Manager: First name",
+    "Message",
+    "Image",
+    "Percentage of time travelling",
+  ]) {
+    expect(isSensitiveQuestion({ label }), label).toBe(false)
+  }
+  // accepted over-blocks: a plain "age" or "terms" word, "agree to relocate" and similar attestations
+  for (const label of ["Are you over 18 years of age?", "Contract terms", "Do you agree to relocate?"]) {
+    expect(isSensitiveQuestion({ label }), label).toBe(true)
+  }
+})
+
+test("a question is private by the shape of its answers or by its section, whatever its label says", () => {
+  expect(isSensitiveQuestion({ label: "Please select one", options: ["Male", "Female"] })).toBe(true)
+  expect(isSensitiveQuestion({ label: "Please select one", options: ["Man", "Woman", "Non-binary"] })).toBe(true)
+  expect(isSensitiveQuestion({ label: "Choose", options: ["Yes", "No", "Decline to self identify"] })).toBe(true)
+  expect(isSensitiveQuestion({ label: "Choose", options: ["Hispanic or Latino", "Asian"] })).toBe(true)
+  expect(isSensitiveQuestion({ label: "Choose", options: ["I am not a protected veteran"] })).toBe(true)
+  expect(isDemographicOptions(["Yes", "No"])).toBe(false)
+  expect(isDemographicOptions(["Remote", "On site", "Hybrid"])).toBe(false)
+  expect(isSensitiveQuestion({ label: "Please select one", sections: ["Equal Employment Opportunity"] })).toBe(true)
+  expect(isSensitiveQuestion({ label: "Please select one", sections: ["Voluntary self-identification"] })).toBe(true)
+  expect(isSensitiveQuestion({ label: "Please select one", sections: ["Diversity Survey"] })).toBe(true)
+  expect(isSensitiveQuestion({ label: "Please select one", sections: ["Additional questions"] })).toBe(false)
+  expect(isSensitiveSection("Personal information")).toBe(false)
+  expect(isSensitiveQuestion({ label: "Anything", name: "job_application[gender]" })).toBe(true)
+  expect(isSensitiveQuestion({ label: "Anything", autocomplete: "bday" })).toBe(true)
 })

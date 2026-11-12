@@ -14,8 +14,12 @@ export const HOSTS = {
 export type Board = keyof typeof HOSTS
 
 /** The e2e fixture page of a board, scripts run so its widgets behave. Pass another url to see the same page without an adapter. */
-export function mountBoard(board: Board, url: string = HOSTS[board]): { window: Window; document: Document } {
-  const html = readFileSync(join(PAGES, "adapters", `${board}.html`), "utf8")
+export function mountBoard(
+  board: Board,
+  url: string = HOSTS[board],
+  edit: (html: string) => string = (html) => html,
+): { window: Window; document: Document } {
+  const html = edit(readFileSync(join(PAGES, "adapters", `${board}.html`), "utf8"))
   const inline = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g)].map(
     (match) => match[1] as string,
   )

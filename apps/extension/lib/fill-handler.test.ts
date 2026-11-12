@@ -101,7 +101,7 @@ test("round trip: the worker fills from a saved answer and the profile, outlines
   const { doc, submitted } = page(`
     <label>First name <input name="first_name"></label>
     <label>Last name <input name="last_name"></label>
-    <label>Preferred pronouns <input name="pronouns"></label>
+    <label>Favourite colour <input name="colour"></label>
     <label>Where would you like to work? <input name="where"></label>
     <label>Email <input name="email" value="typed@by.me"></label>
     <label>Password <input type="password" name="pw"></label>
@@ -110,7 +110,7 @@ test("round trip: the worker fills from a saved answer and the profile, outlines
     matches: (ids) =>
       ids.map((fieldId, i) =>
         i === 2
-          ? { fieldId, source: "exact", value: "she/her", autofill: true, answerId: "a" }
+          ? { fieldId, source: "exact", value: "green", autofill: true, answerId: "a" }
           : i === 3
             ? { fieldId, source: "similar", value: "Remote", autofill: false, answerId: "b" }
             : { fieldId, source: "none" },
@@ -127,7 +127,7 @@ test("round trip: the worker fills from a saved answer and the profile, outlines
   expect(outcome.ok && [outcome.filled, outcome.review, outcome.suggested]).toEqual([3, 1, 1])
   expect(input(doc, "first_name").value).toBe("Ana")
   expect(input(doc, "last_name").value).toBe("Silva")
-  expect(input(doc, "pronouns").value).toBe("she/her")
+  expect(input(doc, "colour").value).toBe("green")
   expect(input(doc, "where").value).toBe("")
   expect(input(doc, "email").value).toBe("typed@by.me")
   expect(input(doc, "last_name").style.getPropertyValue("outline")).toContain("solid")
@@ -141,7 +141,7 @@ test("round trip: the worker fills from a saved answer and the profile, outlines
   expect(sent[0]?.fields.map((f) => f.label)).toEqual([
     "First name",
     "Last name",
-    "Preferred pronouns",
+    "Favourite colour",
     "Where would you like to work?",
   ])
   for (const never of ["typed@by.me", "Password", "CV", "file", "password"]) expect(request).not.toContain(never)

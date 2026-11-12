@@ -1,4 +1,3 @@
-import { isLearnableField } from "@skiffr/ai/learnable"
 import { type AtsId, matchAts } from "../detect/ats"
 import type { CollectedField, FieldKind, FillResult } from "../fill/types"
 import { createAshbyAdapter } from "./ashby"
@@ -73,7 +72,7 @@ export function adapterKind(adapter: Adapter | null, el: HTMLElement): FieldKind
 
 export function adapterChoices(adapter: Adapter | null, el: HTMLElement): HTMLElement[] | undefined {
   const choices = adapter && guard(() => adapter.fieldChoices?.(el))
-  return choices?.filter((choice) => el.contains(choice)).slice(0, CHOICES_MAX)
+  return choices?.slice(0, CHOICES_MAX).filter((choice) => el.contains(choice))
 }
 
 /** An empty string is an answer (nothing chosen yet), not "no opinion". */
@@ -91,27 +90,4 @@ export async function adapterFill(
   } catch {
     return undefined
   }
-}
-
-/**
- * On a board with an adapter, a field private by its label, name or autocomplete (gender, race, veteran, disability,
- * and the rest of the lists the learning side keeps out of the bank) is not read at all: never sent to the model, never
- * filled, never learned. The adapter's own `skip` covers whole sections; this covers what a section list misses.
- */
-export function isPrivateField({
-  label,
-  name,
-  autocomplete,
-}: {
-  label?: string
-  name?: string
-  autocomplete?: string
-}): boolean {
-  const learnable = (text: string, hint?: string) => isLearnableField({ label: text, type: "text", autocomplete: hint })
-  const named = (name ?? "").replace(/[_[\].-]+/g, " ").trim()
-  return (
-    (autocomplete !== undefined && !learnable("field", autocomplete)) ||
-    (label !== undefined && label !== "" && !learnable(label)) ||
-    (named !== "" && !learnable(named))
-  )
 }

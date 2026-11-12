@@ -422,10 +422,10 @@ describe("selects, comboboxes and slots", () => {
 
   test("a react-select style widget is read from the sibling value node", async () => {
     const { document } = mount(`
-      <div><label for="g">Gender</label><div><div class="select__control"><div class="select__value-container">
-        <div class="select__single-value">Male</div><div><input id="g" role="combobox" value=""></div></div></div></div></div>`)
+      <div><label for="g">T-shirt size</label><div><div class="select__control"><div class="select__value-container">
+        <div class="select__single-value">Large</div><div><input id="g" role="combobox" value=""></div></div></div></div></div>`)
     const [field] = collectFields(document)
-    expect(readField(field as never)).toBe("Male")
+    expect(readField(field as never)).toBe("Large")
   })
 
   test("the resume goes to the input that says resume, never to a photo or cover letter slot", async () => {

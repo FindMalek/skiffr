@@ -41,8 +41,20 @@ const BOARDS: Board[] = [
     },
     on: [],
     state: { first_name: "Ana", last_name: "Silva", phone: "+351 912 345 678", question_4001: "Short drafted answer." },
-    untouched: ['[id="130"]', '[id="133"]', '[id="134"]', '[id="135"]', '[id="question_4007[]_748115538"]'],
-    private: /gender|ethnic|veteran|disab|acknowledge/i,
+    untouched: [
+      '[id="130"]',
+      '[id="133"]',
+      '[id="134"]',
+      '[id="135"]',
+      '[id="question_4007[]_748115538"]',
+      "#question_4008",
+      '[id="question_4009"]',
+      '[id="question_4010"]',
+      '[id="question_4011"]',
+      "#talent",
+      '[id="eeoc-1"]',
+    ],
+    private: /gender|ethnic|veteran|disab|acknowledge|pronoun|consent|arbitrat|talent|self-identif|keeping your data/i,
     submit: "button[type=submit]",
     correction: { selector: "#phone", label: /^Phone$/, value: "+351 000 111 222" },
   },
@@ -79,10 +91,15 @@ const BOARDS: Board[] = [
       ".ashby-application-form-input-autocomplete": "Lisbon, Portugal",
     },
     shown: {},
-    on: ["[data-option=no]", "#hear-labeled-radio-0"],
+    on: ['[data-field-path^="9dbddae8-2594"] [data-option=no]', "#hear-labeled-radio-0"],
     state: { _systemfield_name: "Ana Silva", _systemfield_email: "ana.silva@example.com" },
-    untouched: ["#privacy-labeled-checkbox-0", "#age-labeled-radio-2", "#gender-labeled-radio-2"],
-    private: /gender|age|diversity|survey|privacy/i,
+    untouched: [
+      "#privacy-labeled-checkbox-0",
+      "#age-labeled-radio-2",
+      "#gender-labeled-radio-2",
+      '[data-field-path$="c0de"] [data-option=yes]',
+    ],
+    private: /gender|age|diversity|survey|privacy|consent/i,
     submit: "button.ashby-application-form-submit-button",
     correction: { selector: "#_systemfield_name", label: /^Name$/, value: "Ana M. Silva" },
   },
@@ -99,8 +116,8 @@ const BOARDS: Board[] = [
     shown: {},
     on: ["#wrapper_m74ZhVJHLkaayzr8", "#wrapper_l1ZK6o4KqoX0DPuC"],
     state: { firstname: "Ana", email: "ana.silva@example.com", CA_47143: "https://github.com/ana-silva" },
-    untouched: ["input[name=QA_12487770]", "#EEO_2", "input[name=EEO_1]"],
-    private: /gender|veteran|diversity|agree/i,
+    untouched: ["input[name=QA_12487770]", "#EEO_2", "input[name=EEO_1]", "input[name=EEO_9]"],
+    private: /gender|veteran|diversity|agree|equal employment|please select one/i,
     submit: "button[data-ui=apply-button]",
     correction: { selector: "#phone", label: /^Phone$/, value: "+351 000 111 222" },
   },
@@ -123,10 +140,16 @@ const isOn = (locator: Locator): Promise<boolean> =>
       [el.getAttribute("aria-pressed"), el.getAttribute("aria-checked")].includes("true"),
   )
 
-const lookupLabels = (requests: { path: string; body: unknown }[]): string[] =>
+type Asked = { label: string; type?: string; options: string[] }
+
+const lookupFields = (requests: { path: string; body: unknown }[]): Asked[] =>
   requests
     .filter((request) => request.path === "/rpc/learning/lookup")
-    .flatMap((request) => (request.body as { fields: { label: string }[] }).fields.map((field) => field.label))
+    .flatMap((request) => (request.body as { fields: Asked[] }).fields)
+    .map(({ label, type, options }) => ({ label, type, options }))
+
+const lookupLabels = (requests: { path: string; body: unknown }[]): string[] =>
+  lookupFields(requests).map((field) => field.label)
 
 for (const board of BOARDS) {
   test.describe(board.name, () => {
@@ -147,7 +170,8 @@ for (const board of BOARDS) {
       for (const selector of board.untouched) {
         const control = page.locator(selector).first()
         const type = await control.getAttribute("type")
-        if (type === "checkbox" || type === "radio") await expect(control).not.toBeChecked()
+        if (type === "button") expect(await isOn(control)).toBe(false)
+        else if (type === "checkbox" || type === "radio") await expect(control).not.toBeChecked()
         else await expect(control).toHaveValue("")
       }
 
@@ -167,36 +191,38 @@ for (const board of BOARDS) {
       await shoot(page, board.name)
     })
 
-    test("a correction is recorded under the very labels the lookup used", async ({
-      context,
-      serviceWorker,
-      fixtureServer,
-      mockApi,
-    }) => {
-      await connect(serviceWorker, mockApi)
-      const { page, toast } = await openAdapterPage(context, fixtureServer, board.name)
-      await toast.click("yes")
-      await toast.waitFor((s) => s.title !== null && FILLED.test(s.title), 30_000)
-      await page.evaluate(() => document.addEventListener("submit", (event) => event.preventDefault()))
+    for (const generic of [false, true]) {
+      test(`a correction is recorded under the very labels, types and options the lookup used${generic ? " (generic path, host no adapter knows)" : ""}`, async ({
+        context,
+        serviceWorker,
+        fixtureServer,
+        mockApi,
+      }) => {
+        await connect(serviceWorker, mockApi)
+        const { page, toast } = await openAdapterPage(context, fixtureServer, board.name, generic)
+        await toast.click("yes")
+        await toast.waitFor((s) => s.title !== null && FILLED.test(s.title), 30_000)
+        await page.evaluate(() => document.addEventListener("submit", (event) => event.preventDefault()))
 
-      await page.locator(board.correction.selector).fill(board.correction.value)
-      await page.locator(board.submit).click()
+        await page.locator(board.correction.selector).fill(board.correction.value)
+        await page.locator(board.submit).click()
 
-      await expect.poll(() => mockApi.records.length).toBe(1)
-      const [batch] = mockApi.records
-      const asked = lookupLabels(mockApi.requests)
-      expect(batch?.events.map((event) => event.label)).toEqual(asked)
-      const label = asked.find((text) => board.correction.label.test(text))
-      expect(batch?.events.find((event) => event.label === label)).toMatchObject({
-        finalValue: board.correction.value,
+        await expect.poll(() => mockApi.records.length).toBe(1)
+        const [batch] = mockApi.records
+        const asked = lookupFields(mockApi.requests)
+        expect(batch?.events.map(({ label, type, options }) => ({ label, type, options }))).toEqual(asked)
+        const label = asked.map((field) => field.label).find((text) => board.correction.label.test(text))
+        expect(batch?.events.find((event) => event.label === label)).toMatchObject({
+          finalValue: board.correction.value,
+        })
+        expect(JSON.stringify(batch)).not.toMatch(board.private)
+        expect(fixtureServer.submissions).toEqual([])
       })
-      expect(JSON.stringify(batch)).not.toMatch(board.private)
-      expect(fixtureServer.submissions).toEqual([])
-    })
+    }
   })
 }
 
-test("a board page on a host no adapter knows is still filled by the generic path", async ({
+test("a board page on a host no adapter knows is still filled by the generic path, and keeps the private questions out", async ({
   context,
   serviceWorker,
   fixtureServer,
@@ -210,6 +236,6 @@ test("a board page on a host no adapter knows is still filled by the generic pat
 
   await expect(page.locator("#first_name")).toHaveValue("Ana")
   await expect(page.locator("#email")).toHaveValue("ana.silva@example.com")
-  expect(lookupLabels(mockApi.requests).some((label) => /gender/i.test(label))).toBe(true)
+  expect(lookupLabels(mockApi.requests).some((label) => /gender|consent|arbitrat|pronoun/i.test(label))).toBe(false)
   expect(fixtureServer.submissions).toEqual([])
 })

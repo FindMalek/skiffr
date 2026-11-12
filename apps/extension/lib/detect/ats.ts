@@ -35,7 +35,7 @@ export function matchAts(url: string): AtsId | null {
     return null
   }
   if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return null
-  const host = parsed.hostname.toLowerCase()
+  const host = parsed.hostname.toLowerCase().replace(/\.$/, "")
   const rule = RULES.find((item) => item.host.test(host) && (!item.path || item.path.test(parsed.pathname)))
   return rule?.id ?? null
 }

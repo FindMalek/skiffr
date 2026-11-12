@@ -47,6 +47,7 @@
         <div class="_fieldEntry_1e3gg_28 ashby-application-form-field-entry" data-field-path="2f73c135-4c72-40cf-84bc-ba7700192f2f"><label class="_heading_f7cvd_52 _required_f7cvd_91 _label_1e3gg_42 ashby-application-form-question-title" for="2f73c135-4c72-40cf-84bc-ba7700192f2f">LinkedIn Profile</label><div><input placeholder="Type here..." name="2f73c135-4c72-40cf-84bc-ba7700192f2f" required id="2f73c135-4c72-40cf-84bc-ba7700192f2f" type="text" class="_input_80epu_28 _input_1e3gg_32 ashby-application-form-input-text" value=""></div></div>
         <div class="_fieldEntry_1e3gg_28 ashby-application-form-field-entry" data-field-path="_systemfield_location"><label class="_heading_f7cvd_52 _required_f7cvd_91 _label_1e3gg_42 ashby-application-form-question-title" for="_systemfield_location">Which country do you intend to work from?</label><div class="_description_1e3gg_48 ashby-application-form-question-description"><p>Please list your city and country.</p></div><div class="_inputContainer_d7ago_28"><input class="_input_d7ago_28 ashby-application-form-input-autocomplete" placeholder="Start typing..." aria-autocomplete="list" aria-expanded="false" aria-haspopup="listbox" role="combobox" value=""><button class="_container_pjyt6_1 _toggleButton_d7ago_32" type="button"></button></div></div>
         <div class="_fieldEntry_1e3gg_28 ashby-application-form-field-entry" data-field-path="9dbddae8-2594-40be-b4b9-92420e945f18"><label class="_heading_f7cvd_52 _required_f7cvd_91 _label_1e3gg_42 ashby-application-form-question-title" for="9dbddae8-2594-40be-b4b9-92420e945f18">Will you now or in the future require sponsorship for employment visa status to work in this location?</label><div class="_container_1svni_28 _yesno_1e3gg_148 ashby-application-form-input-yesno"><button class="_container_pjyt6_1 _option_1svni_32 ashby-application-form-input-yesno-option" aria-pressed="false" data-option="yes" type="button">Yes</button><button class="_container_pjyt6_1 _option_1svni_32 ashby-application-form-input-yesno-option" aria-pressed="false" data-option="no" type="button">No</button><input type="checkbox" class="_input_1svni_78" name="9dbddae8-2594-40be-b4b9-92420e945f18"></div></div>
+        <div class="_fieldEntry_1e3gg_28 ashby-application-form-field-entry" data-field-path="9dbddae8-0000-4a00-8000-00000000c0de"><label class="_heading_f7cvd_52 _required_f7cvd_91 _label_1e3gg_42 ashby-application-form-question-title" for="9dbddae8-0000-4a00-8000-00000000c0de">Do you consent to the processing of your personal data?</label><div class="_container_1svni_28 _yesno_1e3gg_148 ashby-application-form-input-yesno"><button class="_container_pjyt6_1 _option_1svni_32 ashby-application-form-input-yesno-option" aria-pressed="false" data-option="yes" type="button">Yes</button><button class="_container_pjyt6_1 _option_1svni_32 ashby-application-form-input-yesno-option" aria-pressed="false" data-option="no" type="button">No</button><input type="checkbox" class="_input_1svni_78" name="9dbddae8-0000-4a00-8000-00000000c0de"></div></div>
         <div class="_fieldEntry_1e3gg_28 ashby-application-form-field-entry" data-field-path="f890254e-5bf6-483d-87cb-a8cb9ec59a83"><label class="_heading_f7cvd_52 _required_f7cvd_91 _label_1e3gg_42 ashby-application-form-question-title" for="f890254e-5bf6-483d-87cb-a8cb9ec59a83">Describe the best engineer you've worked with.</label><div class="_description_1e3gg_48 ashby-application-form-question-description"><p>We want to understand your reference point for great engineering.</p></div><textarea placeholder="Type here..." required name="f890254e-5bf6-483d-87cb-a8cb9ec59a83" id="f890254e-5bf6-483d-87cb-a8cb9ec59a83" class="_input_zf0lr_28 _input_1e3gg_32 ashby-application-form-input-textarea" rows="4"></textarea></div>
         <div data-field-path="a3c2d1e0-0001-4a00-8000-000000000001"><fieldset class="_container_1258i_28 _fieldEntry_1e3gg_28 ashby-application-form-input-radio-group"><label class="_heading_f7cvd_52 _label_1e3gg_42 ashby-application-form-question-title" for="a3c2d1e0-0001-4a00-8000-000000000001">How did you hear about Acme?</label>
           <div class="_option_1258i_34 ashby-application-form-input-radio-group-option"><span class="_container_132c8_28"><span class="_circle_132c8_77"></span><input type="radio" id="hear-labeled-radio-0" name="hear" class="ashby-application-form-input-radio-group-option-radio"></span><label for="hear-labeled-radio-0" class="_label_1258i_42 ashby-application-form-input-radio-group-option-label">LinkedIn</label></div>
@@ -80,13 +81,14 @@
   const { bind, track, h, state, render, fold } = Fixture
   for (const el of document.querySelectorAll("form input[type=text], form input[type=email], form textarea")) bind(el)
 
-  const yesno = document.querySelector(".ashby-application-form-input-yesno")
-  yesno.addEventListener("click", (event) => {
-    const button = event.target.closest("button")
-    if (!button) return
-    for (const other of yesno.querySelectorAll("button")) other.setAttribute("aria-pressed", String(other === button))
-    yesno.querySelector("input").checked = button.dataset.option === "yes"
-  })
+  for (const yesno of document.querySelectorAll(".ashby-application-form-input-yesno")) {
+    yesno.addEventListener("click", (event) => {
+      const button = event.target.closest("button")
+      if (!button) return
+      for (const other of yesno.querySelectorAll("button")) other.setAttribute("aria-pressed", String(other === button))
+      yesno.querySelector("input").checked = button.dataset.option === "yes"
+    })
+  }
 
   // react-aria style autocomplete: the list is drawn into the body once results come back
   const place = document.querySelector(".ashby-application-form-input-autocomplete")

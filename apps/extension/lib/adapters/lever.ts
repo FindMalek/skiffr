@@ -2,7 +2,7 @@ import { blurEl, cleanText, click, focusEl, settle, typeInto, waitFor } from "..
 import { matchOption } from "../fill/match"
 import { readField } from "../fill/read"
 import type { CollectedField, FillResult } from "../fill/types"
-import { isConsentBox, labelText } from "./shared"
+import { labelText } from "./shared"
 import type { Adapter } from "./types"
 
 const SECTIONS =
@@ -22,6 +22,7 @@ async function fillLocation(field: CollectedField, value: string): Promise<FillR
   const hit = matchOption(
     value,
     list.map((row) => ({ text: cleanText(row.textContent) })),
+    { ranked: true },
   )
   const row = hit ? list[hit.index] : undefined
   if (!row) {
@@ -42,7 +43,7 @@ export function createLeverAdapter(): Adapter {
   return {
     id: "lever",
     scope: (doc) => doc.querySelector("form#application-form"),
-    skip: (el) => el.closest(SECTIONS) !== null || isConsentBox(el),
+    skip: (el) => el.closest(SECTIONS) !== null,
     // the wrapping label also holds the location list's helper texts
     fieldLabel: (el) => {
       if (el.matches("input[type=checkbox], input[type=radio]")) return undefined

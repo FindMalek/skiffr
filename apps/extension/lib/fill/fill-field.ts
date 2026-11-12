@@ -3,6 +3,7 @@ import { adapterFill, adapterFor } from "../adapters"
 import { labelsFor, newCtx, readListOptions, resolveField } from "./collect"
 import { AMBIGUOUS, toHintedDate, toNativeDate } from "./dates"
 import {
+  activate,
   blurEl,
   cleanText,
   click,
@@ -137,10 +138,11 @@ async function fillSelect(field: CollectedField, text: string): Promise<FillResu
 async function press(input: HTMLInputElement, checked: boolean): Promise<boolean> {
   if (input.checked === checked) return true
   focusEl(input)
-  input.click()
+  activate(input)
   await settle()
   if (input.checked !== checked) {
-    labelsFor(input, newCtx())[0]?.click()
+    const label = labelsFor(input, newCtx())[0]
+    if (label) activate(label)
     await settle()
   }
   return input.checked === checked
@@ -240,6 +242,11 @@ const OPTION = "[role=option]"
 /** Options inserted into the page while a combobox opens, for menus rendered into a portal with no aria link back. */
 function watchInserted(el: HTMLElement): { options: () => HTMLElement[]; stop: () => void } {
   const found = new Set<HTMLElement>()
+  const form = el.closest("form")
+  const ours = (option: HTMLElement) => {
+    const other = option.closest("form")
+    return other === null || other === form
+  }
   const take = (records: MutationRecord[]) => {
     for (const record of records) {
       for (const node of Array.from(record.addedNodes)) {
@@ -255,7 +262,8 @@ function watchInserted(el: HTMLElement): { options: () => HTMLElement[]; stop: (
     options: () => {
       take(observer.takeRecords())
       return [...found].filter(
-        (option) => option.isConnected && option.getAttribute("aria-disabled") !== "true" && isRendered(option),
+        (option) =>
+          option.isConnected && ours(option) && option.getAttribute("aria-disabled") !== "true" && isRendered(option),
       )
     },
     stop: () => observer.disconnect(),
@@ -282,9 +290,9 @@ export async function fillCombobox(
       const linked = readListOptions(el)
       return isList ? linked : [...linked, ...inserted.options().filter((option) => !linked.includes(option))]
     }
-    const pickOption = (): HTMLElement | null => {
+    const pickOption = (ranked = false): HTMLElement | null => {
       const list = options()
-      const hit = matchOption(text, optionTexts(list))
+      const hit = matchOption(text, optionTexts(list), { ranked })
       return hit ? (list[hit.index] ?? null) : null
     }
     if (!isList) {
@@ -300,8 +308,8 @@ export async function fillCombobox(
     if (!option && isInput) {
       typed = true
       await typeInto(el, text)
-      await waitFor(() => pickOption() !== null, typedWaitMs)
-      option = pickOption()
+      await waitFor(() => pickOption(true) !== null, typedWaitMs)
+      option = pickOption(true)
     }
     if (!option) {
       if (typed) {

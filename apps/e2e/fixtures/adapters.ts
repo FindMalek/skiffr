@@ -48,7 +48,8 @@ export async function openAdapterPage(
   return { page, toast }
 }
 
-const PRIVATE = /gender|ethnic|race|veteran|disab|transgender|sexual|pronoun|age range|current age|diversity|survey/i
+const PRIVATE =
+  /gender|ethnic|race|veteran|disab|transgender|sexual|pronoun|age range|current age|diversity|survey|consent|arbitrat|agree|self-identif|please select one/i
 
 type Rule = readonly [RegExp, string | { key: string }]
 

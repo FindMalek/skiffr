@@ -101,18 +101,29 @@ function booleanScore(value: string, candidate: string): number {
   return 0
 }
 
-/** Best candidate for a value ("USA" against "United States"), or null when nothing is close enough. */
-export function matchOption(value: string, candidates: Candidate[]): Match | null {
+/**
+ * Best candidate for a value ("USA" against "United States"), or null when nothing is close enough. An exact or alias
+ * match wins outright. A weaker one (a prefix: "Remote" against "Remote - UK" and "Remote - US") that another
+ * candidate comes close to is ambiguous and matches nothing, unless the candidates are ranked results of a search.
+ */
+export function matchOption(value: string, candidates: Candidate[], { ranked = false } = {}): Match | null {
   const wanted = normalizeLabel(value)
   if (!wanted) return null
-  let best: Match | null = null
-  candidates.forEach((candidate, index) => {
+  const scores = candidates.map((candidate) => {
     const text = normalizeLabel(candidate.text)
     const raw = candidate.value ? normalizeLabel(candidate.value) : ""
-    const score = Math.max(scoreOne(wanted, text), scoreOne(wanted, raw), booleanScore(wanted, text))
+    return Math.max(scoreOne(wanted, text), scoreOne(wanted, raw), booleanScore(wanted, text))
+  })
+  let best: Match | null = null
+  scores.forEach((score, index) => {
     if (score >= MATCH_THRESHOLD && (!best || score > best.score)) best = { index, score }
   })
-  return best
+  const top = best as Match | null
+  if (!top || ranked || top.score >= 0.9) return top
+  const rival = scores.some(
+    (score, index) => index !== top.index && score >= MATCH_THRESHOLD && score >= top.score - 0.05,
+  )
+  return rival ? null : top
 }
 
 /** Does what the control shows still amount to the value we wrote? Tolerates masks and reformatting. */

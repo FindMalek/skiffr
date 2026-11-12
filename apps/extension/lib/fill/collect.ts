@@ -5,15 +5,7 @@ import {
   AI_OPTIONS_MAX,
   AI_REQUEST_CHARS_MAX,
 } from "@skiffr/common"
-import {
-  type Adapter,
-  adapterChoices,
-  adapterFor,
-  adapterKind,
-  adapterLabel,
-  adapterSkips,
-  isPrivateField,
-} from "../adapters"
+import { type Adapter, adapterChoices, adapterFor, adapterKind, adapterLabel, adapterSkips } from "../adapters"
 import {
   cleanText,
   containsControl,
@@ -25,12 +17,13 @@ import {
   textOf,
   walkElements,
 } from "./dom"
+import { type HeadingMemo, isSensitiveControl } from "./sensitive"
 import type { CollectedField, FieldChoice, FieldDescriptor, FieldInfo, FieldKind } from "./types"
 import { isVisible, newVisibilityCtx, type VisibilityCtx } from "./visibility"
 
-export type Ctx = { labels: Map<Node, Map<string, HTMLElement[]>>; vis: VisibilityCtx }
+export type Ctx = { labels: Map<Node, Map<string, HTMLElement[]>>; vis: VisibilityCtx; headings: HeadingMemo }
 
-export const newCtx = (): Ctx => ({ labels: new Map(), vis: newVisibilityCtx() })
+export const newCtx = (): Ctx => ({ labels: new Map(), vis: newVisibilityCtx(), headings: new Map() })
 
 const NOT_FILLABLE = new Set(["hidden", "password", "submit", "button", "reset", "image", "color", "range"])
 const BAIT = new Set([
@@ -331,6 +324,20 @@ function buildField(
   const section = sectionOf(el, ctx)
   const label = section && own && section.length <= SECTION_MAX && !same(own, section) ? `${section}: ${own}` : own
   const name = input.name || el.id || undefined
+  if (
+    filter &&
+    isSensitiveControl(
+      el,
+      {
+        labels: [own, cleanText(el.getAttribute("aria-label")), placeholder, title],
+        name,
+        autocomplete: el.getAttribute("autocomplete") ?? undefined,
+        options: choices.map((choice) => choice.text),
+      },
+      ctx.headings,
+    )
+  )
+    return { field: null, members }
   const trapName = BAIT.has(squash(name ?? "")) || /^b_[0-9a-f]{20,}/i.test(name ?? "")
   if (filter && trapName && (el.getAttribute("tabindex") === "-1" || !label)) return { field: null, members }
 
@@ -390,7 +397,7 @@ export function collectFields(root: ParentNode = document): CollectedField[] {
     if (!built) continue
     for (const member of built.members) seen.add(member)
     const { field } = built
-    if (!field || (adapter && isPrivateField({ ...field.descriptor, autocomplete: field.info.autocomplete }))) continue
+    if (!field) continue
     const base = hash(
       [field.kind, field.descriptor.type, field.descriptor.name, field.descriptor.label, field.info.section].join("|"),
     )
