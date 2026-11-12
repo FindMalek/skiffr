@@ -4,6 +4,7 @@ import { Toaster } from "@skiffr/ui/components/sonner"
 import { TooltipProvider } from "@skiffr/ui/components/tooltip"
 import { cn } from "@skiffr/ui/lib/utils"
 import type { Metadata } from "next"
+import Script from "next/script"
 import { ThemeProvider } from "@/components/theme-provider"
 import { dashboardUrl, SITE } from "@/lib/site"
 import { fontVariables } from "./fonts"
@@ -25,6 +26,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang={page.lang} suppressHydrationWarning className={cn("antialiased", fontVariables, "font-sans")}>
       <body className="bg-background text-foreground">
+        <Script src="/analytics.js" strategy="afterInteractive" />
         <ThemeProvider>
           <QueryProvider>
             <TooltipProvider>{children}</TooltipProvider>

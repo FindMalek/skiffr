@@ -1,3 +1,4 @@
+import { getObservability } from "@skiffr/observability"
 import { logSyncFailure } from "./errors"
 import type { Leader } from "./leader"
 import { type SyncDeps, syncDue } from "./sync"
@@ -13,6 +14,8 @@ export interface Scheduler {
 const JITTER = 0.2
 
 export interface LoopOptions {
+  /** Names the loop in its health metrics. */
+  job?: "gmail" | "watch"
   leader: Leader
   intervalMs: number
   random?: () => number
@@ -22,6 +25,7 @@ export interface LoopOptions {
 /** The mailboxes' schedule. */
 export const createScheduler = (deps: SyncDeps, options: LoopOptions): Scheduler =>
   createLoop(async (stopped) => (await syncDue(deps, stopped)).length, {
+    job: "gmail",
     onError: (error) => logSyncFailure("scheduler", error),
     ...options,
   })
@@ -37,10 +41,27 @@ export function createLoop(work: (stopped: () => boolean) => Promise<number>, op
   let running: Promise<number> | null = null
 
   const run = async (): Promise<number> => {
+    const job = options.job
+    const obs = getObservability()
+    const started = Date.now()
+    const done = (outcome: "ok" | "error" | "skipped", items = 0) => {
+      if (!job) return
+      obs.count("skiffr.scheduler.runs", 1, { job, outcome })
+      if (outcome === "skipped") return
+      obs.observe("skiffr.scheduler.duration_ms", Date.now() - started, { job })
+      if (outcome === "ok") obs.gauge("skiffr.scheduler.last_success_seconds", Math.floor(Date.now() / 1000), { job })
+      obs.gauge("skiffr.scheduler.items", items, { job })
+    }
     try {
-      if (stopped || !(await options.leader.tryAcquire())) return 0
-      return await work(() => stopped)
+      if (stopped || !(await options.leader.tryAcquire())) {
+        done("skipped")
+        return 0
+      }
+      const items = await work(() => stopped)
+      done("ok", items)
+      return items
     } catch (error) {
+      done("error")
       options.onError?.(error)
       return 0
     }
