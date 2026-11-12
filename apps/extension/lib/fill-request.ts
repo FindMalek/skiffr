@@ -29,6 +29,19 @@ export type FillRequestHandler = {
   forgetTab: (tabId: number) => void
 }
 
+/** Whether a message comes from a content script of the tab the person is looking at: never another extension, an extension page, a hidden tab or a document that is not live. */
+export function isActiveContentSender(sender: FillSender, extensionId: string, extensionUrl: string): boolean {
+  return !(
+    sender.id !== extensionId ||
+    sender.tab?.id === undefined ||
+    sender.tab.active !== true ||
+    sender.frameId === undefined ||
+    !sender.url ||
+    sender.url.startsWith(extensionUrl) ||
+    (sender.documentLifecycle && sender.documentLifecycle !== "active")
+  )
+}
+
 export function isFillRequestMessage(message: unknown): boolean {
   return typeof message === "object" && message !== null && (message as { type?: unknown }).type === "fill-request"
 }
@@ -61,19 +74,8 @@ export function createFillRequestHandler(deps: FillRequestDeps): FillRequestHand
   return {
     handle(message, sender) {
       if (!isFillRequestMessage(message)) return undefined
-      const tabId = sender.tab?.id
-      if (
-        sender.id !== deps.extensionId ||
-        tabId === undefined ||
-        sender.tab?.active !== true ||
-        sender.frameId === undefined ||
-        !sender.url ||
-        sender.url.startsWith(deps.extensionUrl) ||
-        (sender.documentLifecycle && sender.documentLifecycle !== "active")
-      ) {
-        return undefined
-      }
-      return respond(message, tabId, sender)
+      if (!isActiveContentSender(sender, deps.extensionId, deps.extensionUrl)) return undefined
+      return respond(message, sender.tab?.id as number, sender)
     },
     forgetTab: (tabId) => {
       limits.delete(tabId)

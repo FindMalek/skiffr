@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Careers - Join Acme</title></head>
+<body><header><nav><a href="/">Home</a> <a href="/careers">Careers</a></nav></header>
+<main><h1>Apply for Backend Developer</h1>
+<div id="host">
+<form id="a" action="/submit?step=1" method="post">
+<p><label for="fn">First name</label><input id="fn" type="text" name="first_name"></p>
+<p><label for="ln">Last name</label><input id="ln" type="text" name="last_name"></p>
+<p><label for="em">Email address</label><input id="em" type="email" name="email"></p>
+<p><label for="ph">Phone</label><input id="ph" type="tel" name="phone"></p>
+<p><button id="next" type="button">Next</button></p>
+</form></div>
+</main>
+<template id="stepb"><form id="b" action="/submit?step=2" method="post">
+<p><label for="ci">City</label><input id="ci" type="text" name="city"></p>
+<p><label for="li">LinkedIn Profile</label><input id="li" type="text" name="linkedin"></p>
+<p><button id="send" type="submit">Send application</button></p>
+</form></template>
+<script>document.querySelector('#next').addEventListener('click',()=>{const h=document.querySelector('#host');h.replaceChildren(document.querySelector('#stepb').content.cloneNode(true));history.pushState({},'','/scope/multi-step.html?step=2')})</script>
+</body></html>

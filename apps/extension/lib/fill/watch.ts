@@ -11,10 +11,17 @@ const CHANGES = ["input", "change", "focusout"] as const
  * A change only counts after a trusted keydown, pointerdown, paste, drop or beforeinput on that field (or its label):
  * trusted focus, blur and click events can also come from page script. Nothing is reported while the engine is filling.
  */
-export function watchEdits(root: ParentNode, summary: FillSummary, onChange: (report: EditReport) => void): () => void {
+export function watchEdits(
+  root: ParentNode,
+  summary: FillSummary,
+  onChange: (report: EditReport) => void,
+  /** Ids of fields the fill left empty: watched too, as edits from an empty value. */
+  empty: Iterable<string> = [],
+): () => void {
   const filled = new Map(
     summary.fields.filter((f) => f.status === "filled" && f.value !== undefined).map((f) => [f.id, f.value as string]),
   )
+  for (const id of empty) if (!filled.has(id)) filled.set(id, "")
   const ctx = newCtx()
   const undo: (() => void)[] = []
   for (const field of collectFields(root)) {

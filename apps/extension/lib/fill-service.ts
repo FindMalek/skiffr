@@ -24,6 +24,7 @@ import {
   PROFILE_TTL_MS,
   REQUEST_DEADLINE_MS,
   RETRY_BACKOFF_MS,
+  savedAnswerReason,
 } from "./fill-config"
 import type { FillField, FillRequestMessage, FillResponse, FillSummaryData } from "./messages"
 
@@ -332,7 +333,7 @@ export function createFillService({
           action: "generate",
           value: hit.value,
           confidence,
-          reason: `saved answer (${hit.source})`,
+          reason: savedAnswerReason(hit.source),
         })
         summary[hit.source]++
         continue

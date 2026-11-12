@@ -6,6 +6,7 @@ import { siteKey } from "@/lib/detect/ats"
 import { createFrameTracker, type FrameTracker } from "@/lib/detect/frames"
 import { createFillRequestHandler } from "@/lib/fill-request"
 import { createFillService } from "@/lib/fill-service"
+import { createLearningRecordHandler } from "@/lib/learning-record"
 import {
   type FillMessage,
   isDisableSiteMessage,
@@ -159,9 +160,21 @@ export default defineBackground(() => {
     service: fillService,
     isTrustedFrame,
   })
+  const learningRecords = createLearningRecordHandler({
+    extensionId: browser.runtime.id,
+    extensionUrl: browser.runtime.getURL("/"),
+    call: (run) => apiFetch(run),
+    isTrustedFrame,
+  })
   browser.runtime.onMessage.addListener(handleContentMessage)
   browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const pending = fillRequests.handle(message, sender)
+    if (!pending) return false
+    pending.then(sendResponse, () => sendResponse({ ok: false, code: "failed" }))
+    return true
+  })
+  browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    const pending = learningRecords.handle(message, sender)
     if (!pending) return false
     pending.then(sendResponse, () => sendResponse({ ok: false, code: "failed" }))
     return true
@@ -171,6 +184,7 @@ export default defineBackground(() => {
   })
   browser.tabs.onRemoved.addListener((tabId) => {
     fillRequests.forgetTab(tabId)
+    learningRecords.forgetTab(tabId)
     void frames().reset(tabId)
   })
   browser.commands.onCommand.addListener((command) => {
