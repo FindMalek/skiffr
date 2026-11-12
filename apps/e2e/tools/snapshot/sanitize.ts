@@ -139,13 +139,46 @@ const STYLE_FORBIDDEN = /url|expression|image|src|import|script|behavior|binding
 const NAME_HINT =
   /(?:name|first|last|full|email|phone|address|city|company|title|school|degree|country|state|select|enter|type|choose|please|your|linkedin|website|salary|date)/i
 
-const URL_IN_TEXT = /\b(?:https?:\/\/|www\.)[^\s"'<>)]+/gi
-const EMAIL = /[A-Za-z0-9._%+'-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/g
-const PHONE = /(?<![\w.])\+?\(?\d[\d\s().-]{6,}\d(?!\w)/g
+// Every quantifier below is bounded, so a hostile text node cannot make a rule quadratic.
+const URL_IN_TEXT = /\b(?:https?:\/\/|www\.)[^\s"'<>)]{1,2000}/gi
+const EMAIL = /[A-Za-z0-9._%+'-]{1,64}@[A-Za-z0-9-]{1,63}(?:\.[A-Za-z0-9-]{1,63}){1,8}/g
+const PHONE = /(?<![\w.])\+?\(?\d[\d\s().-]{6,24}\d(?!\w)/g
 const SECRET_IN_TEXT =
-  /\beyJ[\w-]+\.[\w-]+\.[\w-]*|\bBearer\s+[\w.~+/=-]{12,}|\b(?:sk|pk|rk|ghp|gho|ghs|xox[abprs]|AKIA)[-_]?[A-Za-z0-9_-]{16,}|\b[0-9a-f]{32,}\b/g
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+  /\beyJ[\w-]{5,300}\.[\w-]{5,300}(?:\.[\w-]{0,300})?|\bBearer\s+[\w.~+/=-]{12,300}|\b(?:sk|pk|rk|ghp|gho|ghs|xox[abprs]|AKIA)[-_]?[A-Za-z0-9_-]{16,300}|\b[0-9a-f]{32,300}\b/g
+const UUID_PATTERN = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+const UUID = new RegExp(`^${UUID_PATTERN}$`, "i")
+const UUID_IN_TEXT = new RegExp(`\\b${UUID_PATTERN}\\b`, "gi")
+const IDENT_PIECE = new RegExp(
+  `${UUID_PATTERN}|eyJ[\\w-]{5,300}\\.[\\w-]{5,300}(?:\\.[\\w-]{0,300})?|[0-9a-f]{16,128}|\\d{6,}`,
+  "gi",
+)
+const LONG_WORD = /\S{24,300}/g
+const PROFILE_SEGMENT = new Set([
+  "in",
+  "u",
+  "user",
+  "users",
+  "profile",
+  "profiles",
+  "people",
+  "pub",
+  "candidate",
+  "candidates",
+  "applicant",
+  "applicants",
+  "member",
+  "members",
+  "company",
+  "school",
+])
+const IDENT_ATTRS = new Set(["id", "name", "class", "for", "form", "list"])
+const ARIA_REFS = /^aria-(?:labelledby|describedby|controls|owns|activedescendant|errormessage|details|flowto)$/
+const PERSONAL_DATA =
+  /(?:^|-)(?:user|username|candidate|applicant|person|member|account|customer|profile|email|phone|fullname|firstname|lastname)(?:-|$)/
 const SAFE_SEGMENT = /^[A-Za-z][A-Za-z0-9._-]{0,40}$/
+
+const tokenWord = (word: string): boolean =>
+  looksLikeToken(word) || (/^[A-Za-z0-9+/=]{24,}$/.test(word) && /\d/.test(word) && /[A-Za-z]/.test(word))
 
 export function looksLikeToken(value: string): boolean {
   const v = value.trim()
@@ -158,7 +191,9 @@ export function looksLikeToken(value: string): boolean {
 function pathShape(path: string): string {
   const parts = path.split("/").map((segment, index, all) => {
     if (segment === "" || segment === "." || segment === "..") return segment
-    if (SAFE_SEGMENT.test(segment) && !looksLikeToken(segment)) return segment
+    const owner = (all[index - 1] ?? "").toLowerCase()
+    if (PROFILE_SEGMENT.has(owner) || segment.startsWith("@")) return "x"
+    if (SAFE_SEGMENT.test(segment) && !looksLikeToken(segment) && !/\d{5,}/.test(segment)) return segment
     return index === all.length - 1 && /^[\w-]+\.(?:pdf|html?|txt)$/i.test(segment) ? segment : "x"
   })
   return parts.join("/").slice(0, 200)
@@ -185,7 +220,9 @@ export function scrubText(text: string): string {
   return text
     .replace(URL_IN_TEXT, (url) => absoluteShape(url.replace(/^[a-z]+:\/*/i, "")))
     .replace(EMAIL, PLACEHOLDER_EMAIL)
+    .replace(UUID_IN_TEXT, HIDDEN_VALUE)
     .replace(SECRET_IN_TEXT, HIDDEN_VALUE)
+    .replace(LONG_WORD, (word) => (tokenWord(word) ? HIDDEN_VALUE : word))
     .replace(PHONE, (match) => {
       const digits = match.replace(/\D/g, "").length
       return digits >= 9 && digits <= 15 ? PLACEHOLDER_PHONE : match
@@ -206,23 +243,40 @@ function cleanStyle(value: string): string | null {
   return kept.length > 0 ? [...new Set(kept)].sort().join(";") : null
 }
 
-function cleanAttr(name: string, value: string): string | null {
+type Idents = Map<string, string>
+
+/** A token inside an identifier becomes `x<n>`, the same one wherever it repeats, so labels, ids and radio names still line up. */
+function scrubIdent(value: string, idents: Idents): string {
+  return value.replace(IDENT_PIECE, (piece) => {
+    let mapped = idents.get(piece)
+    if (!mapped) {
+      mapped = `x${idents.size + 1}`
+      idents.set(piece, mapped)
+    }
+    return mapped
+  })
+}
+
+function cleanAttr(name: string, value: string, idents: Idents): string | null {
   if (
     !ATTR_NAME.test(name) ||
     name.includes(":") ||
     name.startsWith("on") ||
     DROP_ATTRS.has(name) ||
+    name.startsWith("ng-reflect-") ||
     value.length > MAX_ATTR_CHARS
   )
     return null
   if (name === "style") return cleanStyle(value)
   if (URL_ATTRS.has(name)) return name === "href" ? rewriteUrl(value) : "#"
   if (name.startsWith("data-")) {
-    if (ANALYTICS_DATA.test(name) || SECRET_NAME.test(name)) return null
     if (STRUCTURAL_DATA.has(name)) return scrubText(value)
+    if (ANALYTICS_DATA.test(name) || SECRET_NAME.test(name) || PERSONAL_DATA.test(name.slice(5))) return null
     return looksLikeToken(value) || value.search(EMAIL) !== -1 ? null : scrubText(value)
   }
+  if (IDENT_ATTRS.has(name) || ARIA_REFS.test(name)) return scrubIdent(value, idents)
   if (VERBATIM_ATTRS.has(name) || (name.startsWith("aria-") && !SCRUBBED_ARIA.test(name))) return value
+  if (name === "value") return scrubText(scrubIdent(value, idents))
   return scrubText(value)
 }
 
@@ -271,11 +325,11 @@ function placeholderFor(el: Element): Element | null {
   return holder
 }
 
-function cleanElement(el: Element): void {
+function cleanElement(el: Element, idents: Idents): void {
   const tag = el.tagName.toLowerCase()
   for (const attr of Array.from(el.attributes)) {
     const name = attr.name.toLowerCase()
-    const next = cleanAttr(name, attr.value)
+    const next = cleanAttr(name, attr.value, idents)
     el.removeAttribute(attr.name)
     if (next !== null) el.setAttribute(name, next)
   }
@@ -306,7 +360,7 @@ function depthOf(el: Element): number {
   return depth
 }
 
-function sanitizeTree(doc: Document): void {
+function sanitizeTree(doc: Document, idents: Idents): void {
   const all = Array.from(doc.querySelectorAll("*"))
   if (all.length > MAX_ELEMENTS) throw new SanitizeError(`too many elements (over ${MAX_ELEMENTS})`)
   for (const el of all) {
@@ -317,13 +371,13 @@ function sanitizeTree(doc: Document): void {
     } else if (PLACEHOLDER_TAGS.has(tag)) {
       const holder = placeholderFor(el)
       if (holder) {
-        cleanElement(holder)
+        cleanElement(holder, idents)
         el.replaceWith(holder)
       } else {
         el.remove()
       }
     } else {
-      cleanElement(el)
+      cleanElement(el, idents)
     }
   }
 }
@@ -423,7 +477,7 @@ export function sanitizeHtml(html: string): string {
       .replace(/\s+/g, " ")
       .trim()
       .slice(0, MAX_TITLE_CHARS)
-    sanitizeTree(doc)
+    sanitizeTree(doc, new Map())
     const root = [
       `<html lang="${/^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(lang) ? lang : "en"}"${dir === "rtl" || dir === "ltr" ? ` dir="${dir}"` : ""}>`,
       "<head>",
@@ -443,35 +497,70 @@ export function sanitizeHtml(html: string): string {
 
 const OWN_META = '<meta charset="utf-8">'
 
+const TAG = /<[a-z][^\s/>]*(?:"[^"]*"|'[^']*'|[^>"'])*>/gi
+const IDENT_WITH_TOKEN = /\s(?:id|name|for|class)\s*=\s*"[^"]{0,1000}(?:\d{6,}|[0-9a-f]{16,})/i
+
 const VIOLATIONS: readonly [string, RegExp][] = [
   ["script", /<script\b/i],
   ["iframe", /<(?:iframe|frame|object|embed|portal)\b/i],
   ["style element", /<style\b/i],
   ["link, meta or base element", /<(?:link|meta|base)\b/i],
-  ["media element", /<(?:img|video|audio|picture|source|svg|canvas)\b/i],
+  ["media element", /<(?:img|image|video|audio|picture|source|svg|canvas)\b/i],
   ["noscript or template", /<(?:noscript|template)\b/i],
   ["event handler", /\son[a-z]+\s*=/i],
   ["remote url", /(?:\bhttps?:)?\/\/(?!example\.invalid(?:[/"'\s<]|$))[\w.-]+\.[a-z]{2,}/i],
   ["script url", /\b(?:javascript|vbscript):|\bdata:[a-z]+\/[\w.+-]+/i],
   ["css url or import", /url\s*\(|@import|expression\s*\(/i],
   ["srcdoc, src or srcset", /\s(?:srcdoc|src|srcset|nonce|integrity)\s*=/i],
-  ["form action", /<(?:form|button|input)\b[^>]*\s(?:action|formaction)\s*=\s*"(?!#")/i],
-  ["hidden value", /<input\b(?=[^>]*type="hidden")(?=[^>]*value=")(?![^>]*value="x")[^>]*>/i],
+  ["jwt", /eyJ[\w-]{5,300}\.[\w-]{5,300}/],
+  ["uuid", new RegExp(`\\b${UUID_PATTERN}\\b`, "i")],
+  ["long hex string", /\b[0-9a-f]{24,}\b/i],
+  ["identifier with a token", IDENT_WITH_TOKEN],
+  ["ng-reflect attribute", /\sng-reflect-/i],
   ["comment", /<!--/],
 ]
 
+/** The attributes of one tag, read the way a browser does: a `>` inside a quoted value does not end the tag. */
+function attributesOf(tag: string): Map<string, string> {
+  const attrs = new Map<string, string>()
+  for (const match of tag.matchAll(/\s([^\s=/>"']{1,100})(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]*)))?/g)) {
+    attrs.set((match[1] ?? "").toLowerCase(), match[2] ?? match[3] ?? match[4] ?? "")
+  }
+  return attrs
+}
+
+function tagViolations(html: string): string[] {
+  const found: string[] = []
+  for (const [tag] of html.matchAll(TAG)) {
+    const attrs = attributesOf(tag.slice(0, 4000))
+    const name = /^<([a-z][^\s/>]*)/i.exec(tag)?.[1]?.toLowerCase()
+    if (name === "input" && attrs.get("type")?.toLowerCase() === "hidden" && attrs.get("value") !== HIDDEN_VALUE) {
+      found.push(`hidden value: ${tag.slice(0, 80)}`)
+    }
+    if (
+      (name === "form" || name === "button" || name === "input") &&
+      [...attrs].some(([k, v]) => /^(?:form)?action$/.test(k) && v !== "#")
+    ) {
+      found.push(`form action: ${tag.slice(0, 80)}`)
+    }
+  }
+  return found
+}
+
 /** What a committed snapshot must never contain. Independent of `sanitizeHtml`, so a regression there cannot hide itself. */
 export function findViolations(html: string): string[] {
+  if (html.length > MAX_INPUT_CHARS) return ["file is too large"]
   const found: string[] = []
   const body = html.replace(OWN_META, "")
   for (const [name, pattern] of VIOLATIONS) {
     const hit = pattern.exec(body)
     if (hit) found.push(`${name}: ${hit[0].slice(0, 80)}`)
   }
+  found.push(...tagViolations(body))
   for (const email of html.match(EMAIL) ?? []) {
     if (email !== PLACEHOLDER_EMAIL) found.push(`email: ${email.slice(0, 80)}`)
   }
-  const text = body.replace(/<[^>]*>/g, " ")
+  const text = body.replace(/<[^>]{0,4000}>/g, " ")
   const phones = [...(body.match(PHONE) ?? []).filter((match) => /[\s().+-]/.test(match)), ...(text.match(PHONE) ?? [])]
   for (const phone of phones) {
     const digits = phone.replace(/\D/g, "").length

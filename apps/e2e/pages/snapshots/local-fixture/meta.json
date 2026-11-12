@@ -10,7 +10,7 @@
     "text": 6,
     "textarea": 1
   },
-  "root": "#application-form",
+  "root": "body > main > div > form",
   "source": "127.0.0.1",
   "tool": "skiffr-snapshot 0.1.0"
 }

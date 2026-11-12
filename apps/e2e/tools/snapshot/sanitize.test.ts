@@ -105,7 +105,7 @@ describe("sanitizeHtml rewrites", () => {
     ],
     [
       "typed value is dropped",
-      `<input type="text" name="email" value="jane.doe@gmail.com">`,
+      `<input type="text" name="email" value="jane.doe@acme.test">`,
       `<input name="email" type="text">`,
     ],
     [
@@ -245,7 +245,7 @@ describe("findViolations", () => {
   })
 
   test("a bare number in an id is not a phone, one in the text is", () => {
-    expect(findViolations('<label for="4015790004">q</label>')).toEqual([])
+    expect(findViolations('<label for="x1">q</label>')).toEqual([])
     expect(findViolations("<p>4015790004</p>")).not.toEqual([])
   })
 
@@ -253,5 +253,100 @@ describe("findViolations", () => {
     const html =
       '<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<title>t</title>\n</head>\n<body>\n<form action="#"><a href="https://example.invalid/x">u</a><p>user@example.invalid 000-000-0000</p><input name="t" type="hidden" value="x"></form>\n</body>\n</html>\n'
     expect(findViolations(html)).toEqual([])
+  })
+})
+
+describe("sanitizeHtml identifiers and personal values", () => {
+  const cases: [string, string, string][] = [
+    [
+      "a token in an id is replaced the same way in the label that points at it",
+      `<label for="candidate-12345678">Name</label><input id="candidate-12345678" name="n">`,
+      `<label for="candidate-x1">Name</label>\n<input id="candidate-x1" name="n">`,
+    ],
+    [
+      "uuid and jwt in id, name and class",
+      `<input id="9f2c0a1b-7d3e-4c5a-8b6d-123456789abc" name="cards[9f2c0a1b-7d3e-4c5a-8b6d-123456789abc][a]" class="u eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.sig">`,
+      `<input class="u x2" id="x1" name="cards[x1][a]">`,
+    ],
+    [
+      "a person in an identifier",
+      `<input name="jane.smith.5551234567" aria-labelledby="lbl-99887766">`,
+      `<input aria-labelledby="lbl-x2" name="jane.smith.x1">`,
+    ],
+    [
+      "ids the matchers use stay",
+      `<input id="job_application_answers_attributes_4_text_value" name="first_name" class="input">`,
+      `<input class="input" id="job_application_answers_attributes_4_text_value" name="first_name">`,
+    ],
+    [
+      "option uuid value",
+      `<option value="9f2c0a1b-7d3e-4c5a-8b6d-123456789abc">One</option>`,
+      `<option value="x1">One</option>`,
+    ],
+    ["angular model dump", `<input name="a" ng-reflect-model="Jane Smith" ng-reflect-name="x">`, `<input name="a">`],
+    [
+      "personal data attributes",
+      `<div data-candidate-name="Jane Smith" data-user-email="a" data-layout="wide" data-qa="candidate"></div>`,
+      `<div data-layout="wide" data-qa="candidate"></div>`,
+    ],
+    [
+      "profile handle in a link",
+      `<a href="/in/jane-smith/">x</a><a href="/u/janedoe">y</a><a href="/@jane">z</a>`,
+      `<a href="/in/x/">x</a>\n<a href="/u/x">y</a>\n<a href="/@jane">z</a>`.replace("/@jane", "/x"),
+    ],
+    [
+      "uuid and base64 in text",
+      `<p>id 9f2c0a1b-7d3e-4c5a-8b6d-123456789abc key Zm9vYmFyYmF6cXV4MTIzNDU2Nzg5MA== done</p>`,
+      `<p>id x key x done</p>`,
+    ],
+  ]
+  test.each(cases)("%s", (_name, input, expected) => {
+    expect(bodyOf(input)).toBe(expected)
+  })
+
+  test("a handful of identifiers sanitize to themselves on a second pass", () => {
+    const once = sanitizeHtml(page(cases.map(([, html]) => html).join("")))
+    expect(sanitizeHtml(once)).toBe(once)
+  })
+})
+
+describe("sanitizeHtml stays linear on hostile text", () => {
+  const shapes: [string, string][] = [
+    ["a long word", "a".repeat(200_000)],
+    ["alternating digits", "a1".repeat(100_000)],
+    ["jwt prefixes", "eyJ.".repeat(50_000)],
+    ["dots", "a.".repeat(50_000)],
+    ["at signs", "a@".repeat(50_000)],
+    ["digits and spaces", "1 ".repeat(100_000)],
+    ["long hex", "ab".repeat(100_000)],
+  ]
+  test.each(shapes)("%s", (_name, text) => {
+    const started = performance.now()
+    const out = sanitizeHtml(page(`<form><p>${text}</p></form>`))
+    findViolations(out)
+    expect(performance.now() - started).toBeLessThan(3_000)
+  })
+})
+
+describe("findViolations on hand edited files", () => {
+  test("a greater than sign in an earlier attribute does not hide a hidden value", () => {
+    expect(findViolations('<body><input title="a>b" type="hidden" name="t" value="SECRETVALUE"></body>')).not.toEqual(
+      [],
+    )
+  })
+
+  test("a form action hidden behind a quoted greater than sign", () => {
+    expect(findViolations('<body><form title="a>b" action="/steal"></form></body>')).not.toEqual([])
+  })
+
+  test.each([
+    ["image element", "<image src=x>"],
+    ["ng-reflect attribute", '<input ng-reflect-model="Jane">'],
+    ["uuid", '<div data-x="9f2c0a1b-7d3e-4c5a-8b6d-123456789abc"></div>'],
+    ["jwt", '<div class="eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0"></div>'],
+    ["long number in an id", '<input id="candidate-12345678">'],
+    ["long hex", "<p>0123456789abcdef0123456789abcdef</p>"],
+  ])("flags %s", (_name, html) => {
+    expect(findViolations(`<body>${html}</body>`)).not.toEqual([])
   })
 })

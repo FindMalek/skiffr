@@ -2,7 +2,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { connect, FILLED, openApplication } from "../../fixtures/application.ts"
 import { expect, test } from "../../fixtures/extension.ts"
-import { SNAPSHOTS_DIR } from "../../tools/snapshot/cli.ts"
+import { checkSnapshots, SNAPSHOTS_DIR } from "../../tools/snapshot/check.ts"
 import { findViolations } from "../../tools/snapshot/sanitize.ts"
 
 interface Meta {
@@ -21,6 +21,10 @@ const slugs = existsSync(SNAPSHOTS_DIR)
 test.beforeEach(({ mockApi, fixtureServer }) => {
   mockApi.reset()
   fixtureServer.submissions.length = 0
+})
+
+test("the snapshots folder passes the full check", async () => {
+  expect(await checkSnapshots(SNAPSHOTS_DIR)).toEqual([])
 })
 
 for (const slug of slugs) {

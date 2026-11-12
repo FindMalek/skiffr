@@ -2,7 +2,7 @@ import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { type Browser, chromium } from "@playwright/test"
 import { build } from "esbuild"
-import { hostRefusal, localRefusal, urlRefusal } from "./guard.ts"
+import { createRequestGuard, isPrivateAddress, normalizeHost, urlRefusal } from "./guard.ts"
 import { TOOL_VERSION } from "./version.ts"
 
 const DETECT_ENTRY = join(
@@ -87,16 +87,12 @@ function readApplication(rootSelector: string | null): InPage {
     if (!root) return { error: "no application form or dialog found: open it with --click or pick it with --root" }
   }
 
-  const cssPath = (target: Element): string => {
+  const tagPath = (target: Element): string => {
     const parts: string[] = []
     for (let node: Element | null = target; node && node !== document.documentElement; node = node.parentElement) {
-      if (node.id && document.querySelectorAll(`#${CSS.escape(node.id)}`).length === 1) {
-        parts.unshift(`#${CSS.escape(node.id)}`)
-        break
-      }
-      const tag = node.localName
+      const tag = node.localName.replace(/[^a-z0-9-]/g, "")
       const same = node.parentElement
-        ? Array.from(node.parentElement.children).filter((c) => c.localName === tag)
+        ? Array.from(node.parentElement.children).filter((c) => c.localName === node?.localName)
         : [node]
       parts.unshift(same.length > 1 ? `${tag}:nth-of-type(${same.indexOf(node) + 1})` : tag)
     }
@@ -159,7 +155,7 @@ function readApplication(rootSelector: string | null): InPage {
     fields[kind] = (fields[kind] ?? 0) + 1
   }
   return {
-    selector: rootSelector ?? cssPath(root),
+    selector: tagPath(root),
     rootBy,
     outer: clone.outerHTML,
     title: document.title,
@@ -191,10 +187,9 @@ export async function capture(browser: Browser, options: CaptureOptions): Promis
   const refusal = urlRefusal(options.url)
   if (refusal) throw new Error(refusal)
   const start = new URL(options.url)
-  if (!options.allowLocal) {
-    const reason = await hostRefusal(start.hostname)
-    if (reason) throw new Error(`refusing to snapshot: ${reason} (use --allow-local for a local test page)`)
-  }
+  const guard = createRequestGuard({ allowLocal: options.allowLocal, topHost: start.hostname })
+  const reason = await guard(options.url)
+  if (reason) throw new Error(`refusing to snapshot: ${reason} (use --allow-local for a local test page)`)
 
   const context = await browser.newContext({
     userAgent: USER_AGENT,
@@ -205,20 +200,43 @@ export async function capture(browser: Browser, options: CaptureOptions): Promis
     locale: "en-US",
   })
   try {
-    const verdicts = new Map<string, Promise<string | null>>()
+    await context.addInitScript(() => {
+      for (const name of ["WebTransport", "RTCPeerConnection", "webkitRTCPeerConnection", "RTCDataChannel"]) {
+        Object.defineProperty(window, name, { value: undefined, configurable: true })
+      }
+    })
     await context.route("**/*", async (route) => {
       const request = route.request()
       if (request.method() !== "GET" && request.method() !== "HEAD") return route.abort()
       if (request.resourceType() === "media" || request.resourceType() === "font") return route.abort()
-      if (!options.allowLocal) {
-        const host = new URL(request.url()).hostname
-        const verdict =
-          localRefusal(host) ?? (await (verdicts.get(host) ?? verdicts.set(host, hostRefusal(host)).get(host)))
-        if (verdict) return route.abort()
+      if (await guard(request.url())) return route.abort()
+      try {
+        return await route.fulfill({ response: await route.fetch({ maxRedirects: 0, timeout: options.timeoutMs }) })
+      } catch {
+        return route.abort()
       }
-      return route.continue()
+    })
+    await context.routeWebSocket(/.*/, async (socket) => {
+      if (await guard(socket.url())) return socket.close()
+      socket.connectToServer()
     })
     const page = await context.newPage()
+    const top = normalizeHost(start.hostname)
+    const reached: string[] = []
+    const checks: Promise<void>[] = []
+    page.on("response", (response) => {
+      checks.push(
+        response
+          .serverAddr()
+          .then((address) => {
+            const host = normalizeHost(new URL(response.url()).hostname)
+            if (address && isPrivateAddress(address.ipAddress) && !(options.allowLocal && host === top)) {
+              reached.push(`${response.url()} answered from ${address.ipAddress}`)
+            }
+          })
+          .catch(() => undefined),
+      )
+    })
     await page.goto(options.url, { waitUntil: "domcontentloaded", timeout: options.timeoutMs })
     const settle = async (): Promise<void> => {
       await page.waitForLoadState("networkidle", { timeout: options.timeoutMs }).catch(() => undefined)
@@ -233,6 +251,8 @@ export async function capture(browser: Browser, options: CaptureOptions): Promis
       await page.evaluate(`(() => {${await bundleDetect()}\nglobalThis.__skiffrDetect = __skiffrDetect})()`)
     const result = await page.evaluate(readApplication, options.root ?? null)
     if ("error" in result) throw new Error(result.error)
+    await Promise.all(checks)
+    if (reached.length > 0) throw new Error(`a request reached a private address, output refused: ${reached[0]}`)
     const lang = result.lang ? ` lang="${esc(result.lang).replace(/"/g, "")}"` : ""
     const dir = result.dir ? ` dir="${esc(result.dir).replace(/"/g, "")}"` : ""
     return {
@@ -246,4 +266,8 @@ export async function capture(browser: Browser, options: CaptureOptions): Promis
   }
 }
 
-export const launch = (): Promise<Browser> => chromium.launch({ headless: true })
+export const launch = (): Promise<Browser> =>
+  chromium.launch({
+    headless: true,
+    args: ["--force-webrtc-ip-handling-policy=disable_non_proxied_udp", "--disable-quic"],
+  })
