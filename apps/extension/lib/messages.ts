@@ -2,7 +2,9 @@ import {
   AI_FIELD_TEXT_MAX,
   AI_OPTION_TEXT_MAX,
   AI_OPTIONS_MAX,
+  fieldEventInputSchema,
   fieldMappingSchema,
+  LEARNING_FIELDS_MAX,
   siteKeySchema,
 } from "@skiffr/common"
 import { z } from "zod"
@@ -42,6 +44,15 @@ export const fillRequestMessageSchema = z.strictObject({
     .min(1)
     .max(FILL_FIELDS_MAX)
     .refine((fields) => new Set(fields.map((field) => field.id)).size === fields.length, "Field ids must be unique."),
+})
+
+/** What a content script saw after a fill: one event per learnable field, the unchanged and the cleared ones too. */
+export const learningRecordMessageSchema = z.strictObject({
+  type: z.literal("learning-record"),
+  siteKey: siteKeySchema,
+  /** Made once per batch and sent again unchanged on a retry. */
+  batchId: z.uuid(),
+  events: z.array(z.strictObject(fieldEventInputSchema.shape)).min(1).max(LEARNING_FIELDS_MAX),
 })
 
 const errorCode = z.enum(FILL_ERROR_CODES)
@@ -85,9 +96,16 @@ export const fillReportMessageSchema = z.strictObject({
   problem: errorCode.optional(),
 })
 
+export const learningRecordResponseSchema = z.discriminatedUnion("ok", [
+  z.strictObject({ ok: z.literal(true) }),
+  z.strictObject({ ok: z.literal(false), code: errorCode }),
+])
+
 export const siteDisabledResponseSchema = z.strictObject({ disabled: z.boolean() })
 
 export type OpenOptionsMessage = z.infer<typeof openOptionsMessageSchema>
+export type LearningRecordMessage = z.infer<typeof learningRecordMessageSchema>
+export type LearningRecordResponse = z.infer<typeof learningRecordResponseSchema>
 export type FillField = z.infer<typeof fillFieldSchema>
 export type FillRequestMessage = z.infer<typeof fillRequestMessageSchema>
 export type FillSummaryData = z.infer<typeof fillSummarySchema>

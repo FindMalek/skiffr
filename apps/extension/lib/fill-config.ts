@@ -5,6 +5,9 @@ export const FILL_CONFIDENCE_MIN = 0.4
 /** Learned answers are what the person typed before (`site`: on this very form), so they rank above any model guess. */
 export const LEARNED_CONFIDENCE = { site: 1, exact: 1, label: 0.9 } as const
 
+/** The reason a learned answer carries in the mapping, so the learning session can tell where a filled value came from. */
+export const savedAnswerReason = (source: string): string => `saved answer (${source})`
+
 export const FILL_FIELDS_MAX = 300
 export const PROFILE_TTL_MS = 60_000
 export const CALL_TIMEOUT_MS = { lookup: 8_000, profile: 8_000, mapFields: 30_000 } as const
@@ -14,6 +17,14 @@ export const REQUEST_DEADLINE_MS = 45_000
 export const PROFILE_READ_DEADLINE_MS = 20_000
 export const RETRY_BACKOFF_MS = 600
 export const REQUEST_LIMIT = { max: 10, windowMs: 60_000 } as const
+export const RECORD_LIMIT = { max: 12, windowMs: 60_000 } as const
+export const RECORD_TIMEOUT_MS = 15_000
+/** A fill session with no edit for this long is sent as it stands. */
+export const LEARNING_IDLE_MS = 300_000
+/** A session sends at most this many batches: a first one, then follow-ups for edits made since. */
+export const LEARNING_BATCHES_MAX = 3
+/** Pauses before each resend of a batch that failed for a reason worth repeating. */
+export const LEARNING_RETRY_DELAYS_MS = [2_000, 10_000] as const
 /** How long a content script waits for the worker before it gives up on a fill. */
 export const ROUND_TRIP_TIMEOUT_MS = 60_000
 

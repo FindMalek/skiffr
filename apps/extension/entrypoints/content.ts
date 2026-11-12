@@ -4,7 +4,8 @@ import { createRateLimiter } from "@/lib/detect/rate-limit"
 import { createFormWatcher } from "@/lib/detect/watch"
 import { noteFill } from "@/lib/dev-hook"
 import { createWorkerProvider } from "@/lib/fill-client"
-import { type FillOutcome, handleFill, setMappingProvider } from "@/lib/fill-handler"
+import { type FillOutcome, handleFill, setFillObserver, setMappingProvider } from "@/lib/fill-handler"
+import { createLearningSession } from "@/lib/learning-session"
 import {
   type DisableSiteMessage,
   type FillFramesMessage,
@@ -69,6 +70,9 @@ export default defineContentScript({
     let formHere = false
 
     setMappingProvider(createWorkerProvider((message) => browser.runtime.sendMessage(message)))
+    const learning = createLearningSession({ send: (message) => browser.runtime.sendMessage(message) })
+    setFillObserver(learning.begin)
+    ctx.onInvalidated(() => learning.stop())
 
     let toastState = INITIAL_TOAST_STATE
     const view = createToastView(document, {

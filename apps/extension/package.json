@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@orpc/client": "catalog:",
+    "@skiffr/ai": "workspace:*",
     "@skiffr/orpc": "workspace:*",
     "@skiffr/common": "workspace:*",
     "zod": "catalog:",
