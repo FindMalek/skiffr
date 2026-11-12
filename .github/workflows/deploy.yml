@@ -1,0 +1,88 @@
+name: deploy
+
+# Every green push to main builds the four images, pushes them to ghcr and redeploys them on the self-hosted Dokploy.
+# Skipped until the repo variable DEPLOY_ENABLED is "true". Needs variables PRODUCTION_DOMAIN and DOKPLOY_URL, secret DOKPLOY_TOKEN.
+# Optional: variables TURBO_API and TURBO_TEAM with secret TURBO_TOKEN, secret GHCR_READ_TOKEN if the images are private.
+# First time: run scripts/dokploy-bootstrap.mjs, see the Dokploy section of apps/docs/content/docs/deploy.mdx.
+
+on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  IMAGE_PREFIX: ghcr.io/findmalek/skiffr
+  SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+jobs:
+  build:
+    name: build ${{ matrix.app }}
+    if: vars.DEPLOY_ENABLED == 'true' && ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: true
+      matrix:
+        app: [api, web, dashboard, docs]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.SHA }}
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: apps/${{ matrix.app }}/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}-${{ matrix.app }}:main
+            ${{ env.IMAGE_PREFIX }}-${{ matrix.app }}:sha-${{ env.SHA }}
+          build-args: |
+            TURBO_API=${{ vars.TURBO_API }}
+            TURBO_TEAM=${{ vars.TURBO_TEAM }}
+            WEB_URL=https://${{ vars.PRODUCTION_DOMAIN }}
+            DOCS_URL=https://docs.${{ vars.PRODUCTION_DOMAIN }}
+          secrets: ${{ secrets.TURBO_TOKEN && format('turbo_token={0}', secrets.TURBO_TOKEN) || '' }}
+          cache-from: type=gha,scope=${{ matrix.app }}
+          cache-to: type=gha,scope=${{ matrix.app }},mode=max,ignore-error=true
+
+  deploy:
+    name: dokploy
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment:
+      name: production
+      url: https://${{ vars.PRODUCTION_DOMAIN }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.SHA }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: node .github/scripts/deploy.mjs
+        env:
+          IMAGE_TAG: sha-${{ env.SHA }}
+          DOKPLOY_URL: ${{ vars.DOKPLOY_URL }}
+          DOKPLOY_TOKEN: ${{ secrets.DOKPLOY_TOKEN }}
+          PRODUCTION_DOMAIN: ${{ vars.PRODUCTION_DOMAIN }}
+          GHCR_USERNAME: ${{ github.repository_owner }}
+          GHCR_READ_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}

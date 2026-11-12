@@ -1,0 +1,65 @@
+@utility viz {
+  --viz-1: #2a78d6;
+  --viz-2: #eb6834;
+  --viz-3: #1baf7a;
+  --viz-seq: #2a78d6;
+  --viz-o1: #86b6ef;
+  --viz-o2: #5598e7;
+  --viz-o3: #2a78d6;
+  --viz-o4: #1c5cab;
+
+  .dark & {
+    --viz-1: #3987e5;
+    --viz-2: #d95926;
+    --viz-3: #199e70;
+    --viz-seq: #3987e5;
+    --viz-o1: #1c5cab;
+    --viz-o2: #2a78d6;
+    --viz-o3: #5598e7;
+    --viz-o4: #86b6ef;
+  }
+}
+
+@keyframes viz-grow-y {
+  from {
+    transform: scaleY(0);
+  }
+}
+
+@keyframes viz-grow-x {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+@utility viz-grow-y {
+  @media (prefers-reduced-motion: no-preference) {
+    transform-origin: bottom;
+    animation: viz-grow-y 0.45s ease-out both;
+  }
+}
+
+@utility viz-grow-x {
+  @media (prefers-reduced-motion: no-preference) {
+    transform-origin: left;
+    animation: viz-grow-x 0.45s ease-out both;
+  }
+}
+
+@utility viz-mark {
+  @media (forced-colors: active) {
+    forced-color-adjust: none;
+    background-image: repeating-linear-gradient(45deg, transparent 0 3px, CanvasText 3px 4px);
+  }
+}
+
+@utility viz-row {
+  display: grid;
+  grid-template-columns: minmax(0, 6.5rem) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem;
+
+  @media (min-width: 40rem) {
+    grid-template-columns: minmax(0, 9rem) minmax(0, 1fr) auto;
+  }
+}
