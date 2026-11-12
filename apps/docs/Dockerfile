@@ -15,7 +15,7 @@ COPY --from=pruner /app/out/full/ .
 ARG TURBO_API
 ARG TURBO_TEAM
 ARG DOCS_URL
-ENV NEXT_TELEMETRY_DISABLED=1 DOCS_URL=$DOCS_URL
+ENV NEXT_TELEMETRY_DISABLED=1
 RUN --mount=type=secret,id=turbo_token,env=TURBO_TOKEN pnpm turbo build --filter=docs
 
 FROM node:24-alpine AS runner
