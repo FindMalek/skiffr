@@ -19,7 +19,8 @@ import {
   isSiteDisabledMessage,
   type SiteDisabledResponse,
 } from "@/lib/messages"
-import { disableSite, getDisabledSites } from "@/lib/storage"
+import { createNextJobHandler } from "@/lib/next-job"
+import { disableNextJobOffers, disableSite, getDisabledSites, getNoNextJobSites } from "@/lib/storage"
 
 const BADGE_MS = 3000
 const NO_RECEIVER = "Receiving end does not exist"
@@ -65,11 +66,14 @@ async function fillChildFrames(tabId: number): Promise<void> {
 }
 
 async function hideStorageFromContentScripts(): Promise<void> {
-  if (typeof browser.storage.local.setAccessLevel !== "function") return
-  try {
-    await browser.storage.local.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" })
-  } catch (error) {
-    console.error("[skiffr] could not restrict storage access", error)
+  // local holds the token, session holds the frame records and the pending next job offers
+  for (const area of [browser.storage.local, browser.storage.session]) {
+    if (typeof area.setAccessLevel !== "function") continue
+    try {
+      await area.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" })
+    } catch (error) {
+      console.error("[skiffr] could not restrict storage access", error)
+    }
   }
 }
 
@@ -166,6 +170,20 @@ export default defineBackground(() => {
     call: (run) => apiFetch(run),
     isTrustedFrame,
   })
+  const nextJobs = createNextJobHandler({
+    extensionId: browser.runtime.id,
+    extensionUrl: browser.runtime.getURL("/"),
+    call: (run) => apiFetch(run),
+    isTrustedFrame,
+    topUrl: (tabId) => frames().topUrl(tabId),
+    storage: browser.storage.session,
+    isMuted: async (site) => (await getNoNextJobSites()).includes(site),
+    mute: disableNextJobOffers,
+    open: async (url, windowId) => {
+      await browser.tabs.create({ url, active: true, ...(windowId === undefined ? {} : { windowId }) })
+    },
+    offer: (tabId, message) => toTab(tabId, message, { frameId: 0 }),
+  })
   browser.runtime.onMessage.addListener(handleContentMessage)
   browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const pending = fillRequests.handle(message, sender)
@@ -179,12 +197,19 @@ export default defineBackground(() => {
     pending.then(sendResponse, () => sendResponse({ ok: false, code: "failed" }))
     return true
   })
+  browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    const pending = nextJobs.handle(message, sender)
+    if (!pending) return false
+    pending.then(sendResponse, () => sendResponse({ ok: false, code: "failed" }))
+    return true
+  })
   browser.storage.onChanged.addListener((changes, area) => {
     if (area === "local" && changes.settings) fillService.clear()
   })
   browser.tabs.onRemoved.addListener((tabId) => {
     fillRequests.forgetTab(tabId)
     learningRecords.forgetTab(tabId)
+    void nextJobs.forgetTab(tabId)
     void frames().reset(tabId)
   })
   browser.commands.onCommand.addListener((command) => {

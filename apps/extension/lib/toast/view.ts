@@ -1,8 +1,18 @@
 import { TOAST_CSS } from "./styles"
 
-export type ToastAction = "settings" | "retry"
+export type ToastAction = "settings" | "retry" | "open-next" | "mark-applied" | "not-now" | "stop-next"
 /** What the toast says after the person said yes: working on it, or how it went. */
-export type ToastMessage = { text: string; actions?: readonly ToastAction[]; busy?: boolean }
+export type ToastMessage = {
+  text: string
+  actions?: readonly ToastAction[]
+  busy?: boolean
+  /** Close after this long instead of the usual spell. */
+  dismissMs?: number
+  /** The next job offer has the most to say, so it gets the biggest box. Every other message is one fixed size. */
+  size?: "offer"
+  /** The person closed it, or it timed out. Not called when another message replaces it or the page hides it. */
+  onClose?: () => void
+}
 export type ToastView = { show: () => void; showMessage: (message: ToastMessage) => void; hide: () => void }
 
 type ToastHandlers = {
@@ -12,19 +22,44 @@ type ToastHandlers = {
   onTimeout: () => void
   onSettings?: () => void
   onRetry?: () => void
+  onOpenNext?: () => void
+  onMarkApplied?: () => void
+  onStopNext?: () => void
 }
 
 const ASK_TITLE = "Autofill this application?"
 const MESSAGE_DISMISS_MS = 12_000
-const ACTION_LABEL: Record<ToastAction, string> = { settings: "Open settings", retry: "Retry" }
+const ACTION_LABEL: Record<ToastAction, string> = {
+  settings: "Open settings",
+  retry: "Retry",
+  "open-next": "Open next job",
+  "mark-applied": "Mark applied",
+  "not-now": "Not now",
+  "stop-next": "Don't ask on this site",
+}
+const LINK_ACTIONS: ReadonlySet<ToastAction> = new Set(["stop-next"])
 
 const AUTO_DISMISS_MS = 20_000
 const MAX_REMOUNTS = 20
+/** A toast has one of three fixed heights, whatever it says: the box a page can hit test or observe must not tell how long the text is (long text is cut with an ellipsis). */
+type Kind = "ask" | "result" | "offer"
+const KINDS: readonly Kind[] = ["ask", "result", "offer"]
+
+/** The host box never depends on what the toast says: a page can measure its host element, not what is inside the closed root. */
 const HOST_STYLE: Record<string, string> = {
   all: "initial",
   position: "fixed",
   right: "16px",
   bottom: "16px",
+  display: "flex",
+  "flex-direction": "column",
+  "justify-content": "flex-end",
+  width: "320px",
+  "max-width": "calc(100vw - 32px)",
+  height: "240px",
+  "max-height": "calc(100vh - 32px)",
+  // the host is only a frame: clicks outside the toast reach the page
+  "pointer-events": "none",
   "z-index": "2147483647",
   contain: "layout style",
   // `all: initial` leaves direction alone, so a right to left page would mirror the toast
@@ -68,6 +103,8 @@ export function createToastView(doc: Document, handlers: ToastHandlers): ToastVi
   let rowEl: HTMLElement | null = null
   let primary: (() => void) | null = handlers.onYes
   let onEscape: () => void = handlers.onNo
+  let onClose: (() => void) | undefined
+  let kind: Kind = "ask"
 
   function arm(): void {
     clearTimeout(timer)
@@ -82,7 +119,7 @@ export function createToastView(doc: Document, handlers: ToastHandlers): ToastVi
     style.textContent = TOAST_CSS
 
     const toast = doc.createElement("div")
-    toast.className = "toast"
+    toast.className = `toast ${kind}`
     toast.setAttribute("role", "dialog")
     toast.setAttribute("aria-label", "skiffr autofill")
     toast.tabIndex = -1
@@ -110,6 +147,10 @@ export function createToastView(doc: Document, handlers: ToastHandlers): ToastVi
       close: () => dismiss(),
       settings: () => handlers.onSettings?.(),
       retry: () => handlers.onRetry?.(),
+      "open-next": () => handlers.onOpenNext?.(),
+      "mark-applied": () => handlers.onMarkApplied?.(),
+      "not-now": () => dismiss(),
+      "stop-next": () => handlers.onStopNext?.(),
     }
     toast.addEventListener("click", (event) => {
       if (!event.isTrusted) return
@@ -185,9 +226,16 @@ export function createToastView(doc: Document, handlers: ToastHandlers): ToastVi
     watch(root)
   }
 
+  function applyKind(): void {
+    toastEl?.classList.remove(...KINDS)
+    toastEl?.classList.add(kind)
+  }
+
   function dismiss(): void {
     fromKeyboard = false
+    const closed = onClose
     view.hide()
+    closed?.()
   }
 
   const view: ToastView = {
@@ -200,8 +248,11 @@ export function createToastView(doc: Document, handlers: ToastHandlers): ToastVi
       mount()
       arm()
     },
-    showMessage({ text, actions = [], busy = false }) {
-      dismissMs = busy ? 0 : MESSAGE_DISMISS_MS
+    showMessage({ text, actions = [], busy = false, size, dismissMs: spell = MESSAGE_DISMISS_MS, onClose: closeHook }) {
+      kind = size ?? (busy ? "ask" : "result")
+      applyKind()
+      dismissMs = busy ? 0 : spell
+      onClose = closeHook
       onDismiss = () => dismiss()
       primary = null
       onEscape = () => dismiss()
@@ -213,8 +264,10 @@ export function createToastView(doc: Document, handlers: ToastHandlers): ToastVi
       // a new toast fills its title on the next frame, so the live region announces it; an open one changes in place
       if (!fresh) titleEl.textContent = text
       titleEl.style.marginBottom = busy || actions.length === 0 ? "0" : ""
-      const buttons = actions.map((action, i) => button(doc, ACTION_LABEL[action], action, i === 0 ? "primary" : ""))
-      if (!busy) buttons.push(button(doc, "Close", "close", "link"))
+      const buttons = actions.map((action, i) =>
+        button(doc, ACTION_LABEL[action], action, LINK_ACTIONS.has(action) ? "link" : i === 0 ? "primary" : ""),
+      )
+      if (!busy && !actions.includes("not-now")) buttons.push(button(doc, "Close", "close", "link"))
       rowEl.replaceChildren(...buttons)
       if (fromKeyboard) {
         // a node that was only just attached cannot always take focus before its first frame, so try again then
@@ -225,6 +278,8 @@ export function createToastView(doc: Document, handlers: ToastHandlers): ToastVi
     },
     hide() {
       clearTimeout(timer)
+      onClose = undefined
+      kind = "ask"
       currentTitle = ASK_TITLE
       dismissMs = AUTO_DISMISS_MS
       onDismiss = handlers.onTimeout

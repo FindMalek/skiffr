@@ -14,7 +14,13 @@ const FORM = `<form id="app">
 
 async function setup(
   reply: (attempt: number) => unknown = () => ({ ok: true }),
-  options: { html?: string; idleMs?: number; retryDelaysMs?: number[] } = {},
+  options: {
+    html?: string
+    idleMs?: number
+    retryDelaysMs?: number[]
+    onSubmitted?: () => void
+    activated?: () => boolean
+  } = {},
 ) {
   const { document, window, $ } = mount(options.html ?? FORM)
   const fields = collectFields(document).filter(
@@ -38,6 +44,8 @@ async function setup(
     newBatchId: () => crypto.randomUUID(),
     idleMs: options.idleMs ?? 60_000,
     retryDelaysMs: options.retryDelaysMs ?? [1, 1],
+    onSubmitted: options.onSubmitted,
+    ...("activated" in options ? { activated: options.activated } : { activated: () => true }),
   })
   session.begin({ root: document, fields, mapping, summary })
   const fire = (target: EventTarget, type: string, trustedEvent = true) => {
@@ -68,6 +76,35 @@ const byLabel = (message: LearningRecordMessage | undefined, label: string) =>
   message?.events.find((event) => event.label === label)
 
 describe("learning session", () => {
+  test("the person submitting the application form is reported, a scripted or other form's submit is not", async () => {
+    let submitted = 0
+    const { submit, fire, $ } = await setup(undefined, { onSubmitted: () => submitted++ })
+    submit("#header")
+    fire($("#app"), "submit", false)
+    expect(submitted).toBe(0)
+    submit()
+    expect(submitted).toBe(1)
+  })
+
+  test("a trusted submit with no recent click or key press (a script's requestSubmit) is not reported, the batch still goes", async () => {
+    let submitted = 0
+    let active = false
+    const { sent, submit } = await setup(undefined, { onSubmitted: () => submitted++, activated: () => active })
+    submit()
+    expect(submitted).toBe(0)
+    expect(sent).toHaveLength(1)
+    active = true
+    submit()
+    expect(submitted).toBe(1)
+  })
+
+  test("without the user activation api nothing is reported", async () => {
+    let submitted = 0
+    const { submit } = await setup(undefined, { onSubmitted: () => submitted++, activated: undefined })
+    submit()
+    expect(submitted).toBe(0)
+  })
+
   test("submit sends one event for every field: corrected, untouched and never filled", async () => {
     const { sent, type, submit } = await setup()
     type("#first", "Ada Lovelace")

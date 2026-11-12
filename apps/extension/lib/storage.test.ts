@@ -1,5 +1,13 @@
 import { expect, test } from "bun:test"
-import { DEFAULT_SETTINGS, disableSite, getDisabledSites, getSettings, setSettings } from "./storage"
+import {
+  DEFAULT_SETTINGS,
+  disableNextJobOffers,
+  disableSite,
+  getDisabledSites,
+  getNoNextJobSites,
+  getSettings,
+  setSettings,
+} from "./storage"
 
 function fakeArea(initial: Record<string, unknown> = {}) {
   const data = { ...initial }
@@ -26,4 +34,11 @@ test("disabled sites are stored once per lowercase hostname", async () => {
   await disableSite("Jobs.Example.com", area)
   await disableSite("jobs.example.com", area)
   expect(await getDisabledSites(area)).toEqual(["jobs.example.com"])
+})
+
+test("muting the next job offer does not disable autofill on the site", async () => {
+  const area = fakeArea()
+  await disableNextJobOffers("Jobs.Example.com", area)
+  expect(await getNoNextJobSites(area)).toEqual(["jobs.example.com"])
+  expect(await getDisabledSites(area)).toEqual([])
 })

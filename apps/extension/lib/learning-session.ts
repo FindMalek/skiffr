@@ -20,6 +20,14 @@ export type LearningSessionDeps = {
   newBatchId?: () => string
   idleMs?: number
   retryDelaysMs?: readonly number[]
+  /**
+   * The main form of the application was submitted by a trusted submit event while the person's click or key press was
+   * recent. A page script can still call `requestSubmit()` right after any click of the person, so this is a hint to
+   * ask, never a proof that they applied: everything it leads to waits for their own choice.
+   */
+  onSubmitted?: () => void
+  /** Whether the person acted on the page a moment ago (transient user activation). */
+  activated?: () => boolean
 }
 
 export type LearningSession = {
@@ -78,6 +86,8 @@ export function createLearningSession({
   newBatchId = () => crypto.randomUUID(),
   idleMs = LEARNING_IDLE_MS,
   retryDelaysMs = LEARNING_RETRY_DELAYS_MS,
+  onSubmitted,
+  activated = () => win.navigator.userActivation?.isActive === true,
 }: LearningSessionDeps): LearningSession {
   let current: Active | null = null
 
@@ -236,7 +246,9 @@ export function createLearningSession({
       const entries = liveFields(active.roots, active.fields)
       const main = mainForm(entries)
       const holds = entries.some((entry) => !entry.gone && (entry.field.el as HTMLInputElement).form === event.target)
-      if (main ? event.target === main : holds) flush(active)
+      if (!(main ? event.target === main : holds)) return
+      flush(active)
+      if (event.isTrusted && activated()) onSubmitted?.()
     }
     const onHide = () => {
       if (doc.visibilityState === "hidden") flush(active)

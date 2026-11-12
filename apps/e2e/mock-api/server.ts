@@ -36,6 +36,20 @@ export type LookupHandler = (input: { siteKey: string; fields: { id: string; lab
 
 export type RecordedBatch = z.output<typeof recordInputSchema>
 
+/** What the extension reads of a queued job. The ids must be uuids: the extension checks them. */
+export interface MockJob {
+  id: string
+  url: string
+  canonicalId: string
+  title: string
+  company: string
+}
+
+export interface RecordedApplication {
+  jobId: string
+  ats: string
+}
+
 export interface RecordedRequest {
   method: string
   path: string
@@ -49,6 +63,14 @@ export interface MockApi {
   requests: RecordedRequest[]
   /** Batches `learning.record` accepted, in order. A repeat of a batch id with the same events is answered but not added. */
   records: RecordedBatch[]
+  /** The queued jobs `jobs.list` answers with, oldest first. */
+  setQueue: (jobs: MockJob[]) => void
+  /** Make `jobs.list` fail with this status until reset, whatever else is asked. */
+  failQueue: (status: number) => void
+  /** Make `jobs.list` answer this many milliseconds late, until reset. */
+  delayQueue: (ms: number) => void
+  /** Applications `applications.create` accepted, in order. Each one takes its job out of the queue. */
+  applications: RecordedApplication[]
   /** Replace the canned `ai.mapFields` answer. */
   onMapFields: (handler: MapFieldsHandler) => void
   /** Replace the canned `learning.lookup` answer (no saved answers by default). */
@@ -149,6 +171,10 @@ export async function startMockApi(): Promise<MockApi> {
     })
   let lookup: LookupHandler = fromLearned
   let failure: { status: number; code: string } | null = null
+  let queue: MockJob[] = []
+  let queueStatus: number | null = null
+  let queueDelayMs = 0
+  const applications: RecordedApplication[] = []
 
   // oRPC's wire format: POST /rpc/<router>/<procedure> with `{ json: input }`, answered with `{ json: output }`
   const route = (method: string, path: string, body: unknown): unknown => {
@@ -188,6 +214,17 @@ export async function startMockApi(): Promise<MockApi> {
       }
       return recordedOutput(input)
     }
+    if (method === "POST" && path === "/rpc/jobs/list") {
+      if (queueStatus !== null) throw new HttpError(queueStatus, "INTERNAL_SERVER_ERROR", "mock: queue down")
+      return queue
+    }
+    if (method === "POST" && path === "/rpc/applications/create") {
+      const input = body as RecordedApplication
+      if (!queue.some((job) => job.id === input.jobId)) throw new HttpError(404, "NOT_FOUND", "Job not found.")
+      applications.push({ jobId: input.jobId, ats: input.ats })
+      queue = queue.filter((job) => job.id !== input.jobId)
+      return { id: "application-e2e", jobId: input.jobId, ats: input.ats, status: "applied" }
+    }
     throw new HttpError(404, "NOT_FOUND", `The mock api has no ${method} ${path}`)
   }
 
@@ -203,6 +240,7 @@ export async function startMockApi(): Promise<MockApi> {
         const body = ((await readJson(req)) as { json?: unknown } | undefined)?.json
         const authorization = req.headers.authorization
         requests.push({ method, path, authorization, body })
+        if (path === "/rpc/jobs/list" && queueDelayMs > 0) await new Promise((r) => setTimeout(r, queueDelayMs))
         if (failure) {
           const { status, code } = failure
           failure = null
@@ -226,6 +264,16 @@ export async function startMockApi(): Promise<MockApi> {
     url: `http://127.0.0.1:${port}`,
     requests,
     records,
+    applications,
+    setQueue: (jobs) => {
+      queue = jobs
+    },
+    failQueue: (status) => {
+      queueStatus = status
+    },
+    delayQueue: (ms) => {
+      queueDelayMs = ms
+    },
     onMapFields: (handler) => {
       mapFields = handler
     },
@@ -240,6 +288,10 @@ export async function startMockApi(): Promise<MockApi> {
       mapFields = defaultMapFields
       lookup = fromLearned
       records.length = 0
+      applications.length = 0
+      queue = []
+      queueStatus = null
+      queueDelayMs = 0
       batches.clear()
       learned.clear()
       failure = null

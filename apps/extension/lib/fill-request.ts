@@ -10,7 +10,7 @@ export type FillSender = {
   frameId?: number
   documentId?: string
   documentLifecycle?: string
-  tab?: { id?: number; active?: boolean }
+  tab?: { id?: number; active?: boolean; windowId?: number }
 }
 
 export type FillRequestDeps = {

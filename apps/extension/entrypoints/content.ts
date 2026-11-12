@@ -1,12 +1,15 @@
 import { browser } from "wxt/browser"
 import { defineContentScript } from "wxt/utils/define-content-script"
+import { offerScope, siteKey } from "@/lib/detect/ats"
 import { createRateLimiter } from "@/lib/detect/rate-limit"
 import { createFormWatcher } from "@/lib/detect/watch"
 import { noteFill } from "@/lib/dev-hook"
 import { createWorkerProvider } from "@/lib/fill-client"
+import { NEXT_OFFER_MAX_MS } from "@/lib/fill-config"
 import { type FillOutcome, handleFill, setFillObserver, setMappingProvider } from "@/lib/fill-handler"
 import { createLearningSession } from "@/lib/learning-session"
 import {
+  type ApplicationSubmittedMessage,
   type DisableSiteMessage,
   type FillFramesMessage,
   type FillReportMessage,
@@ -16,12 +19,17 @@ import {
   isFillMessage,
   isFillReportMessage,
   isFormDetectedMessage,
+  isNextOfferMessage,
   isReportAgainMessage,
+  type NextDecisionMessage,
+  type NextOfferMessage,
+  nextJobResponseSchema,
   type OpenOptionsMessage,
   type ProbeFramesMessage,
   type SiteDisabledMessage,
   type SiteDisabledResponse,
 } from "@/lib/messages"
+import { EXPIRED_MESSAGE, type NextOffer, type OfferNote, offerMessage } from "@/lib/toast/offer"
 import { type FillTally, resultMessage } from "@/lib/toast/result"
 import { INITIAL_TOAST_STATE, reduceToast, type ToastEvent } from "@/lib/toast/state"
 import { createToastView } from "@/lib/toast/view"
@@ -30,6 +38,7 @@ type NavigationTarget = { addEventListener: (type: "navigatesuccess", listener: 
 
 const allowFormDetected = createRateLimiter(3, 5_000)
 const allowFrameNavigated = createRateLimiter(10, 5_000)
+const allowSubmitted = createRateLimiter(3, 5_000)
 
 const CHILD_WAIT_MS = 10_000
 
@@ -54,10 +63,12 @@ type Outgoing =
   | DisableSiteMessage
   | FillReportMessage
   | OpenOptionsMessage
+  | ApplicationSubmittedMessage
 
 function send(message: Outgoing): void {
   if (message.type === "form-detected" && !allowFormDetected()) return
   if (message.type === "frame-navigated" && !allowFrameNavigated()) return
+  if (message.type === "application-submitted" && !allowSubmitted()) return
   browser.runtime.sendMessage(message).catch(() => {})
 }
 
@@ -70,7 +81,13 @@ export default defineContentScript({
     let formHere = false
 
     setMappingProvider(createWorkerProvider((message) => browser.runtime.sendMessage(message)))
-    const learning = createLearningSession({ send: (message) => browser.runtime.sendMessage(message) })
+    const learning = createLearningSession({
+      send: (message) => browser.runtime.sendMessage(message),
+      onSubmitted: () => {
+        const site = siteKey(location.href)
+        if (site) send({ type: "application-submitted", siteKey: site })
+      },
+    })
     setFillObserver(learning.begin)
     ctx.onInvalidated(() => learning.stop())
 
@@ -82,7 +99,72 @@ export default defineContentScript({
       onTimeout: () => dispatch("timeout"),
       onSettings: () => send({ type: "open-options" }),
       onRetry: () => fillFromTop(),
+      onOpenNext: () => void decide("open"),
+      onMarkApplied: () => void decide("mark"),
+      onStopNext: () => {
+        void answerOffer("never")
+        offer = null
+        view.hide()
+      },
     })
+
+    // the next job offer of the worker: what is left to choose, and nothing the page could turn into an address
+    let offer: (NextOffer & { id: string; until: number }) | null = null
+
+    /** "invalid": the worker has no such offer any more (it ran out, or the tab left the place it was made for). */
+    function answerOffer(action: NextDecisionMessage["action"]): Promise<"ok" | "invalid" | "failed"> {
+      if (!offer) return Promise.resolve("failed")
+      const message: NextDecisionMessage = { type: "next-decision", offerId: offer.id, action }
+      return browser.runtime
+        .sendMessage(message)
+        .then((reply: unknown): "ok" | "invalid" | "failed" => {
+          const parsed = nextJobResponseSchema.safeParse(reply)
+          if (!parsed.success) return "failed"
+          if (parsed.data.ok) return "ok"
+          return parsed.data.code === "invalid" ? "invalid" : "failed"
+        })
+        .catch(() => "failed")
+    }
+
+    function showOffer(note?: OfferNote): void {
+      const message = offer && Date.now() < offer.until ? offerMessage(offer, note) : null
+      if (!offer || !message) {
+        offer = null
+        return
+      }
+      // once the person chose something the rest stays until they answer it or the offer runs out: they may be in the opened tab
+      const dismissMs = note && (offer.matched || offer.next) ? offer.until - Date.now() : message.dismissMs
+      view.showMessage({ ...message, dismissMs, onClose: () => void answerOffer("dismiss") })
+      if (!offer.matched && !offer.next) offer = null
+    }
+
+    async function decide(action: "open" | "mark"): Promise<void> {
+      if (!offer) return
+      const answer = await answerOffer(action)
+      if (!offer) return
+      if (answer === "invalid") {
+        // its choices would all fail now: say so instead of leaving them up
+        offer = null
+        view.showMessage(EXPIRED_MESSAGE)
+        return
+      }
+      const done = answer === "ok"
+      if (done) offer = action === "open" ? { ...offer, next: null } : { ...offer, matched: null }
+      if (action === "open") showOffer(done ? "opened" : "open-failed")
+      else showOffer(done ? "marked" : "mark-failed")
+    }
+
+    function onNextOffer(message: NextOfferMessage): void {
+      // the offer was made for the page that was submitted: a page on another site never shows it
+      if (message.scope !== offerScope(location.href)) return
+      offer = {
+        id: message.offerId,
+        matched: message.matched,
+        next: message.next,
+        until: Date.now() + NEXT_OFFER_MAX_MS,
+      }
+      showOffer()
+    }
 
     // one toast tells how the whole page went: this frame's fill and what trusted child frames report
     let tally: FillTally & { children: number } = { filled: 0, review: 0, suggested: 0, children: 0 }
@@ -221,6 +303,8 @@ export default defineContentScript({
       } else if (isTop && isChildFormsGoneMessage(message)) {
         formInChildFrame = false
         if (!formHere) dispatch("navigated")
+      } else if (isTop && isNextOfferMessage(message)) {
+        onNextOffer(message)
       } else if (!isTop && isReportAgainMessage(message) && formHere) {
         send({ type: "form-detected" })
       }
