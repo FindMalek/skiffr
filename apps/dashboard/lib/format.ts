@@ -1,10 +1,15 @@
 /**
  * Dates, durations and numbers for the dashboard, one place so every screen reads the same.
  *
- * Every helper is pure and total: null, undefined, NaN and invalid dates give `NA`, never a throw or "Invalid Date".
- * `locale` is a BCP 47 tag and falls back to `DEFAULT_LOCALE` when it is malformed. `timeZone` is an IANA name and
- * defaults to the runtime's zone (the viewer's in a browser). Stats days are UTC days: format them with
- * `timeZone: "UTC"`, never in the viewer's zone, so a day label matches the bucket the API counted.
+ * Every helper is pure and total: null, undefined, NaN, invalid dates and values of the wrong type give `NA`, never a
+ * throw or "Invalid Date". `locale` is a BCP 47 tag and falls back to `DEFAULT_LOCALE` when it is malformed.
+ * `timeZone` is an IANA name and defaults to the runtime's zone (the viewer's in a browser); lists should pass it,
+ * which is what `<Time>` does. Stats days are UTC days: format them with `timeZone: "UTC"`, never in the viewer's zone,
+ * so a day label matches the bucket the API counted.
+ *
+ * Inputs: a number is epoch milliseconds (seconds are not guessed). A string with no zone, "2026-11-13T10:00" or
+ * "2026-11-13 10:00", is read as UTC so server and browser agree. Words that are not units ("just now", "under",
+ * "of", the noun and its plural) are English only.
  */
 
 export const NA = "n/a"
@@ -25,53 +30,85 @@ const DAY = 24 * HOUR
 const SKEW = 5 * MINUTE
 const RELATIVE_DAYS = 7
 
+const ZONELESS = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/
+
 export function toDate(value: DateInput): Date | null {
-  if (value === null || value === undefined || value === "") return null
-  const date = value instanceof Date ? value : new Date(value)
+  let date: Date
+  if (value instanceof Date) date = value
+  else if (typeof value === "number") date = new Date(value)
+  else if (typeof value === "string" && value !== "")
+    date = new Date(ZONELESS.test(value) ? `${value.replace(" ", "T")}Z` : value)
+  else return null
   return Number.isNaN(date.getTime()) ? null : date
 }
 
-function safeLocale(locale: string | undefined): string {
-  if (!locale) return DEFAULT_LOCALE
-  try {
-    return Intl.getCanonicalLocales(locale)[0] ?? DEFAULT_LOCALE
-  } catch {
-    return DEFAULT_LOCALE
+const CACHE_LIMIT = 64
+
+/** A Map that is emptied when it fills, so odd input (a hostile locale) cannot grow it without bound. */
+function boundedMap<V>(): { get: (key: string) => V | undefined; set: (key: string, value: V) => V } {
+  const map = new Map<string, V>()
+  return {
+    get: (key) => map.get(key),
+    set: (key, value) => {
+      if (map.size >= CACHE_LIMIT) map.clear()
+      map.set(key, value)
+      return value
+    },
   }
 }
 
+const locales = boundedMap<string>()
+const zones = boundedMap<string>()
+
+function safeLocale(locale: string | undefined): string {
+  if (!locale) return DEFAULT_LOCALE
+  const known = locales.get(locale)
+  if (known !== undefined) return known
+  try {
+    return locales.set(locale, Intl.getCanonicalLocales(locale)[0] ?? DEFAULT_LOCALE)
+  } catch {
+    return locales.set(locale, DEFAULT_LOCALE)
+  }
+}
+
+/** The name is looked up once; "" marks a zone the runtime rejected. */
 function safeZone(timeZone: string | undefined): string | undefined {
   if (!timeZone) return undefined
+  const known = zones.get(timeZone)
+  if (known !== undefined) return known || undefined
   try {
     new Intl.DateTimeFormat("en", { timeZone })
-    return timeZone
+    return zones.set(timeZone, timeZone)
   } catch {
+    zones.set(timeZone, "")
     return undefined
   }
 }
 
-const cache = new Map<string, Intl.DateTimeFormat | Intl.NumberFormat | Intl.RelativeTimeFormat>()
+type Formatter = Intl.DateTimeFormat | Intl.NumberFormat | Intl.RelativeTimeFormat
 
-function cached<T extends Intl.DateTimeFormat | Intl.NumberFormat | Intl.RelativeTimeFormat>(
-  key: string,
-  make: () => T,
-): T {
-  let found = cache.get(key) as T | undefined
-  if (!found) {
-    found = make()
-    cache.set(key, found)
-  }
-  return found
+const cache = boundedMap<Formatter>()
+
+function cached<T extends Formatter>(key: string, make: () => T): T {
+  return (cache.get(key) as T | undefined) ?? (cache.set(key, make()) as T)
 }
 
-function dateFormat(opts: FormatOptions, fields: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
+/** Names the zone, so the cached formatters can be keyed by it. The runtime zone can change, so it is asked each time. */
+function withZone(opts: FormatOptions): FormatOptions & { timeZone: string } {
+  return { ...opts, timeZone: safeZone(opts.timeZone) ?? Intl.DateTimeFormat().resolvedOptions().timeZone }
+}
+
+function dateFormat(
+  opts: FormatOptions & { timeZone: string },
+  fields: Intl.DateTimeFormatOptions,
+): Intl.DateTimeFormat {
   const locale = safeLocale(opts.locale)
-  const timeZone = safeZone(opts.timeZone)
-  const make = (): Intl.DateTimeFormat =>
+  const timeZone = opts.timeZone
+  return cached(
+    `d|${locale}|${timeZone}|${JSON.stringify(fields)}`,
     // the locale's own calendar would turn ar-SA into Hijri dates, and the API counts gregorian days
-    new Intl.DateTimeFormat(locale, { ...fields, timeZone, calendar: "gregory" })
-  // the runtime zone can change under a cached formatter, so only a named zone is cached
-  return timeZone ? cached(`d|${locale}|${timeZone}|${JSON.stringify(fields)}`, make) : make()
+    () => new Intl.DateTimeFormat(locale, { ...fields, timeZone, calendar: "gregory" }),
+  )
 }
 
 function numberFormat(opts: FormatOptions, fields: Intl.NumberFormatOptions): Intl.NumberFormat {
@@ -80,7 +117,7 @@ function numberFormat(opts: FormatOptions, fields: Intl.NumberFormatOptions): In
 }
 
 /** Gregorian y/m/d of an instant in a zone, as a day number, so day differences ignore DST. */
-function dayNumber(date: Date, opts: FormatOptions): { day: number; year: number } {
+function dayNumber(date: Date, opts: FormatOptions & { timeZone: string }): { day: number; year: number } {
   const parts = dateFormat(
     { ...opts, locale: "en-US" },
     {
@@ -95,7 +132,7 @@ function dayNumber(date: Date, opts: FormatOptions): { day: number; year: number
 }
 
 /** 24 hour clocks read "00:15", not "0:15"; 12 hour ones stay "3:15 PM". */
-function uses24Hour(opts: FormatOptions): boolean {
+function uses24Hour(opts: FormatOptions & { timeZone: string }): boolean {
   const cycle = dateFormat(opts, { hour: "numeric" }).resolvedOptions().hourCycle
   return cycle === "h23" || cycle === "h24"
 }
@@ -104,7 +141,8 @@ function uses24Hour(opts: FormatOptions): boolean {
 export function absoluteTime(value: DateInput, opts: FormatOptions & { time?: boolean } = {}): string {
   const date = toDate(value)
   if (!date) return NA
-  const { time = true, ...rest } = opts
+  const { time = true, ...named } = opts
+  const rest = withZone(named)
   const fields: Intl.DateTimeFormatOptions = { day: "numeric", month: "short", year: "numeric" }
   if (time) Object.assign(fields, { hour: uses24Hour(rest) ? "2-digit" : "numeric", minute: "2-digit" })
   const parts = dateFormat(rest, fields).formatToParts(date)
@@ -123,7 +161,7 @@ export const absoluteDate = (value: DateInput, opts: FormatOptions = {}): string
   absoluteTime(value, { ...opts, time: false })
 
 /** The date part alone, for a past date a week or more old: "3 Nov", or "3 Nov 2025" in another year. */
-function shortDate(date: Date, now: Date, opts: FormatOptions): string {
+function shortDate(date: Date, now: Date, opts: FormatOptions & { timeZone: string }): string {
   const sameYear = dayNumber(date, opts).year === dayNumber(now, opts).year
   return dateFormat(
     opts,
@@ -133,12 +171,13 @@ function shortDate(date: Date, now: Date, opts: FormatOptions): string {
 
 function relativeFormat(opts: FormatOptions): Intl.RelativeTimeFormat {
   const locale = safeLocale(opts.locale)
-  // en-GB spells minutes and hours out ("2 hr ago"); every English locale gets the compact form
+  // en-GB spells minutes and hours out ("2 hr ago"); every English locale gets the compact form, and keeps its
+  // -u- extension so "en-u-nu-arab" has the same digits here as in absolute dates
   const english = /^en(-|$)/.test(locale)
+  const tag = english ? `en${locale.match(/-u-.*$/)?.[0] ?? ""}` : locale
   return cached(
     `r|${locale}`,
-    () =>
-      new Intl.RelativeTimeFormat(english ? "en" : locale, { numeric: "auto", style: english ? "narrow" : "short" }),
+    () => new Intl.RelativeTimeFormat(tag, { numeric: "auto", style: english ? "narrow" : "short" }),
   )
 }
 
@@ -153,26 +192,36 @@ export function relativeTime(value: DateInput, now: DateInput, opts: FormatOptio
   const clock = toDate(now)
   if (!date || !clock) return NA
   const elapsed = clock.getTime() - date.getTime()
-  if (elapsed < -SKEW) return shortDate(date, clock, opts)
+  if (elapsed < -SKEW) return shortDate(date, clock, withZone(opts))
   const rtf = relativeFormat(opts)
   if (elapsed < MINUTE) return /^en(-|$)/.test(safeLocale(opts.locale)) ? "just now" : rtf.format(0, "second")
   if (elapsed < HOUR) return rtf.format(-Math.floor(elapsed / MINUTE), "minute")
   if (elapsed < DAY) return rtf.format(-Math.floor(elapsed / HOUR), "hour")
-  const days = dayNumber(clock, opts).day - dayNumber(date, opts).day
+  const zoned = withZone(opts)
+  const days = dayNumber(clock, zoned).day - dayNumber(date, zoned).day
   if (days < RELATIVE_DAYS) return rtf.format(-days, "day")
-  return shortDate(date, clock, opts)
+  return shortDate(date, clock, zoned)
 }
+
+const isNumber = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value)
+
+const PLURALS = new Intl.PluralRules("en")
+
+/** The noun the displayed number takes: 1.0000001 shows as "1", so it is singular. */
+const nounFor = (value: number, noun: string, plural: string): string =>
+  PLURALS.select(value) === "one" ? noun : plural
 
 /** "n/a" for anything that is not a finite number. */
 export function formatNumber(
   value: number | null | undefined,
   opts: FormatOptions & { compact?: boolean } = {},
 ): string {
-  if (typeof value !== "number" || !Number.isFinite(value)) return NA
-  return numberFormat(opts, opts.compact ? { notation: "compact", maximumFractionDigits: 1 } : {}).format(value)
+  if (!isNumber(value)) return NA
+  // + 0 turns -0 into 0
+  return numberFormat(opts, opts.compact ? { notation: "compact", maximumFractionDigits: 1 } : {}).format(value + 0)
 }
 
-/** "1 job", "3 jobs". Pass `plural` for nouns that do not take an `s`. */
+/** "1 job", "3 jobs". Pass `plural` for nouns that do not take an `s`. English nouns only. */
 export function formatCount(
   value: number | null | undefined,
   noun: string,
@@ -180,10 +229,10 @@ export function formatCount(
   opts: FormatOptions = {},
 ): string {
   const text = formatNumber(value, opts)
-  return text === NA ? NA : `${text} ${value === 1 ? noun : plural}`
+  return text === NA || !isNumber(value) ? NA : `${text} ${nounFor(value, noun, plural)}`
 }
 
-/** "20 of 1,234 jobs", the count shown next to a partial list. */
+/** "20 of 1,234 jobs", the count shown next to a partial list. English words only. */
 export function formatOf(
   shown: number | null | undefined,
   total: number | null | undefined,
@@ -193,8 +242,8 @@ export function formatOf(
 ): string {
   const first = formatNumber(shown, opts)
   const second = formatNumber(total, opts)
-  if (first === NA || second === NA) return NA
-  return `${first} of ${second} ${total === 1 ? noun : plural}`
+  if (first === NA || second === NA || !isNumber(total)) return NA
+  return `${first} of ${second} ${nounFor(total, noun, plural)}`
 }
 
 /** A share between 0 and 1 as "42%" (digits 0) or "42.5%". Never "-0%". */
@@ -202,8 +251,8 @@ export function formatPercent(
   ratio: number | null | undefined,
   opts: FormatOptions & { digits?: number } = {},
 ): string {
-  if (typeof ratio !== "number" || !Number.isFinite(ratio)) return NA
-  const digits = Math.min(Math.max(Math.trunc(opts.digits ?? 0), 0), 4)
+  if (!isNumber(ratio)) return NA
+  const digits = Math.min(Math.max(Math.trunc(Number.isFinite(opts.digits) ? (opts.digits as number) : 0), 0), 4)
   const scale = 10 ** digits
   const rounded = Math.round(ratio * 100 * scale) / scale || 0
   return numberFormat(opts, { style: "percent", minimumFractionDigits: digits, maximumFractionDigits: digits }).format(
@@ -220,7 +269,7 @@ const DURATION_UNITS = [
 
 /** Milliseconds as the two biggest units: "3d 4h", "2h 5m", "45s", "under 1s". Negative or non-finite is "n/a". */
 export function formatDuration(ms: number | null | undefined, opts: FormatOptions = {}): string {
-  if (typeof ms !== "number" || !Number.isFinite(ms) || ms < 0) return NA
+  if (!isNumber(ms) || ms < 0) return NA
   const short = (value: number, unit: string): string =>
     numberFormat(opts, { style: "unit", unit, unitDisplay: "narrow" }).format(value)
   if (ms === 0) return short(0, "second")
@@ -239,7 +288,7 @@ const BYTE_UNITS = ["B", "KB", "MB", "GB", "TB", "PB"] as const
 
 /** 1024 based: "512 B", "1.5 KB", "3 MB". Negative or non-finite is "n/a". */
 export function formatBytes(bytes: number | null | undefined, opts: FormatOptions = {}): string {
-  if (typeof bytes !== "number" || !Number.isFinite(bytes) || bytes < 0) return NA
+  if (!isNumber(bytes) || bytes < 0) return NA
   const last = BYTE_UNITS.length - 1
   const round = (value: number, index: number): number =>
     index === 0 ? Math.round(value) : Math.round(value * 10) / 10
@@ -250,6 +299,6 @@ export function formatBytes(bytes: number | null | undefined, opts: FormatOption
     value /= 1024
     index += 1
   }
-  const text = numberFormat(opts, { maximumFractionDigits: index === 0 ? 0 : 1 }).format(value)
+  const text = numberFormat(opts, { maximumFractionDigits: index === 0 ? 0 : 1 }).format(value + 0)
   return `${text} ${BYTE_UNITS[index]}`
 }
