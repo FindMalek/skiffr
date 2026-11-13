@@ -228,6 +228,19 @@ jobs:
           sparse-checkout: .github/scripts
       - run: bash .github/scripts/aggregate.test.sh
 
+  # the deploy and preview scripts against a mock Dokploy, GitHub and S3 server
+  scripts-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/scripts
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: node --test '.github/scripts/*.test.mjs'
+
   # the release version logic, the install scripts and the compose files: none of them needs node_modules
   release-scripts:
     runs-on: ubuntu-latest
@@ -247,7 +260,7 @@ jobs:
   ci:
     name: ci
     if: always()
-    needs: [changes, lint, check-types, test, build, extension, e2e, db-postgres, aggregator-test, release-scripts]
+    needs: [changes, lint, check-types, test, build, extension, e2e, db-postgres, aggregator-test, scripts-test, release-scripts]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
