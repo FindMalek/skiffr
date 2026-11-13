@@ -42,7 +42,10 @@ beforeAll(async () => {
       model: null,
       embeddingModel: null,
     },
-    { publicUrl: "http://api.test" },
+    {
+      publicUrl: "http://api.test",
+      version: async () => ({ version: "9.9.9", commit: "abc1234", updateCheck: false }),
+    },
   )
 })
 
@@ -200,4 +203,10 @@ test("a flood of urls with a typed segment can't add labels or hide the health g
     setObservability(noopObservability)
     collector.stop()
   }
+})
+
+test("GET /version answers without a session and holds no secret", async () => {
+  const res = await server(new Request("http://api.test/version"))
+  expect(res.status).toBe(200)
+  expect(await res.json()).toEqual({ version: "9.9.9", commit: "abc1234", updateCheck: false })
 })

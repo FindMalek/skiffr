@@ -5,6 +5,22 @@ description: One root .env feeds every app.
 
 There is one `.env` at the repo root. Every app loads it, and `packages/env` validates it with zod, so a bad value fails at start with a clear message. `.env.example` lists every key with its default, `.env` itself is git-ignored.
 
+## Self-hosting with docker compose
+
+`install.sh` writes these to `.env` next to `docker-compose.yml`, see [install](/docs/install) and [deploy](/docs/deploy#docker-compose). The compose file passes the whole `.env` to the api only, and only the urls to the other apps.
+
+| Key | What it is |
+| --- | --- |
+| `SKIFFR_VERSION` | image tag to run: `latest`, `0.1` or an exact `v0.1.2`. Default `latest` |
+| `POSTGRES_PASSWORD` | generated. The api reaches the database as `postgres://skiffr:<password>@db:5432/skiffr` |
+| `SKIFFR_WEB_PORT`, `SKIFFR_API_PORT`, `SKIFFR_DASHBOARD_PORT`, `SKIFFR_DOCS_PORT` | host ports, default 3000 to 3003 |
+| `SKIFFR_BIND` | host address the ports bind to, default `127.0.0.1` |
+| `SKIFFR_DOMAIN` | with the `domain` profile, the base domain Caddy serves |
+| `COMPOSE_PROFILES` | `domain`, `autoupdate` or both, comma separated |
+| `SKIFFR_UPDATE_SCHEDULE` | cron (six fields, seconds first) of the `autoupdate` profile, default `0 0 4 * * *` |
+| `UPDATE_CHECK` | `true`: `GET /version` also reports the latest release and whether you are behind. Asks GitHub every six hours, sends nothing about you. Default `false` |
+| `SKIFFR_COMMIT`, `DOWNLOADS_DIR` | set by the image build: the commit shown by `/version`, and the folder holding the extension zip served at `/downloads` |
+
 ## Urls
 
 | Key | What it is |

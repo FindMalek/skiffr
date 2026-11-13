@@ -17,10 +17,14 @@ WORKDIR /app
 ENV NODE_ENV=production PORT=3001
 COPY --from=deps --chown=bun:bun /app ./
 COPY --from=pruner --chown=bun:bun /app/out/full/ ./
+# The release workflow puts the extension zip of this version in downloads/, served at /downloads
+COPY --chown=bun:bun downloads ./downloads
 USER bun
 
 
 FROM base AS runner
+ARG SKIFFR_COMMIT
+ENV SKIFFR_COMMIT=$SKIFFR_COMMIT
 EXPOSE 3001
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s CMD wget -qO- http://127.0.0.1:3001/health >/dev/null || exit 1
 CMD ["bun", "apps/api/src/index.ts"]
