@@ -65,9 +65,18 @@ const dir = mkdtempSync(join(tmpdir(), "skiffr-downloads-"))
 afterAll(() => rmSync(dir, { recursive: true, force: true }))
 
 test("downloads serve the baked zip, a page that links it, and a clear 404 without one", async () => {
-  const downloads = createDownloads({ dir, version: "0.3.0", publicUrl: "http://localhost:3001" })
+  const downloads = createDownloads({
+    dir,
+    version: "0.3.0",
+    publicUrl: "http://localhost:3001",
+    repo: "FindMalek/skiffr",
+  })
   expect((await downloads("/downloads/skiffr-extension.zip"))?.status).toBe(404)
   expect(await downloads("/other")).toBeNull()
+
+  const noZipPage = await (await downloads("/downloads"))?.text()
+  expect(noZipPage).toContain('href="https://github.com/FindMalek/skiffr/releases/latest"')
+  expect(noZipPage).not.toContain('href="/downloads/skiffr-extension.zip"')
 
   writeFileSync(join(dir, "skiffr-extension.zip"), "zip-bytes")
   const file = await downloads("/downloads/skiffr-extension.zip")
@@ -77,4 +86,5 @@ test("downloads serve the baked zip, a page that links it, and a clear 404 witho
   const page = await (await downloads("/downloads"))?.text()
   expect(page).toContain("http://localhost:3001")
   expect(page).toContain('href="/downloads/skiffr-extension.zip"')
+  expect(page).not.toContain("releases/latest")
 })

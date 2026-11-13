@@ -25,7 +25,7 @@ Skiffr has two parts: a server (api, dashboard and database) that keeps your pro
 It is the maintainer's own instance, not a service with an uptime promise, and what you enter is stored on his server. For real use on data you care about, run your own (option B).
 
 1. Open https://dashboard.skiffr.findmalek.engineer/sign-up, create your account (name, email, a password of at least 10 characters) and sign in. Already have one: use **Sign in**.
-2. Go on with [load the extension](#load-the-extension). The extension zip is not served by the hosted api (its `/downloads` page links to a file the hosted build does not have), take it from the GitHub release as described there.
+2. Go on with [load the extension](#load-the-extension). The hosted api has no extension zip of its own: its `/downloads` page sends you to the latest GitHub release, which is also what [load the extension](#load-the-extension) describes.
 
 ### Option B: run your own with one command
 
@@ -62,7 +62,7 @@ cd skiffr
 ./scripts/setup.sh --build   # builds them from this checkout instead (several minutes)
 ```
 
-A build from source has no extension zip at `/downloads`: build the extension yourself with `pnpm install && pnpm --filter extension build` and load `apps/extension/.output/chrome-mv3`.
+A build from source has no extension zip at `/downloads` (the page links to the latest GitHub release instead). To build the extension yourself run `pnpm install && pnpm --filter extension build`, then load `apps/extension/.output/chrome-mv3`.
 
 #### Options
 
@@ -154,7 +154,7 @@ The server holds your data, the extension only holds a token, so any number of m
 | `pull access denied`, or no release published yet | the images are on `ghcr.io/findmalek/skiffr-<app>`. Use the clone path with `--build`, or ask the maintainer to make the packages public |
 | the api log says `password authentication failed for user "skiffr"` | a data volume from an earlier install with another `.env` is still there (the database password is fixed when the volume is created). If that data is disposable: `docker compose down -v`, then start again |
 | the installer stops with "did not become healthy" | read the log it prints, then `docker compose logs`. A wrong value in `.env` makes the api refuse to start and says which one |
-| the zip link on the hosted `/downloads` page gives a 404 | the hosted api is not a release image and has no zip. Take `skiffr-extension-vX.Y.Z.zip` from the [GitHub release](https://github.com/FindMalek/skiffr/releases/latest) |
+| the hosted `/downloads` page has no zip to download | the hosted api is not a release image, so the page links to the [GitHub release](https://github.com/FindMalek/skiffr/releases/latest) instead. Take `skiffr-extension-vX.Y.Z.zip` from its Assets |
 | Chrome will not load the extension, or says the manifest is wrong | you picked the zip or a folder that has another folder inside. Unzip it and pick the folder that holds `manifest.json`. Check Chrome is 142 or newer at `chrome://version`: the manifest requires it |
 | **Test connection** says "Could not reach the API. Check the API url." | the url is wrong or the server is down. The field starts as `http://localhost:3001`: replace it. Use the exact api url, no trailing path (`https://api.skiffr.findmalek.engineer`), and open it plus `/health` in a browser, it must answer `"ok":true`. Your own server: `docker compose ps` in the `skiffr/` folder. A plain `http` url only works for `localhost` |
 | the options say "Enter an https API url. Plain http only works for localhost." | the extension only accepts `https` urls, or `http` for `localhost`. A bare LAN address will not work. Use `--domain` (or your own tls proxy) |
