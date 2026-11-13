@@ -48,7 +48,7 @@ There is one `.env` at the repo root. Every app loads it, and `packages/env` val
 | Key | What it is |
 | --- | --- |
 | `AI_MODEL` | `provider:model`, default `groq:openai/gpt-oss-120b`. Providers: `groq`, `openai`, `anthropic` |
-| `GROQ_API_KEY` | needed for the default model. Without any matching key the ai endpoints answer "No AI provider key is configured" and the rest keeps working |
+| `GROQ_API_KEY` | needed for the default model. Without any matching key the ai endpoints answer "No AI provider key is configured" (503), the dashboard keeps working, and a fill in the extension fails with "skiffr had a problem. Try again in a moment." On a self-hosted install the line is already in `.env`, empty: add the key and run `docker compose up -d` |
 | `OPENAI_API_KEY` | optional. Embeddings (`text-embedding-3-small`) for similar-question suggestions, see [how skiffr learns](/docs/learning) |
 | `ANTHROPIC_API_KEY` | only if `AI_MODEL` points at an `anthropic:` model |
 | `AI_DAILY_CALLS` | model requests one user may make per UTC day, default `600`. Chat and embedding requests both count. `0` means no limit. Counted in the database, so it holds across restarts and replicas. Digits only, at most `2147483647` |

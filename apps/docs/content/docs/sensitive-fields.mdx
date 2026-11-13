@@ -1,0 +1,63 @@
+---
+title: Sensitive fields
+description: How skiffr decides a question is yours to answer, what runs where, and how the classifier is measured.
+---
+
+Some questions are never filled, stored or learned: passwords and codes, card and bank numbers, ids, birth, the protected categories (gender, race, disability, veteran, religion, orientation, family, union, criminal record, health), consent and agreements, permission to contact your employer or references, signatures. skiffr decides this in layers, and a layer that is unsure blocks.
+
+## The layers
+
+| Layer | Runs in | Needs | What it decides |
+| --- | --- | --- | --- |
+| structure | content script | nothing | `type=password`, hidden and file inputs, honeypots, `autocomplete` tokens (`one-time-code`, `current-password`, `new-password`, `cc-*`, `bday`, `sex`, `gender`), answers that only a demographic question has (Male and Female, age bands, "Prefer not to say"), headings such as equal opportunity or diversity, values that pass Luhn, an IBAN or a social security shape |
+| floor | content script | nothing | the main wording of the categories above in en, fr, de, es and ar, and a first pass in it, pt, nl, tr and pl, with folding of case, accents, look-alike letters, spacing and zero width characters |
+| server lists | your api | nothing | the longer lists of the languages with word lists (en fr de es ar it pt nl tr pl). Runs on every label the api sees (`learning.lookup`, `learning.record`, `ai.mapFields`) before any text reaches a model |
+| model verdict | your api | an AI provider key | the long tail: other languages, new phrasings. It is part of the `ai.mapFields` call that already carries the label, so it adds output tokens, not a second request |
+| remembered verdicts | your api | the database | a question the model called sensitive is stored as a hash, so the same question is withheld next time without a model call and can never be learned |
+
+HTML semantics beat any model: structure is never delegated. A password, a one-time code or a card field stays withheld by type and `autocomplete` whatever its label says, and a model never sees the label of a field a rule already blocked.
+
+### Fail closed
+
+- a field whose label cannot be read is withheld
+- `learning.lookup` and `learning.record` run the server guard on the label, the answers (options) and the autocomplete hint before they look up or store anything, so a neutral label such as "Please select one" with the answers "Latina" and "Not Hispanic" is skipped too
+- the word agree in any form ("Agree", "Tick to agree", "Agree/Disagree", "Yes agree") is a consent and is blocked, while "Agreed salary" and similar (agreed rate, pay, start date) stay readable. A test checks every entry of the old lists (`learnable-main-entries.json`) against the server guard, in several spellings
+- in `ai.mapFields` a verdict that is anything but an explicit `sensitive: false`, a field the model left out, and a field with two entries of which one is not an explicit false, is withheld
+- the api marks its `ai.mapFields` answer with `sensitiveGuard: 1`. An extension that sees it withholds every mapping whose `sensitive` is not exactly `false`. An api from before this change has no marker: the extension keeps working with the floor only (and honors a `true`) and writes one hint to the service worker console, so update both together to get the server layer
+- the worker drops a mapping the server marked sensitive, even when its action says `profile`, and never offers a saved similar answer for it
+- the model reads labels as escaped data blocks and the policy tells it to ignore instructions in them, but that is prompt design, not a guarantee. A question the word lists know is withheld before the model sees it, whatever the model would say. For wording no list knows (every language outside en fr de es ar it pt nl tr pl) the model alone decides, and a model that obeys a hostile label would let the field through. That residual risk is not measured here: the model arms have not run against a real model
+
+### What is remembered
+
+The table `sensitive_verdict` holds a SHA-256 of the normalized label and options, a category and the policy version. No label text, no user. Hashed is not anonymous: a dictionary of common questions can be hashed too, and only someone who can read the database sees the table. Only sensitive verdicts are kept: a "not sensitive" answer saves nothing (the mapping still needs the model) and a page could steer it.
+
+The model also reads the field name, the aria label and the placeholder, which a page controls, so a verdict is only remembered when those are empty or repeat the label (and the type is a known control). The model never sees the field id or an unknown type: it gets its own ids (`f0`, `f1`) and a type only as one of the known control kinds. Otherwise a page could get an ordinary question blocked for every user. Each call adds at most 20 rows and each user at most 200 a day (counted in `ai_usage.verdicts`). A question flagged again counts against that daily quota again, for example after its row expired or when the remembered verdicts could not be read. Rows expire after 90 days, expired rows are deleted when a row is written, at most once an hour per process (`created_at` has no index), and a policy version bump ignores older rows, so a model mistake does not block a question forever.
+
+## Without a model key
+
+Self-hosters without `GROQ_API_KEY` or another provider key keep the structure, the floor and the server lists. They already cover the five listed languages and answer-bank lookups work as before. `ai.mapFields` is unavailable without a key, as it always was, so the long tail reaches no model at all: wording outside the lists is not blocked in the answer bank until you add a key.
+
+## What leaves the browser
+
+The floor is smaller than the old lists, so wording that only the server lists know now reaches your api as a label (never stored, filtered before the model) and, after a fill, as the filled and final value of that field. The server runs its lists on the label and the answers and drops the event before storing anything. If you want the content script to hold back more, extend `FLOOR` in `packages/ai/src/learnable.ts` at the price of bundle size.
+
+## Measuring it
+
+`packages/ai/eval/sensitive-corpus.jsonl` holds 1649 synthetic labels (no real personal data) in 16 languages (en, fr, de, es, ar, it, pt, nl, tr, pl, ru, zh, ja, ko, hi, id) over 18 categories, plus ordinary job questions, collision wording ("Certifications", "Agreed salary", "Do you have permission to work in the UK?", "driver's license"), obfuscation, prompt injection, very long and empty labels. The translations are not native reviewed. Rebuild it with `bun eval/build-corpus.ts` from `corpus-source.ts`.
+
+```bash
+pnpm --filter @skiffr/ai eval:sensitive                 # regex arms and the fake embedder, no key needed
+GROQ_API_KEY=... OPENAI_API_KEY=... pnpm --filter @skiffr/ai eval:sensitive
+```
+
+Arms: a current regex, b trimmed floor, c nearest prototype with embeddings, d `openai/gpt-oss-20b` and `openai/gpt-oss-safeguard-20b` on Groq with the written policy, e the stack. An arm whose key is missing is printed as not measured. The corpus runs in CI as a regression test (`src/sensitive-corpus.test.ts`) with the deterministic arms: the floor, the server lists and a fake character n-gram embedder.
+
+Results of the deterministic arms (recall is over the sensitive labels of all 16 languages, false positive rate over the ordinary ones):
+
+| Arm | Precision | Recall | False positive rate | en / fr / de / es / ar recall |
+| --- | --- | --- | --- | --- |
+| server lists (floor plus lists) | 99.2% | 48.9% | 1.2% (soft only) | 93.7 / 84.0 / 84.2 / 80.3 / 79.7 |
+| floor | 99.1% | 45.5% | 1.2% (soft only) | 93.7 / 77.3 / 78.9 / 73.7 / 70.3 |
+| fake embedder, nearest prototype | 94.8% | 29.6% | 4.9% (20 ordinary questions blocked) | 54.3 / 69.3 / 63.2 / 60.5 / 66.2 |
+
+The "soft" false positives are the accepted over-blocks of the issue (`terms`, "agree to relocate", `secret`, `race`, `military`), no ordinary question is hard blocked. The first pass wording for it, pt, nl, tr and pl lifts the server lists to 54 to 69% in those five (floor 50 to 62%). In the other 6 languages (ru, zh, ja, ko, hi, id) the lists catch 0 to 11%: that is the gap the model verdict is for. The fake embedder is only a letter-overlap stand-in, it does not estimate `text-embedding-3-small`. The word lists were written together with the corpus, so these recalls are in sample. The model arms and the real embedding model are not in this table until someone runs the script with keys, and the cost and latency of the extra output (about 2.4k characters of policy in every `mapFields` system prompt, two more fields per answer) are not measured yet.

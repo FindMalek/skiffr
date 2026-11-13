@@ -32,6 +32,11 @@ export const publicRouter = {
 
   authProviders: publicProcedure
     .route({ method: "GET", path: "/public/auth-providers", summary: "Sign-in methods enabled here", tags: ["public"] })
-    .output(z.object({ email: z.boolean(), github: z.boolean() }))
-    .handler(({ context }) => ({ email: true, github: context.config.githubAuth })),
+    .output(z.object({ email: z.boolean(), github: z.boolean(), passwordReset: z.boolean() }))
+    .handler(({ context }) => ({
+      email: true,
+      github: context.config.githubAuth,
+      // better-auth only exposes the reset endpoints when `sendResetPassword` was passed to `createAuth`.
+      passwordReset: Boolean(context.auth.options.emailAndPassword?.sendResetPassword),
+    })),
 }

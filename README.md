@@ -74,7 +74,7 @@ Everything works without these except the parts that name them. All are optional
 
 | Key | Needed for | Without it |
 | --- | --- | --- |
-| `GROQ_API_KEY` ([Groq](https://console.groq.com/keys)) | mapping fields the saved answers do not cover, which can also return a short generated value such as a yes or no or an option pick, shown outlined for you to check (default model `openai/gpt-oss-120b`). The api can also draft answers, but the extension does not call that yet | the ai endpoints say no provider key is configured. Profile, answers, queue and saved-answer fills keep working |
+| `GROQ_API_KEY` ([Groq](https://console.groq.com/keys)) | mapping fields the saved answers do not cover, which can also return a short generated value such as a yes or no or an option pick, shown outlined for you to check (default model `openai/gpt-oss-120b`). The api can also draft answers, but the extension does not call that yet | the ai endpoints say no provider key is configured, and a fill in the extension fails with "skiffr had a problem". The dashboard, answers and queue keep working |
 | `OPENAI_API_KEY` ([OpenAI](https://platform.openai.com/api-keys)) | embedding similarity for learned answers | similar-question suggestions are skipped, exact and label matches still work |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GMAIL_ENCRYPTION_KEY` ([Google Cloud](https://console.cloud.google.com/)) | the Gmail connector | the Gmail page says it is not set up. Setup is in the [Gmail docs](apps/docs/content/docs/gmail.mdx), and it has only been tested against a local stand-in for Google's api |
 
@@ -130,7 +130,7 @@ skiffr/
 
 ## Quick start
 
-Three steps, nothing to build. You need Docker and Chrome (or Edge, Brave, Arc: any Chromium 142 or newer).
+Three steps, nothing to build. You need Docker, Chrome (or Edge, Brave, Arc: any Chromium 142 or newer) and an AI key (`GROQ_API_KEY`, see [what needs keys](#what-needs-keys)) to fill forms. No Docker: use the [hosted instance](#live), skip step 1, and take the extension zip from the [latest release](https://github.com/FindMalek/skiffr/releases/latest) in step 2.
 
 ### 1. Run one command
 
@@ -152,7 +152,7 @@ Options: `--port 4000` for other ports, `--domain skiffr.example.com` for your o
 
 Chrome cannot install an extension from a file or a script on its own, so this one takes a minute by hand. Your own server serves the extension that matches its version.
 
-1. Download http://localhost:3001/downloads/skiffr-extension.zip and unzip it into a folder you will keep (Chrome does not install zips directly, it loads the unzipped folder).
+1. Download `skiffr-extension-vX.Y.Z.zip` from the [latest release](https://github.com/FindMalek/skiffr/releases/latest) (your own server also serves it at http://localhost:3001/downloads) and unzip it into a folder you will keep (Chrome does not install zips directly, it loads the unzipped folder).
 2. Open `chrome://extensions` (`edge://extensions`, `brave://extensions` and `arc://extensions` work the same) and turn on **Developer mode** (top right).
 3. Click **Load unpacked** and pick the unzipped folder. Pin the skiffr icon from the puzzle menu.
 
@@ -160,9 +160,9 @@ Firefox is not supported yet.
 
 ### 3. Connect it and apply
 
-1. Open http://localhost:3002, sign in with the email and password the installer printed (they are in `skiffr/.env` too, `ADMIN_EMAIL` and `ADMIN_PASSWORD`) and fill in your profile.
-2. In the dashboard open **Extension** and create a token. Copy it.
-3. Right-click the skiffr icon, **Options**. Set the api url to `http://localhost:3001`, paste the token and press **Test connection**.
+1. Open http://localhost:3002 (on the hosted instance: https://dashboard.skiffr.findmalek.engineer, then sign up or sign in), sign in with the email and password the installer printed (they are in `skiffr/.env` too, `ADMIN_EMAIL` and `ADMIN_PASSWORD`) and save your profile: the dashboard has no profile editor yet, so send it through the api, the steps are in the [install guide](apps/docs/content/docs/install.mdx).
+2. In the dashboard open **Extension**, name the token after the machine and press **Create token**. Copy it.
+3. Right-click the skiffr icon, **Options**. Set **API url** to `http://localhost:3001` (the hosted instance: `https://api.skiffr.findmalek.engineer`), paste the token in **Token** and press **Test connection**. It says "Connected as" and your name.
 4. Open a job application form. A toast asks "Autofill this application?". Press **Yes**, check the fields (amber outlines are guesses), fix what is wrong and press submit yourself: skiffr never submits anything for you.
 
 First run checklist: profile saved, token created and tested, one real application form filled. Corrections you make are remembered for the next form.
@@ -175,6 +175,7 @@ First run checklist: profile saved, token created and tested, one real applicati
 | `port 3000 is already in use` | run the installer again with `--port 4000` (it uses 4000 to 4003) |
 | `pull access denied` or `no release is published yet` | use the clone path with `--build`, or ask the host to make the packages public |
 | the api log says `password authentication failed` | a data volume from an earlier install is still there. If that data is disposable run `docker compose down -v` and start again |
+| the toast says "skiffr had a problem. Try again in a moment." | the server has no AI key: set `GROQ_API_KEY` in `skiffr/.env` and run `docker compose up -d` |
 | extension says it cannot connect | the api url must be exactly what the installer printed, no trailing path. Open it plus `/health` in the browser: it must say `"ok":true`. Check `docker compose ps` in the `skiffr/` folder |
 | extension says the token is invalid or expired | dashboard, Extension, create a new token and paste it again |
 | cannot sign in | the password is `ADMIN_PASSWORD` in `skiffr/.env`. The admin is reset to that value on every api start (also after an update), so change the password there, not in the dashboard |

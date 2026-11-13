@@ -1,4 +1,5 @@
 import { ORPCError } from "@orpc/server"
+import { isSensitiveQuestion } from "@skiffr/ai"
 import {
   answerInputSchema,
   answerProvenanceSchema,
@@ -15,6 +16,7 @@ import { z } from "zod"
 import { answerProvenance } from "../lib/answer-provenance"
 import { assertAnswerRoom, embedMissing } from "../lib/learning"
 import { mine, orNotFound } from "../lib/owned"
+import { flaggedKeys, verdictKey } from "../lib/sensitive-verdicts"
 import { protectedProcedure } from "../procedures"
 
 export const answersRouter = {
@@ -22,15 +24,25 @@ export const answersRouter = {
     .route({ method: "GET", path: "/answers", summary: "The signed-in user's answer bank", tags: ["answers"] })
     .input(pageInputSchema)
     .output(z.array(answerSchema))
-    .handler(({ context, input }) =>
-      context.db
+    .handler(async ({ context, input }) => {
+      const rows = await context.db
         .select(answerColumns)
         .from(answer)
         .where(eq(answer.userId, context.user.id))
         .orderBy(asc(answer.normalizedLabel), asc(answer.id))
         .limit(input.limit)
-        .offset(input.offset),
-    ),
+        .offset(input.offset)
+      const flagged = await flaggedKeys(
+        context.db,
+        context.now(),
+        rows.map((row) => ({ label: row.rawLabel })),
+      ).catch(() => new Map<string, never>())
+      return rows.map((row) => ({
+        ...row,
+        sensitive:
+          isSensitiveQuestion({ label: row.rawLabel }) || flagged.has(verdictKey({ label: row.rawLabel }) ?? ""),
+      }))
+    }),
 
   provenance: protectedProcedure
     .route({

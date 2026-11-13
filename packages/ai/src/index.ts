@@ -34,6 +34,15 @@ export { type AiProfile, flattenProfile } from "./data"
 export { draftAnswer } from "./draft-answer"
 export { EMBEDDING_MODEL_ID, embedTexts, resolveEmbeddingModel } from "./embeddings"
 export { AiInputError, AiModelError, ModelBudgetError } from "./errors"
-export { type ControlKind, controlKind, isLearnableField, isSensitiveValue } from "./learnable"
-export { mapFields } from "./map-fields"
+export { type ControlKind, controlKind, isSensitiveValue } from "./learnable"
+/** The api checks every label with the floor plus the long lists. The content script imports `./learnable` for the floor alone. */
+export { isLearnableField, isLearnableQuestion, isSensitiveQuestion } from "./learnable-extended"
+export { type MapFieldsResult, mapFields } from "./map-fields"
+export {
+  SENSITIVE_CATEGORIES,
+  SENSITIVE_POLICY,
+  SENSITIVE_POLICY_VERSION,
+  type SensitiveCategory,
+  sensitiveCategorySchema,
+} from "./sensitive"
 export { profileSkills, type RawOperation, tailorResume } from "./tailor"

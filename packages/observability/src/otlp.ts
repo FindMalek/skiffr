@@ -21,6 +21,8 @@ export interface LogRecord {
   at: number
   level: "info" | "warn" | "error"
   event: string
+  /** The line shown in the log list; `event` when absent. */
+  message?: string
   attrs: Attrs
 }
 
@@ -225,7 +227,7 @@ export class OtlpExporter {
                     timeUnixNano: nanos(log.at),
                     severityNumber: SEVERITY[log.level],
                     severityText: log.level.toUpperCase(),
-                    body: { stringValue: log.event },
+                    body: { stringValue: log.message ?? log.event },
                     attributes: toOtlpAttributes(log.attrs),
                   })),
                 },
