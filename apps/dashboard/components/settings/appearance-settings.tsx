@@ -55,7 +55,7 @@ export function AppearanceSettings() {
       </Section>
       <Section
         title="Keyboard shortcuts"
-        description="Single key shortcuts are not available yet. This switch is saved in this browser and will control them when they ship."
+        description="Single key shortcuts, like g then q for the queue, work while focus is in the page and not in a text field. Press ? to see them. Search (Cmd or Ctrl K) and Esc keep working when this is off."
       >
         <div className="flex min-h-11 max-w-md items-stretch justify-between gap-4 border">
           <div className="flex min-w-0 flex-1 flex-col gap-1 py-4 pl-4">

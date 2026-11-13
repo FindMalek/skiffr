@@ -12,9 +12,11 @@ mock.module("@skiffr/auth/client", () => ({
     },
   },
 }))
+mock.module("next/navigation", () => ({ useRouter: () => ({ push() {} }), usePathname: () => "/" }))
 mock.module("sonner", () => ({ toast: { error: (message: string) => calls.toasts.push(message) } }))
 
 const { UserMenu } = await import("./user-menu")
+const { ShortcutsProvider } = await import("./shortcuts")
 
 let root: Root
 let host: HTMLElement
@@ -35,7 +37,13 @@ afterEach(() => {
 const wait = (ms: number) => act(() => new Promise<void>((resolve) => setTimeout(resolve, ms)))
 
 test("a failed sign out says so and leaves the menu usable", async () => {
-  await act(async () => root.render(<UserMenu me={{ name: "Ana", email: "ana@test.dev", image: null, role: null }} />))
+  await act(async () =>
+    root.render(
+      <ShortcutsProvider>
+        <UserMenu me={{ name: "Ana", email: "ana@test.dev", image: null, role: null }} />
+      </ShortcutsProvider>,
+    ),
+  )
   const open = async () => {
     await act(async () => host.querySelector<HTMLButtonElement>("button")?.click())
     await wait(50)
