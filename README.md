@@ -160,7 +160,7 @@ Firefox is not supported yet.
 
 ### 3. Connect it and apply
 
-1. Open http://localhost:3002 (on the hosted instance: https://dashboard.skiffr.findmalek.engineer, then sign up or sign in), sign in with the email and password the installer printed (they are in `skiffr/.env` too, `ADMIN_EMAIL` and `ADMIN_PASSWORD`) and save your profile: the dashboard has no profile editor yet, so send it through the api, the steps are in the [install guide](apps/docs/content/docs/install.mdx).
+1. Open http://localhost:3002 (on the hosted instance: https://dashboard.skiffr.findmalek.engineer, then sign up or sign in), sign in with the email and password the installer printed (they are in `skiffr/.env` too, `ADMIN_EMAIL` and `ADMIN_PASSWORD`) and save your profile under Settings, Profile, the steps are in the [install guide](apps/docs/content/docs/install.mdx).
 2. In the dashboard open **Extension**, name the token after the machine and press **Create token**. Copy it.
 3. Right-click the skiffr icon, **Options**. Set **API url** to `http://localhost:3001` (the hosted instance: `https://api.skiffr.findmalek.engineer`), paste the token in **Token** and press **Test connection**. It says "Connected as" and your name.
 4. Open a job application form. A toast asks "Autofill this application?". Press **Yes**, check the fields (amber outlines are guesses), fix what is wrong and press submit yourself: skiffr never submits anything for you.
