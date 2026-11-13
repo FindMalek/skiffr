@@ -4,7 +4,8 @@ const PRIVACY_FALLBACK = "https://github.com/FindMalek/skiffr/blob/main/apps/doc
 
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   const { WEB_URL, DOCS_URL } = nextEnv()
-  const link = "underline underline-offset-4 hover:text-foreground"
+  const link =
+    "inline-flex min-h-6 items-center underline underline-offset-4 hover:text-foreground pointer-coarse:min-h-11"
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-6xl flex-col gap-8 px-4 py-6 md:px-6 md:py-8 xl:px-8">
       <header className="flex flex-col gap-1">
@@ -14,6 +15,9 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         </p>
       </header>
       <main id="main" className="w-full max-w-sm flex-1">
+        <noscript>
+          <p className="mb-4 border border-border p-3 text-sm">These forms need JavaScript. Turn it on to continue.</p>
+        </noscript>
         {children}
       </main>
       <footer className="flex gap-4 text-xs text-muted-foreground">

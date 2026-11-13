@@ -451,9 +451,13 @@ account"); the card has no other heading.
   separately: a wrong email and a wrong password read the same. The server's message is never shown, only a mapped one.
 - Pending keeps the button width and its focus; a second submit while pending sends nothing.
 - `next` (a path on this dashboard, `lib/auth-redirect.ts`) is honoured after sign in only. Anything else falls back to
-  `/`. Sign up always lands on `/`. Tokens and passwords never go in a url, except the one the reset email link carries,
+  `/`: the check runs on the raw value, the decoded one and the normalised result, so dot segments (`/.//host`) and
+  encoded spellings (`/%61pi`) don't get through. Sign up always lands on `/`. Tokens and passwords never go in a url, except the one the reset email link carries,
   which the reset page removes from the address bar at once.
-- GitHub and "Forgot password?" show only when the server offers them (`public.authProviders`).
+- GitHub and "Forgot password?" show only when the server offers them (`public.authProviders`). The `?error=` banner shows
+  only for a known OAuth code and only when GitHub is on. Links are 44px tall on coarse pointers. A `<noscript>` line says
+  the forms need JavaScript. A used or expired reset link ends in a card that offers a new link, or says to ask whoever
+  runs the server.
 
 ## 5. Copy guidelines
 

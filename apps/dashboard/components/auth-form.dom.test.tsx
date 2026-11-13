@@ -119,3 +119,39 @@ test("leaving a field validates it but only a submit raises the summary, so noth
   expect(message("password")).toBe("Use at least 10 characters.")
   expect(host.querySelector('[role="alert"]')).toBeNull()
 })
+
+test("the form turns off native validation, so our own messages and focus rule apply", async () => {
+  await mount()
+  expect(host.querySelector("form")?.noValidate).toBe(true)
+})
+
+test("sign up always lands on / and a hostile next given to the form is dropped, here and in the sign in link", async () => {
+  reply = () => Response.json({ user: { id: "1" }, token: "t" })
+  const assign = spyOn(window.location, "assign").mockImplementation(() => {})
+  await mount({ mode: "sign-up", next: "/queue" })
+  await submit({ name: "Ana", email: "ana@test.dev", password: "a-long-enough-password" })
+  expect(assign).toHaveBeenLastCalledWith("/")
+
+  await mount({ next: "/.//evil.com" })
+  expect(host.querySelector('a[href="/sign-up"]')).not.toBeNull()
+  await submit({ email: "ana@test.dev", password: "a-long-enough-password" })
+  expect(assign).toHaveBeenLastCalledWith("/")
+  assign.mockRestore()
+})
+
+test("GitHub gets next as the callback, / for a new user and the sign in page for an error", async () => {
+  await mount({ providers: { github: true, passwordReset: false }, next: "/queue?status=queued" })
+  await act(async () => {
+    const button = [...host.querySelectorAll("button")].find((item) => item.textContent === "Continue with GitHub")
+    button?.click()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  })
+  const [social] = requests
+  expect(social?.url).toBe("/api/auth/sign-in/social")
+  expect(JSON.parse(social?.body ?? "{}")).toMatchObject({
+    provider: "github",
+    callbackURL: "/queue?status=queued",
+    newUserCallbackURL: "/",
+    errorCallbackURL: "/sign-in?next=%2Fqueue%3Fstatus%3Dqueued",
+  })
+})

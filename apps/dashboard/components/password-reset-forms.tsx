@@ -33,8 +33,10 @@ function ResetCard({
   )
 }
 
+const LINK = "inline-flex min-h-6 items-center text-foreground underline underline-offset-4 pointer-coarse:min-h-11"
+
 const backToSignIn = (
-  <Link href="/sign-in" className="text-foreground underline underline-offset-4">
+  <Link href="/sign-in" className={LINK}>
     Back to sign in
   </Link>
 )
@@ -118,9 +120,10 @@ export function ForgotPasswordForm({ enabled }: { enabled: boolean }) {
 }
 
 /** `token` came in the url the reset email led to; it is taken out of the address bar at once so it isn't kept in history. */
-export function ResetPasswordForm({ token }: { token: string | null }) {
+export function ResetPasswordForm({ token, canRequestNew }: { token: string | null; canRequestNew: boolean }) {
   const [busy, setBusy] = useState(false)
   const [done, setDone] = useState(false)
+  const [dead, setDead] = useState(false)
   const { errors, summary, formError, clear, set, put, reset } = useAuthErrors()
 
   useEffect(() => {
@@ -140,15 +143,23 @@ export function ResetPasswordForm({ token }: { token: string | null }) {
       />
     )
   }
-  if (!token) {
+  if (!token || dead) {
     return (
       <ResetCard
         title="This link doesn't work"
-        description="The reset link has expired or was already used. Ask for a new one."
+        description={
+          canRequestNew
+            ? "The reset link has expired or was already used. Ask for a new one."
+            : "The reset link has expired or was already used. Ask whoever runs this server for a new one."
+        }
         footer={
-          <Link href="/forgot-password" className="text-foreground underline underline-offset-4">
-            Send a new link
-          </Link>
+          canRequestNew ? (
+            <Link href="/forgot-password" className={LINK}>
+              Send a new link
+            </Link>
+          ) : (
+            backToSignIn
+          )
         }
       />
     )
@@ -166,6 +177,7 @@ export function ResetPasswordForm({ token }: { token: string | null }) {
     try {
       const { error } = await authClient.resetPassword({ newPassword, token }, retry.options)
       if (!error) return setDone(true)
+      if (error.code === "INVALID_TOKEN") return setDead(true)
       const failure = describeFailure("reset", error, retry.seconds())
       set(
         failure.field ? { [failure.field]: failure.message } : {},

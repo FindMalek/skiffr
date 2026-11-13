@@ -5,12 +5,18 @@ export type FieldErrors = Partial<Record<AuthField, string>>
 export const PASSWORD_MIN = 10
 export const PASSWORD_MAX = 128
 
+/** Longest name sign up takes; the server holds the same cap (`NAME_MAX` in `packages/auth`). */
+export const NAME_MAX = 100
+
 export const PASSWORD_RULE = `At least ${PASSWORD_MIN} characters.`
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 export function checkField(field: AuthField, value: string, mode: "sign-in" | "sign-up" | "reset"): string | undefined {
-  if (field === "name") return value.trim() ? undefined : "Enter your name."
+  if (field === "name") {
+    if (!value.trim()) return "Enter your name."
+    return value.length > NAME_MAX ? `Use at most ${NAME_MAX} characters.` : undefined
+  }
   if (field === "email") {
     if (!value.trim()) return "Enter your email."
     return EMAIL.test(value.trim()) ? undefined : "Enter a valid email, like name@example.com."
@@ -71,6 +77,8 @@ export function describeFailure(
       return { field: "password", message: `Use at least ${PASSWORD_MIN} characters.` }
     case "PASSWORD_TOO_LONG":
       return { field: "password", message: `Use at most ${PASSWORD_MAX} characters.` }
+    case "NAME_TOO_LONG":
+      return { field: "name", message: `Use at most ${NAME_MAX} characters.` }
     case "INVALID_TOKEN":
       return { message: "This reset link has expired or was already used. Ask for a new one." }
     case "RESET_PASSWORD_DISABLED":
@@ -84,9 +92,25 @@ export function describeFailure(
   return { message: "Something went wrong on our side. Try again in a moment." }
 }
 
-/** The `error` query param the GitHub callback adds. Only a few known values get their own words. */
+/** What better-auth puts in `?error=` after a failed OAuth callback. Anything else is not ours and shows nothing. */
+const OAUTH_ERRORS = [
+  "access_denied",
+  "account_not_linked",
+  "email_not_found",
+  "internal_server_error",
+  "invalid_code",
+  "no_code",
+  "oauth_provider_not_found",
+  "please_restart_the_process",
+  "signup_disabled",
+  "state_mismatch",
+  "unable_to_create_user",
+  "unable_to_get_user_info",
+  "unable_to_link_account",
+]
+
 export function describeOAuthError(code: string | undefined): string | null {
-  if (!code) return null
+  if (!code || !OAUTH_ERRORS.includes(code)) return null
   if (code === "access_denied") return "GitHub sign in was cancelled."
   return "We couldn't sign you in with GitHub. Try again, or use your email."
 }

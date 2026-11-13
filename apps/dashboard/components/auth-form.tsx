@@ -7,8 +7,16 @@ import { FieldGroup, FieldSeparator } from "@skiffr/ui/components/field"
 import Link from "next/link"
 import { type FormEvent, useState } from "react"
 import { ErrorSummary, PasswordField, SubmitButton, TextField, useAuthErrors } from "@/components/auth-fields"
-import { type AuthField, checkField, checkForm, describeFailure, PASSWORD_RULE, retryTracker } from "@/lib/auth-copy"
-import { withNext } from "@/lib/auth-redirect"
+import {
+  type AuthField,
+  checkField,
+  checkForm,
+  describeFailure,
+  NAME_MAX,
+  PASSWORD_RULE,
+  retryTracker,
+} from "@/lib/auth-copy"
+import { safeNext, withNext } from "@/lib/auth-redirect"
 
 export interface AuthProviders {
   github: boolean
@@ -24,7 +32,8 @@ interface AuthFormProps {
   notice?: string | null
 }
 
-export function AuthForm({ mode, providers, next, notice = null }: AuthFormProps) {
+export function AuthForm({ mode, providers, next: requested, notice = null }: AuthFormProps) {
+  const next = requested ? safeNext(requested) : null
   const [busy, setBusy] = useState<"email" | "github" | null>(null)
   const { errors, summary, formError, clear, set, put, reset } = useAuthErrors(notice)
   const signUp = mode === "sign-up"
@@ -114,6 +123,7 @@ export function AuthForm({ mode, providers, next, notice = null }: AuthFormProps
                 label="Name"
                 autoComplete="name"
                 autoCapitalize="words"
+                maxLength={NAME_MAX}
                 required
                 error={errors.name}
                 onCheck={check("name")}
@@ -163,7 +173,7 @@ export function AuthForm({ mode, providers, next, notice = null }: AuthFormProps
         {signUp ? "Already have an account?" : "New here?"}
         <Link
           href={{ pathname: signUp ? "/sign-in" : "/sign-up", query: next && next !== "/" ? { next } : undefined }}
-          className="text-foreground underline underline-offset-4"
+          className="inline-flex min-h-6 items-center text-foreground underline underline-offset-4 pointer-coarse:min-h-11"
         >
           {signUp ? "Sign in" : "Create an account"}
         </Link>
