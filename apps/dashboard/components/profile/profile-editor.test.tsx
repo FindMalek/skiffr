@@ -210,3 +210,46 @@ test("code that calls router.push itself is held too: the mobile settings select
   expect(allowed).toBe(false)
   expect(document.querySelector('[role="alertdialog"]')?.textContent).toContain("Leave without saving?")
 })
+
+test("the leave guard stays up while a save is in flight, and a refetch does not overwrite edits but does update a clean form", async () => {
+  const row = {
+    ...stored,
+    data: stored.data,
+    createdAt: new Date(stored.createdAt),
+    updatedAt: new Date(stored.updatedAt),
+  }
+  await mount(row)
+  await type("firstName", "Ada")
+  reply.gate = new Promise<void>(() => {})
+  await act(async () => submit().click())
+  await settle()
+  const [, extension] = [...host.querySelectorAll("a")] as HTMLAnchorElement[]
+  const held = new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 })
+  await act(async () => {
+    extension?.dispatchEvent(held)
+  })
+  expect(held.defaultPrevented).toBe(true)
+  expect(document.querySelector('[role="alertdialog"]')?.textContent).toContain("Leave without saving?")
+})
+
+test("a refetched profile replaces a clean form but never the edits in a dirty one", async () => {
+  const row = {
+    ...stored,
+    data: stored.data,
+    createdAt: new Date(stored.createdAt),
+    updatedAt: new Date(stored.updatedAt),
+  }
+  const other = { ...row, data: { ...row.data, location: { city: "Faro" } }, updatedAt: new Date() }
+  await mount(row)
+  await act(async () => client.setQueryData(orpc.profile.get.queryKey(), other as never))
+  expect(input("city").value).toBe("Faro")
+  await type("firstName", "Ada")
+  const newer = {
+    ...other,
+    data: { ...other.data, location: { city: "Porto" } },
+    updatedAt: new Date(Date.now() + 1000),
+  }
+  await act(async () => client.setQueryData(orpc.profile.get.queryKey(), newer as never))
+  expect(input("firstName").value).toBe("Ada")
+  expect(input("city").value).toBe("Faro")
+})

@@ -90,7 +90,7 @@ export function profileToForm(saved: SavedProfile | null): ProfileForm {
     portfolio: links.portfolio ?? "",
     website: links.website ?? "",
     otherLinks: links.other.map((value, index) => ({ key: index + 1, value })),
-    countries: workAuth.authorizedCountries.join(", "),
+    countries: joinCountries(workAuth.authorizedCountries),
     sponsorship: choice(workAuth.requiresSponsorship),
     visaStatus: workAuth.visaStatus ?? "",
     currency: salary.currency ?? "",
@@ -110,10 +110,11 @@ export function profileToForm(saved: SavedProfile | null): ProfileForm {
 /** An empty string is unset, never `""`: the api and the mapper treat a stored empty string as a value. */
 const text = (value: string): string | undefined => (value.trim() === "" ? undefined : value.trim())
 
+/** Commas separate countries, unless the text has a semicolon: then only semicolons do, so "Korea, Republic of" survives. */
 export function splitCountries(value: string): string[] {
   const seen = new Set<string>()
   const out: string[] = []
-  for (const part of value.split(",")) {
+  for (const part of value.split(value.includes(";") ? ";" : ",")) {
     const country = part.trim()
     const key = country.toLowerCase()
     if (country === "" || seen.has(key)) continue
@@ -123,11 +124,14 @@ export function splitCountries(value: string): string[] {
   return out
 }
 
-/** Digits with thousands separators allowed. Anything else (a minus, a decimal point, a letter) is not a whole number. */
+export const joinCountries = (countries: string[]): string =>
+  countries.some((country) => country.includes(",")) ? countries.join("; ") : countries.join(", ")
+
+/** Whole numbers: plain digits, or digits grouped by thousands with commas or spaces ("90,000"). "1,5" is not 15. */
 function parseAmount(value: string): number | null {
-  const compact = value.replace(/[\s,]/g, "")
-  if (!/^\d+$/.test(compact)) return null
-  const amount = Number(compact)
+  const text = value.trim()
+  if (!/^\d+$/.test(text) && !/^\d{1,3}([, ]\d{3})+$/.test(text)) return null
+  const amount = Number(text.replace(/[, ]/g, ""))
   return Number.isSafeInteger(amount) ? amount : null
 }
 
@@ -192,8 +196,27 @@ function canonical(value: unknown): string {
   )
 }
 
+/**
+ * What `formToProfile` drops without a word: an amount that is not a whole number, and an extra field with only a label
+ * or only a value. Dirty must see them too, or such an edit would leave Save disabled and the leave guard off.
+ */
+function dropped(form: ProfileForm): string[] {
+  const out: string[] = []
+  for (const amount of [form.salaryMin, form.salaryMax])
+    if (amount.trim() !== "" && parseAmount(amount) === null) out.push(amount)
+  for (const row of form.extras) {
+    const [label, value] = [row.label.trim(), row.value.trim()]
+    if ((label !== "" || value !== "") && (normalizeLabel(label) === "" || value === "")) out.push(`${label}\n${value}`)
+  }
+  return out
+}
+
 export function isDirty(form: ProfileForm, saved: SavedProfile | null): boolean {
-  return canonical(formToProfile(form, saved?.data)) !== canonical(formToProfile(profileToForm(saved), saved?.data))
+  const initial = profileToForm(saved)
+  return (
+    canonical(formToProfile(form, saved?.data)) !== canonical(formToProfile(initial, saved?.data)) ||
+    canonical(dropped(form)) !== canonical(dropped(initial))
+  )
 }
 
 export type FieldError = { id: string; message: string }

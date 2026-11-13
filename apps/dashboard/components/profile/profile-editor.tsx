@@ -1,6 +1,6 @@
 "use client"
 
-import { errorMessage } from "@skiffr/orpc/errors"
+import { errorMessage, isUnauthorized } from "@skiffr/orpc/errors"
 import { orpc } from "@skiffr/orpc/react"
 import { Alert, AlertDescription, AlertTitle } from "@skiffr/ui/components/alert"
 import {
@@ -20,7 +20,7 @@ import { Skeleton } from "@skiffr/ui/components/skeleton"
 import { Spinner } from "@skiffr/ui/components/spinner"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { CircleAlertIcon } from "lucide-react"
-import { type FormEvent, useMemo, useState } from "react"
+import { type FormEvent, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 import { Time } from "@/components/time"
 import {
@@ -65,16 +65,26 @@ function ProfileEditor({ saved }: { saved: SavedProfile | null }) {
   const [touched, setTouched] = useState<ReadonlySet<string>>(new Set())
   const [submitted, setSubmitted] = useState(false)
   const [saveFailure, setSaveFailure] = useState<string | null>(null)
+  const [signedOut, setSignedOut] = useState(false)
   const [savedAt, setSavedAt] = useState<Date | null>(null)
   const [announcement, setAnnouncement] = useState("")
+  const submitting = useRef(false)
 
   const errors = useMemo(() => validateProfileForm(form), [form])
   const dirty = isDirty(form, saved)
-  const guard = useUnsavedGuard(dirty)
+
+  // A refetch (or another tab's save) changed the saved profile: follow it only while the form has no edits of its own.
+  const [seen, setSeen] = useState(saved)
+  if (saved !== seen) {
+    setSeen(saved)
+    if (!isDirty(form, seen) && isDirty(form, saved) && !saveFailure && !submitting.current)
+      setForm(profileToForm(saved))
+  }
 
   const save = useMutation(
     orpc.profile.upsert.mutationOptions({
       onMutate: async (input) => {
+        submitting.current = true
         await queryClient.cancelQueries({ queryKey: getKey })
         const previous = queryClient.getQueryData(getKey)
         const now = new Date()
@@ -92,6 +102,7 @@ function ProfileEditor({ saved }: { saved: SavedProfile | null }) {
         queryClient.setQueryData(getKey, context?.previous ?? null)
         setSavedAt(null)
         setSaveFailure(errorMessage(error))
+        setSignedOut(isUnauthorized(error))
         toast.error(errorMessage(error))
       },
       onSuccess: (row) => {
@@ -99,8 +110,14 @@ function ProfileEditor({ saved }: { saved: SavedProfile | null }) {
         setSavedAt(row.updatedAt)
         toast.success("Profile saved")
       },
+      onSettled: () => {
+        submitting.current = false
+      },
     }),
   )
+
+  // `onMutate` clears `dirty` (the cache already holds the new values), so the guard stays up until the api has answered.
+  const guard = useUnsavedGuard(dirty || save.isPending)
 
   const set: <K extends keyof ProfileForm>(key: K, value: ProfileForm[K]) => void = (key, value) =>
     setForm((current) => ({ ...current, [key]: value }))
@@ -211,7 +228,23 @@ function ProfileEditor({ saved }: { saved: SavedProfile | null }) {
             <Alert variant="destructive" className="mb-8">
               <CircleAlertIcon aria-hidden="true" />
               <AlertTitle>The profile was not saved</AlertTitle>
-              <AlertDescription>{saveFailure} Your changes are still on this page.</AlertDescription>
+              <AlertDescription>
+                {saveFailure} Your changes are still on this page.
+                {signedOut ? (
+                  <>
+                    {" "}
+                    <a
+                      href="/sign-in"
+                      target="_blank"
+                      rel="noopener"
+                      className="text-foreground underline underline-offset-4"
+                    >
+                      Sign in in a new tab
+                    </a>
+                    , then press Save profile again.
+                  </>
+                ) : null}
+              </AlertDescription>
             </Alert>
           ) : null}
 

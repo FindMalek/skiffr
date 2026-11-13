@@ -105,3 +105,92 @@ test("loaded rows get the same keys on every call, so server and browser markup 
   const [a, b] = [profileToForm(saved), profileToForm(saved)]
   expect([a.otherLinks[0]?.key, a.extras[0]?.key]).toEqual([b.otherLinks[0]?.key, b.extras[0]?.key])
 })
+
+test("every field lands in its own key: distinct values, nothing swapped or dropped, and the page loads them back", () => {
+  const filled = form({
+    firstName: "first",
+    lastName: "last",
+    email: "mail@example.com",
+    phone: "+1 202 555 0101",
+    linkedin: "https://linkedin.com/in/l",
+    github: "https://github.com/g",
+    portfolio: "https://portfolio.dev",
+    website: "https://website.dev",
+    otherLinks: [{ key: 1, value: "https://other.dev" }],
+    countries: "Aland, Brazil",
+    sponsorship: "yes",
+    visaStatus: "visa",
+    currency: "CHF",
+    salaryMin: "1000",
+    salaryMax: "2000",
+    period: "month",
+    city: "city",
+    region: "region",
+    country: "country",
+    postalCode: "12345",
+    relocate: "no",
+    remote: "onsite",
+    extras: [{ key: 1, label: "Skills", value: "ts" }],
+  })
+  const saved = formToProfile(filled)
+  expect(saved).toEqual({
+    data: {
+      identity: {
+        firstName: "first",
+        lastName: "last",
+        email: "mail@example.com",
+        phone: "+1 202 555 0101",
+        pronouns: undefined,
+      },
+      links: {
+        linkedin: "https://linkedin.com/in/l",
+        github: "https://github.com/g",
+        portfolio: "https://portfolio.dev",
+        website: "https://website.dev",
+        other: ["https://other.dev"],
+      },
+      workAuth: { authorizedCountries: ["Aland", "Brazil"], requiresSponsorship: true, visaStatus: "visa" },
+      salary: { currency: "CHF", min: 1000, max: 2000, period: "month" },
+      location: {
+        city: "city",
+        region: "region",
+        country: "country",
+        postalCode: "12345",
+        willingToRelocate: false,
+        remotePreference: "onsite",
+      },
+    },
+    fields: { skills: "ts" },
+  })
+  expect(profileDataSchema.parse(saved.data)).toEqual(saved.data)
+  const strip = (value: ProfileForm) =>
+    JSON.parse(
+      JSON.stringify({
+        ...value,
+        otherLinks: value.otherLinks.map((r) => r.value),
+        extras: value.extras.map(({ key: _key, ...row }) => row),
+      }),
+    )
+  expect(strip(profileToForm(saved))).toEqual({ ...strip(filled), extras: [{ label: "skills", value: "ts" }] })
+})
+
+test("an edit that converts to nothing still counts as a change, and the amount rules do not misread decimal commas", () => {
+  const saved = formToProfile(form({ firstName: "Ada" }))
+  expect(isDirty(profileToForm(saved), saved)).toBe(false)
+  expect(isDirty({ ...profileToForm(saved), salaryMin: "-5" }, saved)).toBe(true)
+  expect(isDirty({ ...profileToForm(saved), salaryMax: "1.5" }, saved)).toBe(true)
+  expect(isDirty({ ...profileToForm(saved), extras: [{ key: 1, label: "Skills", value: "" }] }, saved)).toBe(true)
+  expect(isDirty({ ...profileToForm(saved), extras: [{ key: 1, label: "", value: "" }] }, saved)).toBe(false)
+  expect(ids({ salaryMin: "1,5" })).toEqual(["salaryMin"])
+  expect(formToProfile(form({ salaryMin: "90,000", salaryMax: "1 200 000" })).data.salary).toMatchObject({
+    min: 90000,
+    max: 1200000,
+  })
+})
+
+test("a country with a comma in its name survives a load and a save", () => {
+  const saved = formToProfile(form({ countries: "Korea, Republic of; France" }))
+  expect(saved.data.workAuth.authorizedCountries).toEqual(["Korea, Republic of", "France"])
+  const again = formToProfile(profileToForm(saved), saved.data)
+  expect(again.data.workAuth.authorizedCountries).toEqual(["Korea, Republic of", "France"])
+})

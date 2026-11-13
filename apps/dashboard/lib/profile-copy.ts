@@ -15,7 +15,7 @@ export const HELP = {
   portfolio: `Fills the portfolio field. ${MODEL}`,
   website: `Fills the personal website field. ${MODEL}`,
   otherLinks: `Fills other link fields, such as a blog or a design profile. Up to 10. ${MODEL}`,
-  countries: `Answers "Are you authorized to work in...?" for each country. Separate countries with commas. ${MODEL}`,
+  countries: `The countries you are authorized to work in. Separate them with commas, or with semicolons if a name has a comma. ${MODEL}`,
   sponsorship: `Answers "Will you need visa sponsorship?". Not specified leaves the question empty. ${MODEL}`,
   visaStatus: `For questions about your visa or work permit, such as "Citizen" or "Work visa". ${MODEL}`,
   currency: `The currency of the salary fields. ${STAYS}`,
@@ -28,7 +28,7 @@ export const HELP = {
   postalCode: `The postal or ZIP code field. ${STAYS}`,
   relocate: `Answers "Are you willing to relocate?". Not specified leaves it empty. ${STAYS}`,
   remote: `Answers questions about remote, hybrid or on-site work. ${STAYS}`,
-  extras: `Anything else a form asks that the fields above do not cover, such as notice period or years of experience. skiffr matches the label to the question on the form. Labels ignore case and punctuation. Labels like headline, summary, skills or availability are shown to your AI provider when a field needs mapping, others stay on your server.`,
+  extras: `Anything else a form asks that the fields above do not cover. skiffr matches the label to the question on the form. Labels ignore case and punctuation. Every label is shown to your AI provider when a field needs mapping. A value is shown only for these labels: preferred name, headline, summary, experience, years of experience, skills, languages, notice period, availability, linkedin, github, portfolio, website.`,
 } as const
 
 export const NEVER_FILLED: readonly { title: string; detail: string }[] = [
@@ -45,5 +45,8 @@ export const NEVER_FILLED: readonly { title: string; detail: string }[] = [
   },
   { title: "Pronouns", detail: "Never filled, even if one was saved earlier." },
   { title: "Consent and signatures", detail: "Terms, privacy and marketing consent, certifications and signatures." },
-  { title: "Salary history", detail: "What you earned before. Only your expected range above is used." },
+  {
+    title: "Salary history",
+    detail: "Questions that say salary history. Current or previous pay is not covered yet, so check those fields.",
+  },
 ]

@@ -10,8 +10,9 @@ export function NeverFilled() {
           Fields skiffr never fills
         </h2>
         <p className="text-muted-foreground text-sm">
-          These are skipped on every site, whatever your profile holds, and never saved as answers. You fill them
-          yourself. skiffr also never presses submit, next or apply.
+          A check in the extension skips these on every site, whatever your profile holds, and never saves them as
+          answers. It reads the wording of the question, so an unusual phrasing can slip through: look over what was
+          filled before you submit. skiffr never presses submit, next or apply.
         </p>
       </div>
       <ul className="grid gap-x-8 gap-y-3 sm:grid-cols-2">
