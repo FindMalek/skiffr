@@ -1,123 +1,91 @@
 "use client"
 
-import { authClient } from "@skiffr/auth/client"
-import { Avatar, AvatarFallback, AvatarImage } from "@skiffr/ui/components/avatar"
 import {
   Sidebar,
   SidebarContent,
-  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
+  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
+  SidebarSeparator,
+  useSidebar,
 } from "@skiffr/ui/components/sidebar"
-import {
-  BarChart3Icon,
-  FileUserIcon,
-  InboxIcon,
-  LayoutDashboardIcon,
-  ListChecksIcon,
-  LogOutIcon,
-  MailIcon,
-  NotebookPenIcon,
-  PuzzleIcon,
-  RadarIcon,
-  SettingsIcon,
-  UsersIcon,
-} from "lucide-react"
-import type { Route } from "next"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
+import { ADMIN_NAV, isNavActive, type NavItem, PRIMARY_NAV, SETTINGS_NAV } from "@/components/shell/nav"
 
-interface Me {
-  name: string
-  email: string
-  image: string | null
-  role: string | null
-}
-
-const NAV: { href: Route; label: string; icon: typeof LayoutDashboardIcon; admin?: boolean }[] = [
-  { href: "/", label: "Overview", icon: LayoutDashboardIcon },
-  { href: "/queue", label: "Queue", icon: InboxIcon },
-  { href: "/stats", label: "Stats", icon: BarChart3Icon },
-  { href: "/notes", label: "Notes", icon: NotebookPenIcon },
-  { href: "/answers", label: "Answers", icon: ListChecksIcon },
-  { href: "/settings/extension", label: "Extension", icon: PuzzleIcon },
-  { href: "/users", label: "Users", icon: UsersIcon, admin: true },
-  { href: "/settings/gmail", label: "Gmail", icon: MailIcon },
-  { href: "/settings/sources", label: "Sources", icon: RadarIcon },
-  { href: "/settings/cv", label: "Resume", icon: FileUserIcon },
-  { href: "/settings", label: "Settings", icon: SettingsIcon },
-]
-
-/** The most specific nav entry wins, so `/settings/gmail` doesn't also light up Settings. */
-function isActive(href: string, pathname: string): boolean {
-  if (href === "/") return pathname === "/"
-  const owns = (candidate: string) => pathname === candidate || pathname.startsWith(`${candidate}/`)
+function NavMenu({ items, pathname }: { items: NavItem[]; pathname: string }) {
   return (
-    owns(href) && !NAV.some((other) => other.href !== href && other.href.startsWith(`${href}/`) && owns(other.href))
+    <SidebarMenu>
+      {items.map((item) => {
+        const active = isNavActive(item, pathname)
+        return (
+          <SidebarMenuItem key={item.href}>
+            <SidebarMenuButton
+              tooltip={item.label}
+              isActive={active}
+              render={<Link href={item.href} aria-current={active ? "page" : undefined} />}
+            >
+              <item.icon />
+              <span>{item.label}</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        )
+      })}
+    </SidebarMenu>
   )
 }
 
-export function AppSidebar({ me }: { me: Me }) {
+/** From `md`: an icon rail, the full sidebar from `xl`. Below `md` the tab bar replaces it. */
+export function AppSidebar({ isAdmin }: { isAdmin: boolean }) {
   const pathname = usePathname()
-  const signOut = async () => {
-    await authClient.signOut()
-    window.location.assign("/sign-in")
-  }
+  const { isMobile } = useSidebar()
+  if (isMobile) return null
   return (
-    <Sidebar collapsible="icon" variant="inset">
-      <SidebarHeader>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton size="lg" render={<Link href="/" />}>
-              <span className="grid size-8 place-items-center bg-primary font-bold text-primary-foreground">a</span>
-              <span className="font-heading font-semibold">skiffr</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
-      </SidebarHeader>
-      <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {NAV.filter((item) => !item.admin || me.role === "admin").map((item) => (
-                <SidebarMenuItem key={item.href}>
-                  <SidebarMenuButton
-                    tooltip={item.label}
-                    isActive={isActive(item.href, pathname)}
-                    render={<Link href={item.href} />}
-                  >
-                    <item.icon />
-                    <span>{item.label}</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-      </SidebarContent>
-      <SidebarFooter>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton size="lg" tooltip="Sign out" onClick={signOut}>
-              <Avatar className="size-8">
-                {me.image && <AvatarImage src={me.image} alt="" />}
-                <AvatarFallback>{me.name.slice(0, 1).toUpperCase()}</AvatarFallback>
-              </Avatar>
-              <span className="grid flex-1 text-left text-sm leading-tight">
-                <span className="truncate font-medium">{me.name}</span>
-                <span className="truncate text-muted-foreground text-xs">{me.email}</span>
-              </span>
-              <LogOutIcon className="ml-auto" />
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
-      </SidebarFooter>
-      <SidebarRail />
+    <Sidebar collapsible="icon">
+      <nav aria-label="Main" className="flex min-h-0 flex-1 flex-col">
+        <SidebarHeader className="h-14 justify-center border-b p-2">
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton tooltip="skiffr" render={<Link href="/" />}>
+                <span
+                  aria-hidden="true"
+                  className="grid size-5 shrink-0 place-items-center bg-primary font-heading font-semibold text-primary-foreground text-xs"
+                >
+                  s
+                </span>
+                <span className="font-heading font-semibold text-base">skiffr</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarHeader>
+        <SidebarContent>
+          <SidebarGroup>
+            <SidebarGroupContent>
+              <NavMenu items={PRIMARY_NAV} pathname={pathname} />
+            </SidebarGroupContent>
+          </SidebarGroup>
+          <SidebarSeparator />
+          <SidebarGroup>
+            <SidebarGroupContent>
+              <NavMenu items={[SETTINGS_NAV]} pathname={pathname} />
+            </SidebarGroupContent>
+          </SidebarGroup>
+          {isAdmin && (
+            <SidebarGroup className="mt-auto border-t">
+              <SidebarGroupLabel>Admin</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <NavMenu items={ADMIN_NAV} pathname={pathname} />
+              </SidebarGroupContent>
+            </SidebarGroup>
+          )}
+        </SidebarContent>
+        <SidebarRail />
+      </nav>
     </Sidebar>
   )
 }

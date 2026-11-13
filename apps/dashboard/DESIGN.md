@@ -224,13 +224,25 @@ template "Overview" page. Home is called "Today" so the label says what the page
 
 ### 3.1 Shell
 
-- Header row on every page (sticky, 56px, `border-b`, `bg-background`): sidebar trigger (md and up), breadcrumb **only**
-  when nested (Settings / Extension), global search button (`Search  ⌘K`), theme toggle, user menu. The page title is
-  the `<h1>` below it, rendered once.
-- User menu (dropdown): name and email, Settings, Appearance, Keyboard shortcuts, Sign out (one click, no confirm).
-  Sign out is not a bare icon button in the sidebar footer.
-- Skip link "Skip to content" first in tab order, target `<main id="main" tabIndex={-1}>`; focus moves to the `h1` on
-  route change.
+- Header row on every page (sticky, 56px, `border-b`, `bg-background`, the one `header` landmark): sidebar trigger (md
+  and up), global search button (`Search  ⌘K`), theme toggle, user menu. The page title is the `<h1>` below it,
+  rendered once by `PageHeader`. The breadcrumb is **not** in this row: it is the first line of `PageHeader` (4.1), only
+  when the page is nested (Settings / Extension), so it also shows below `md`, where the top bar has no room for it.
+- Sidebar width: an icon rail from `md`, the full 256px sidebar from `xl`. The trigger overrides that until the window
+  crosses `xl` again. The server renders the full sidebar, so between `md` and `xl` the first paint is corrected once
+  on hydration; it never animates.
+- User menu (dropdown): name and email, Settings, Appearance, Keyboard shortcuts (opens the help dialog once the
+  shortcuts provider, 3.2, exists), Sign out (one click, no confirm). Below `md` it also holds the theme choice
+  (System, Light, Dark). Sign out is not a bare icon button in the sidebar footer, and the sidebar has no footer.
+- Skip link "Skip to content" first in tab order (rendered by the root layout, `z-skip` while focused), target
+  `<main id="main" tabIndex={-1}>` (the auth layout has one too); focus moves to the `h1` on route change
+  (`RouteFocus`), and again if a loading skeleton's `h1` is replaced while focus is lost, but never takes focus from
+  something the user focused meanwhile.
+- Navigation landmarks: the sidebar (including its logo link) and the mobile tab bar are each `nav` "Main", never in the
+  DOM at the same width. `aria-current="page"` marks the current item; Settings is current on every settings page.
+- Shell sizes are CSS variables in `app/shell.css`: `--header-h` (56px), `--tab-bar-h` (56px), `--action-bar-h` (0, a
+  page with a sticky bottom action sets it), `--toast-bottom` (16px, and above the tab bar and action bar below `md`).
+  `viewport-fit=cover` makes the safe-area inset available.
 - **Mobile (below md)**: one top bar and one bottom bar, no sidebar trigger.
   - Top bar 56px: `skiffr` wordmark, search icon button, user menu button (avatar). The user menu holds theme,
     Settings and Sign out, so sign out and theme are always reachable.
@@ -241,7 +253,10 @@ template "Overview" page. Home is called "Today" so the label says what the page
     so nothing is hidden.
 - Global search / command palette (`⌘K` / `Ctrl K`): jump to pages, search jobs by company or role, search answers
   by question, run actions ("Add job", "Open next job", "Create extension token", "Sync Gmail now", "Switch theme").
-  Built on shadcn `Command` (cmdk) in a dialog. It loads nothing until it opens and never logs queries.
+  Built on shadcn `Command` (cmdk) in a dialog. It loads nothing until it opens (the code is a separate chunk,
+  requested on the first open) and never logs queries. Search starts at 2 characters, debounced 200ms: jobs through the
+  jobs list query, answers by filtering the answer bank query the Answers page uses. A job result opens the queue
+  filtered to its company (`/queue?q=`), an answer result opens Answers.
 - Toasts: bottom-right on desktop, above the bottom bars on mobile (see above); not top-center, which covers the page
   header. Max 3 stacked, 5s (8s with an action, persistent for errors that need action), pause on hover and focus,
   always `role="status"` (errors `role="alert"`). A toast with an action ("Undo") is the pattern for reversible
@@ -283,7 +298,7 @@ Map (one list, all pages use it; the `?` dialog is generated from it):
 ### 4.1 Page header
 
 ```
-[breadcrumb: Settings / Extension]            (only when nested)
+[breadcrumb: Settings / Extension]            (only when nested; a `nav` "breadcrumb", the last item is the page)
 h1 Title                                      [primary action]
 one line description, muted, max 70ch         [secondary actions]
 ```
@@ -384,8 +399,10 @@ always means "done and kept"). Source and ATS labels are **not** badges: they ar
   server.
 - **Error (section)**: bordered box with a `--destructive` icon, a plain sentence of what failed, the reason when
   known, a `Try again` button, the request id when the API sends `x-request-id`. Never a bare red text line.
-- **Error (route)**: `error.tsx` per route group with the same box and "Go to Today"; `global-error.tsx`; a branded
-  `not-found.tsx` inside the shell. Unauthenticated API errors redirect to sign in with a `next` param and a toast
+- **Error (route)**: `error.tsx` per route group with the same box ("Try again", "Go to Today", and the Next error
+  digest as the request id); `global-error.tsx` (no providers, it reads the stored theme itself); a branded
+  `not-found.tsx` inside the shell (an unknown url under the app is caught by `(app)/[...slug]` so it keeps the sidebar).
+  The page `h1` of these is visually hidden, the visible title is the box. Unauthenticated API errors redirect to sign in with a `next` param and a toast
   "Your session ended".
 - **Offline / slow**: a thin banner under the header when `navigator.onLine` is false.
 - Success feedback is a toast or an inline "Saved" with a timestamp; never silent.
@@ -519,7 +536,8 @@ word) sits in the user menu and on Today.
 | area | files |
 | --- | --- |
 | tokens, primitives | `packages/ui/src/styles/*.css`, `packages/ui/src/components/*` |
-| shell | `apps/dashboard/app/(app)/layout.tsx`, `components/app-sidebar.tsx`, `components/page-header.tsx`, `components/shell/*` |
+| shell | `apps/dashboard/app/(app)/layout.tsx`, `app/shell.css`, `components/app-sidebar.tsx`, `components/page-header.tsx`, `components/shell/*` |
+| error and 404 | `app/error.tsx`, `app/global-error.tsx`, `app/not-found.tsx`, `app/(app)/error.tsx`, `app/(app)/not-found.tsx`, `app/(app)/[...slug]/page.tsx`, `components/shell/error-page.tsx` |
 | format helpers | `apps/dashboard/lib/format.ts`, `components/time.tsx` |
 | settings | `apps/dashboard/app/(app)/settings/**`, `components/settings/*` |
 
