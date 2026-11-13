@@ -1,0 +1,171 @@
+---
+title: Playground
+description: Hosted fake application sites that look and behave like the real boards, so autofill can be tested end to end without touching a real site.
+---
+
+The playground (`apps/playground`, port 3004) serves realistic replicas of application pages: the boards the extension has adapters for, the other big boards, wizards that replace their content between steps, framework forms and pages built to catch a guard that fails. Every page has a job description, submits only to the playground's own `/api/submissions` and shows a believable confirmation. Nothing is ever sent to another host.
+
+Use it two ways: open a page in your browser, run the extension and read the result on `/inspect`, or let the e2e suite do the same on every pull request.
+
+## Run it
+
+```bash
+pnpm --filter playground dev
+```
+
+Open http://playground.localhost:3004. Chrome resolves every `*.localhost` name to this machine, so `http://greenhouse.playground.localhost:3004/` works as it is. Safari and curl need an `/etc/hosts` entry, or use the path form `http://playground.localhost:3004/s/greenhouse/`.
+
+### Real board host names
+
+The extension detects a board by its host name (`job-boards.greenhouse.io`, `jobs.lever.co`, ...). A playground subdomain is not one of those, so it runs the generic path only. To see the board adapters run, point the real names at your machine and serve the app over https (some of these hosts are https only in Chrome). In the e2e this is a resolver rule and a throwaway certificate:
+
+```bash
+chrome --host-resolver-rules="MAP job-boards.greenhouse.io 127.0.0.1, MAP boards.greenhouse.io 127.0.0.1, MAP jobs.lever.co 127.0.0.1, MAP jobs.ashbyhq.com 127.0.0.1, MAP apply.workable.com 127.0.0.1" --ignore-certificate-errors
+```
+
+The page answers to the Host header, so the same app serves every name. The list of real names per page is on the index page and in `src/sites.ts`.
+
+## Pages
+
+| Page | What it tests |
+| --- | --- |
+| `greenhouse` | the new board: react-select comboboxes, async location, EEOC and consent questions (adapter) |
+| `greenhouse-legacy` | the old `boards.greenhouse.io` rails form with `job_application[...]` names |
+| `lever` | the apply page with the location dropdown that wipes typed text, pronouns, EEO and signature (adapter) |
+| `ashby` | single page app, yes/no buttons, autocomplete, labelled radios (adapter) |
+| `workable` | aria radiogroups, a cookie banner over the form (adapter) |
+| `linkedin` | Easy Apply modal: five steps, the content is replaced at each one, self identification and review |
+| `workday` | `data-automation-id` markup over several pages, listbox dropdowns, disclosures. `?wall=1` puts an account wall in front |
+| `smartrecruiters`, `teamtailor`, `bamboohr`, `recruitee`, `personio`, `join` | each board's own wrappers, names and consent blocks |
+| `generic` | a plain company careers page |
+| `embed` and `embed-frame` | a company page with a Greenhouse form in a cross origin iframe |
+| `react` | a real React 19 form with controlled inputs, mounted late |
+| `vue` | a real Vue 3 form with `v-model` directives |
+| `shadow` | a form inside an open shadow root |
+| `honeypot` | real fields plus traps no person sees |
+| `eeo` | contact fields next to equal opportunity questions, consent checkboxes and a signature |
+
+The faithful board pages (`greenhouse`, `greenhouse-legacy`, `lever`, `ashby`, `workable`) are the fixtures in `apps/e2e/pages/adapters` and `apps/e2e/pages/ats`, served as they are with the playground's submit, switches and a job description added. Fix a board's markup there and both the e2e suite and the playground get it.
+
+## Host names
+
+A request is mapped to a page from its Host header, in this order:
+
+1. a real board host name (`jobs.lever.co`). `boards.greenhouse.io` serves the legacy page, and the embed frame under `/embed/`
+2. `<page>.<index host>`, for example `lever.playground.localhost`
+3. the index host itself with `/s/<page>/...`, when there is no wildcard name
+
+`PLAYGROUND_URL` is the public address of the index host. With `PLAYGROUND_SUBDOMAINS=true` (the default) job urls are subdomains of it, with `false` they are `/s/<page>` paths. Previews have no wildcard name, so they run with `false`. The cross origin frame of `embed` needs a second host: it is `boards.greenhouse.io`, `embed-frame.<index host>`, or the same origin in path mode.
+
+## Switches
+
+Add them to any page url.
+
+| Query | Effect |
+| --- | --- |
+| `?latency=1500` | adds that many milliseconds (at most 10000) to every timer of 200 ms or more, the ones that stand in for a network answer: async widgets, debounced searches, the late mount of the React page |
+| `?cookie=1` | shows a cookie banner over the lower left corner |
+| `?layout=b` | reorders the fields, to emulate a layout change |
+| `?variant=renamed-ids` or `moved-fields` or `new-required-field` | a changed markup variant, see below. `variant=none` always gets the original |
+| `?run=abc` | tags the submissions of one run, so `/inspect?run=abc` shows only yours |
+
+## Inspect
+
+`/inspect` lists the last submissions kept in memory (a restart clears them, `PLAYGROUND_MAX_SUBMISSIONS` caps them, default 100). Each one shows every control of the page with its label, its type, what it held and a status:
+
+- **filled** or **empty**
+- **required, left empty** (amber): a visible required control that has no value. A new required field after a redesign shows up here
+- **sensitive field was filled** (red): a field about gender, race, veterans, disability, pronouns, consent, privacy, arbitration or a signature holds a value
+- **hidden trap was filled** (red): a field no person can see or fill (the honeypot page) holds a value
+
+A red submission turns the page red with `data-guard="failed"`. If you typed the value yourself, that is expected; if you did not, the guard failed. The playground keeps its own list of sensitive words, apart from the extension's, so a regression there is seen here.
+
+Values are cut to plain bounded text and escaped, control and bidi characters are removed, password fields (by type, name or label) are never kept, and files are kept as a name and a size. What is stored of the request is the `Host` header (up to 100 characters), the page, the switches and the fields. No cookie, other header or client address is stored.
+
+### Who can read what
+
+| Route | Without a token | With the token |
+| --- | --- | --- |
+| pages, `/`, `/api/jobs`, `/health`, `/robots.txt`, `POST /api/submissions` | open | open |
+| `/inspect?run=<id>`, `GET` and `DELETE /api/submissions?run=<id>` | open when the run id is at least 16 characters: the id is the key to that run alone | open |
+| `/inspect`, `GET` and `DELETE /api/submissions` without a run id, `/admin` | refused | open |
+
+A page opened without `?run=` gets a random 32 character run id, and the confirmation page links to `/inspect` for that run only, so a person reads back what they filled and nobody else does. A test run picks its own long id.
+
+The private routes **fail closed**. With `NODE_ENV=production` (the Dockerfile sets it) or a `PLAYGROUND_URL` that is not localhost, and no `PLAYGROUND_TOKEN`, they answer 403 and the log line at startup says so. Locally, with neither, they are open for convenience. Set the token on every public server.
+
+The token goes in the `x-playground-token` header or the `pg_token` cookie. A visit to `/inspect?token=...` or `/admin?token=...` is answered with a redirect that drops the token from the address and sets the cookie (`HttpOnly`, `SameSite=Strict`, eight hours), so it does not stay in history or in a referrer (`Referrer-Policy: no-referrer` is set everywhere). The token in a url still reaches the access log of the proxy once: use the header for scripts.
+
+The admin actions also need a same origin request (`Sec-Fetch-Site: same-origin`, or an `Origin` that matches the host), so another website cannot flip a page with a form post.
+
+### Limits
+
+- Bodies are counted while they stream and cut at 1 MB (`PLAYGROUND_MAX_BODY`): a declared length over it gets 413 at once, a chunked body gets 413 and its connection is dropped
+- node's own timeouts are tightened (headers 10 s, whole request 15 s, keep alive 5 s, checked every 5 s, at most 50 headers, 200 connections). 200 idle sockets are enough to hold the host, so the proxy in front needs its own cap per address. A production start with `TRUSTED_PROXY_COUNT` at 0 prints a warning
+- writes and private reads are limited per address with a token bucket in memory: a burst of 20, then 30 a minute (`PLAYGROUND_RATE_BURST`, `PLAYGROUND_RATE_PER_MINUTE`, 0 for no limit). Behind a proxy set `TRUSTED_PROXY_COUNT` to the number of proxies that append to `x-forwarded-for` (1 behind Traefik), otherwise the proxy's address is the one limited. A shared proxy in front should add its own rate limit as well
+- a run keeps its last 10 submissions and the server the last 100 (`PLAYGROUND_MAX_SUBMISSIONS`), so one noisy run does not push out another. Anyone can still post under any run id, only the per address limit stands in the way: do not rely on a hosted playground to keep a run for long
+- a stray error inside the process is logged as one fixed line and the server keeps serving. More than 20 in a minute exits the process so the platform restarts it clean
+- only `GET`, `HEAD`, `POST` and `DELETE` are answered, a malformed `Host` gets 400
+
+`GET /api/submissions?run=abc` returns the same records as JSON, `DELETE /api/submissions?run=abc` forgets them.
+
+## Break it
+
+`/admin` flips one page, for everyone, into a changed markup variant until you switch it back or restart:
+
+| Variant | What changes |
+| --- | --- |
+| `renamed-ids` | every id and name gets a suffix, labels and aria references follow |
+| `moved-fields` | the fields change order, the way a redesign moves them |
+| `new-required-field` | a new required question appears before the submit button |
+
+The variants are applied in the browser after the page is drawn, to the form of the page, so they work on every page, framework pages and shadow roots included. Run the extension on the original and on a variant and compare: label based fill survives renamed ids and moved fields, a new required field is not filled and either stops the submit (native validation) or is flagged on `/inspect`. The e2e does exactly this and compares the signature of the fields the fill asked about, the same signature the [smoke run](/docs/drift) uses to notice a real site that changed.
+
+## For the seeder
+
+`GET /api/jobs` returns every page with the url a seeded job should point at, built from `PLAYGROUND_URL`, and the address on the real board host where there is one:
+
+```json
+{ "jobs": [{ "site": "lever", "name": "Lever", "url": "https://lever.playground.example/acme/6ddc5e28-.../apply", "realUrl": "https://jobs.lever.co/acme/6ddc5e28-.../apply" }] }
+```
+
+## Safety
+
+- Every response carries `X-Robots-Tag: noindex, nofollow, noarchive`, `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer`, and `/robots.txt` disallows everything. Pages also carry `<meta name="robots">` and a fixed banner saying this is a skiffr test page with a fake company and that no real data or password should be entered. The banner stays on every page, no query removes it, and the pages that borrow the layout of LinkedIn and Workday also say they are not those. No real logos or brand assets are used, and their page titles end in "(test)"
+- Pages carry `Content-Security-Policy: form-action 'self'; base-uri 'self'; frame-ancestors 'self'`, so the browser itself refuses a form that posts anywhere else and a page cannot be framed by another site. The embed frame also allows its company page (`www.acme.test`, `embed.<index host>`) and nothing else. The index, inspect, admin and confirmation pages have `default-src 'none'` and no script of ours
+- The pages answer on real board host names (`jobs.lever.co`, `www.linkedin.com`, ...) when the `Host` header says so. That only happens when a visitor maps those names to this server on their own machine, as the e2e does
+- The job text is neutral and made up (Acme). No third party text is copied: the faithful pages are the repository's own fixtures
+- The index, inspect and admin pages may load Umami when `UMAMI_URL` and `UMAMI_WEBSITE_ID` are set. The board replicas never load a tracker
+- The server keeps nothing on disk. Errors go to GlitchTip when `GLITCHTIP_DSN` is set (the error class and a path, never a message or a stack), and a submission sends an Umami event with only the page name and whether the guard failed, at most 20 a minute. The exporters in `@skiffr/telemetry` are temporary: the swap to `@skiffr/observability` is tracked in #202
+
+## Environment
+
+| Variable | Meaning |
+| --- | --- |
+| `PORT` | default 3004 |
+| `HOST` | bind address, default `0.0.0.0` (the Dockerfile sets it) |
+| `PLAYGROUND_URL` | public address of the index host, default `http://playground.localhost:3004` |
+| `PLAYGROUND_SUBDOMAINS` | `true` for `<page>.<host>` names, `false` for `/s/<page>` |
+| `PLAYGROUND_TOKEN` | required on a public or production server: without it inspect, admin and the listing stay shut |
+| `PLAYGROUND_MAX_BODY` | bytes a request body may have, default 1000000 |
+| `PLAYGROUND_RATE_BURST`, `PLAYGROUND_RATE_PER_MINUTE` | per address write limit, default 20 and 30, 0 burst turns it off |
+| `TRUSTED_PROXY_COUNT` | proxies in front that append to `x-forwarded-for`, default 0 (header ignored) |
+| `PLAYGROUND_MAX_SUBMISSIONS` | default 100 |
+| `PLAYGROUND_FIXTURES_DIR` | the e2e pages folder, default `apps/e2e/pages` |
+| `UMAMI_URL`, `UMAMI_WEBSITE_ID`, `GLITCHTIP_DSN` | optional exporters, no-ops when unset |
+
+## Deploy
+
+One image, `apps/playground/Dockerfile` (build context is the repo root, port 3004, health check `/health`). In Dokploy create an application named `skiffr-playground` from that image and route:
+
+- `playground.skiffr.findmalek.engineer` to port 3004
+- `*.playground.skiffr.findmalek.engineer` to the same port, which needs a wildcard DNS record and a wildcard certificate for that name (the existing `*.findmalek.engineer` certificate does not cover a name two levels down)
+
+Set `PLAYGROUND_URL=https://playground.skiffr.findmalek.engineer`, `PLAYGROUND_SUBDOMAINS=true`, `TRUSTED_PROXY_COUNT=1` and a `PLAYGROUND_TOKEN` (required: without it the private routes answer 403). Put no shared cache in front: the embed page reflects the `Host` header into the frame address, and every response is `no-store`. Previews use `PLAYGROUND_SUBDOMAINS=false`. Without a wildcard name the pages still work through `/s/<page>`, but the extension only runs its generic path there.
+
+## Tests
+
+- `apps/playground/src/app.test.ts`: submission recording, inspect escaping and the red flag, token, host mapping, variants and switches (`pnpm --filter playground test`)
+- `apps/e2e/tests/playground.spec.ts`: the real extension against every page: fill works, sensitive fields and traps stay empty, the only submission is the one to the playground, nothing loads from another host, the multi step flow, the iframe, the switches and the drift variants
+
+A form in a shadow root is not offered a fill yet. The e2e records that as an expected failure (`test.fail`), so the day the detector learns it the test flags itself.

@@ -208,7 +208,7 @@ pnpm dev --filter='!extension'
 
 `BETTER_AUTH_SECRET` must be at least 32 characters (`openssl rand -base64 32`) or the api refuses to start. `ADMIN_PASSWORD` must be at least 10 characters. `DATABASE_URL` already matches the local Postgres from `pnpm db:up`. `pnpm db:up` uses `docker/docker-compose.yml`, the root `docker-compose.yml` is the self-hosting stack.
 
-The apps run on the same ports as above (site 3000, api 3001, dashboard 3002, docs 3003). Sign in to the dashboard with `ADMIN_EMAIL` and `ADMIN_PASSWORD`, save your profile, and create a token on the Extension page. `pnpm dev` without the filter also starts the extension dev server (`wxt`), which opens a development browser with hot reload.
+The apps run on the same ports as above (site 3000, api 3001, dashboard 3002, docs 3003, and the test page playground at http://playground.localhost:3004). Sign in to the dashboard with `ADMIN_EMAIL` and `ADMIN_PASSWORD`, save your profile, and create a token on the Extension page. `pnpm dev` without the filter also starts the extension dev server (`wxt`), which opens a development browser with hot reload.
 
 To build the extension yourself:
 
