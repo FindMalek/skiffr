@@ -1,8 +1,9 @@
 import { createHash, randomBytes } from "node:crypto"
 import type { Session } from "@skiffr/auth"
 import { TOKEN_PREFIX } from "@skiffr/common/constants"
+import type { ClientInfo } from "@skiffr/common/utils"
 import { apiToken, type Db, user } from "@skiffr/db"
-import { and, eq, isNull, lt, or } from "drizzle-orm"
+import { and, eq, isNull, lt, or, sql } from "drizzle-orm"
 import { describeError } from "./errors"
 
 const TOKEN_LENGTH = TOKEN_PREFIX.length + 43
@@ -61,7 +62,12 @@ export function bearerSecret(headers: Headers): string | null {
 }
 
 /** The token's owner, or `null` for anything unknown, malformed, revoked, expired or owned by a banned user. A database failure throws a `TokenStoreError`, it is not a bad token. */
-export async function verifyToken(db: Db, secret: string, now: Date): Promise<TokenAuth | null> {
+export async function verifyToken(
+  db: Db,
+  secret: string,
+  now: Date,
+  client: ClientInfo | null = null,
+): Promise<TokenAuth | null> {
   if (secret.length !== TOKEN_LENGTH || !secret.startsWith(TOKEN_PREFIX)) return null
   const hash = hashToken(secret)
   const [row] = await guardTokenDb("verify", () =>
@@ -79,8 +85,20 @@ export async function verifyToken(db: Db, secret: string, now: Date): Promise<To
   const staleBefore = new Date(now.getTime() - LAST_USED_THROTTLE_MS)
   await db
     .update(apiToken)
-    .set({ lastUsedAt: now })
-    .where(and(eq(apiToken.id, token.id), or(isNull(apiToken.lastUsedAt), lt(apiToken.lastUsedAt, staleBefore))))
+    .set({ lastUsedAt: now, ...(client ?? {}) })
+    .where(
+      and(
+        eq(apiToken.id, token.id),
+        or(
+          isNull(apiToken.lastUsedAt),
+          lt(apiToken.lastUsedAt, staleBefore),
+          // A new version shows at once, not up to a minute later.
+          client
+            ? sql`(${apiToken.client}, ${apiToken.clientVersion}) is distinct from (${client.client}, ${client.clientVersion})`
+            : undefined,
+        ),
+      ),
+    )
     .catch((error) => {
       const { code, causeName } = describeError(error)
       console.error("[tokens] lastUsedAt failed", tokenErrorFields(new TokenStoreError("touch", code, causeName)))

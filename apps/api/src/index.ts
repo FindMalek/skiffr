@@ -47,6 +47,12 @@ const auth = createAuth({
 
 const adminId = await ensureAdmin(db, auth, env.ADMIN_EMAIL, env.ADMIN_PASSWORD)
 if (env.SEED === "demo" && (await seedDemo(db, { ownerId: adminId }))) console.info("seeded demo data")
+if (env.SEED === "preview") {
+  const { runPreviewSeed } = await import("./seed/run")
+  const { seeded, skipped } = await runPreviewSeed(db, auth, env)
+  console.info(seeded ? "seeded preview data" : "preview data already seeded")
+  for (const note of skipped) console.info(`preview seed skipped: ${note}`)
+}
 
 const extensionOrigins = env.EXTENSION_ORIGINS?.split(",")
   .map((origin) => origin.trim())
@@ -58,6 +64,10 @@ if (env.NODE_ENV === "production" && !extensionOrigins?.length) {
 const gmail = gmailFromEnv(env)
 const watch = createWatchRuntime({ refreshMinutes: env.WATCH_REFRESH_MINUTES })
 const cv = env.CV_ENCRYPTION_KEY ? createCvRuntime({ encryptionKey: env.CV_ENCRYPTION_KEY }) : null
+
+const embeddingModel =
+  resolveEmbeddingModel(env) ??
+  (env.SEED === "preview" ? (await import("./seed/embedding")).fakeEmbeddingModel() : null)
 
 const fetch = createServer(
   {
@@ -79,7 +89,8 @@ const fetch = createServer(
       prefix: env.DEPLOY_ENV.startsWith("pr-") ? `${env.DEPLOY_ENV}/` : "",
     }),
     model: resolveModel(env.AI_MODEL, env),
-    embeddingModel: resolveEmbeddingModel(env),
+    // Previews have no provider key: a deterministic stand-in keeps similar-question suggestions clickable.
+    embeddingModel,
     gmail,
     watch,
     cv,
