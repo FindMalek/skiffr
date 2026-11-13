@@ -426,7 +426,50 @@ test("a cursor with a NUL, an unknown kind or a bad key is a 400, never a databa
     { at: 1, kind: "jobs_queued", key: "ABC DEF" },
     { at: 1, kind: "jobs_queued", key: "a".repeat(81) },
     { at: -1, kind: "jobs_queued", key: "abc" },
+    { at: 1e15, kind: "jobs_queued", key: "abc" },
+    { at: 8.64e15, kind: "jobs_queued", key: "abc" },
+    { at: Number.MAX_SAFE_INTEGER, kind: "jobs_queued", key: "abc" },
   ]) {
     await expect(list(max, { cursor: forge(bad) }), JSON.stringify(bad)).rejects.toMatchObject({ code: "BAD_REQUEST" })
   }
+})
+
+test("events in the same hour bucket page through one by one, for jobs and for fields", async () => {
+  const ned = await newUser()
+  await addJob(ned, 1, at("2026-11-12T10:15:00Z"), { source: "aaa" })
+  await addJob(ned, 2, at("2026-11-12T10:45:00Z"), { source: "bbb" })
+  await db.insert(fieldEvent).values(
+    [
+      ["one.example", "10:10"],
+      ["two.example", "10:50"],
+    ].map(([siteKey, time]) => ({
+      userId: ned.id,
+      siteKey: siteKey!,
+      fingerprint: "f",
+      normalizedLabel: "l",
+      rawLabel: "l",
+      filledValue: "a",
+      finalValue: "a",
+      source: "profile" as const,
+      outcome: "accepted" as const,
+      createdAt: at(`2026-11-12T${time}:00Z`),
+    })),
+  )
+  const all = (await list(ned)).items
+  expect(all.map((e) => e.kind).sort()).toEqual(["fields_filled", "fields_filled", "jobs_queued", "jobs_queued"])
+  for (const kind of ["jobs_queued", "fields_filled"]) {
+    expect(all.filter((e) => e.kind === kind).map((e) => e.at.getTime())).toEqual([
+      at("2026-11-12T10:00:00Z").getTime(),
+      at("2026-11-12T10:00:00Z").getTime(),
+    ])
+  }
+  const seen: string[] = []
+  let cursor: string | undefined
+  for (let pages = 0; pages < 10; pages++) {
+    const page = await list(ned, { limit: 1, cursor })
+    seen.push(...page.items.map((e) => e.id))
+    if (!page.nextCursor) break
+    cursor = page.nextCursor
+  }
+  expect(seen).toEqual(all.map((e) => e.id))
 })
