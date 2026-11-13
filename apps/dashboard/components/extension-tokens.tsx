@@ -176,8 +176,8 @@ export function ExtensionTokens({ apiUrl }: { apiUrl: string }) {
   }
 
   return (
-    <div className="grid gap-4 p-4 md:p-6 lg:grid-cols-3">
-      <div className="grid content-start gap-4 lg:col-span-1">
+    <div className="grid gap-4 p-4 md:p-6 @4xl:grid-cols-3">
+      <div className="grid content-start gap-4 @4xl:col-span-1">
         <Card>
           <CardHeader>
             <CardTitle>New token</CardTitle>
@@ -222,7 +222,7 @@ export function ExtensionTokens({ apiUrl }: { apiUrl: string }) {
         </Card>
       </div>
 
-      <div className="grid content-start gap-4 lg:col-span-2">
+      <div className="grid content-start gap-4 @4xl:col-span-2">
         <p role="status" className="sr-only">
           {secret ? "Token created" : ""}
         </p>

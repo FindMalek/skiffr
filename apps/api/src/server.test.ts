@@ -13,7 +13,10 @@ import { migrate } from "drizzle-orm/pglite/migrator"
 import { createServer } from "./server"
 
 const EXTENSION = `chrome-extension://${"a".repeat(32)}`
-const COOKIE_SESSION = { user: { id: "ana", name: "Ana", email: "ana@test.dev" } }
+const COOKIE_SESSION = {
+  user: { id: "ana", name: "Ana", email: "ana@test.dev" },
+  session: { id: "s1", createdAt: new Date() },
+}
 const DRIZZLE = new URL("../../../packages/db/drizzle", import.meta.url).pathname
 
 let server: (request: Request) => Promise<Response>
@@ -42,7 +45,10 @@ beforeAll(async () => {
       model: null,
       embeddingModel: null,
     },
-    { publicUrl: "http://api.test" },
+    {
+      publicUrl: "http://api.test",
+      version: async () => ({ version: "9.9.9", commit: "abc1234", updateCheck: false }),
+    },
   )
 })
 
@@ -72,6 +78,12 @@ test("a token calls the extension procedures over rpc without cookies or a csrf 
   expect((await rpc("tokens/list", { origin: EXTENSION, cookie: "session=1", "x-csrf-token": "orpc" })).status).toBe(
     401,
   )
+})
+
+test("the export is never cached, by the browser or a proxy", async () => {
+  const response = await server(new Request("http://api.test/v1/account/export", { headers: session }))
+  expect(response.status).toBe(200)
+  expect(response.headers.get("cache-control")).toBe("no-store")
 })
 
 test("every rpc answer carries a request id for the log line of a failure", async () => {
@@ -200,4 +212,10 @@ test("a flood of urls with a typed segment can't add labels or hide the health g
     setObservability(noopObservability)
     collector.stop()
   }
+})
+
+test("GET /version answers without a session and holds no secret", async () => {
+  const res = await server(new Request("http://api.test/version"))
+  expect(res.status).toBe(200)
+  expect(await res.json()).toEqual({ version: "9.9.9", commit: "abc1234", updateCheck: false })
 })

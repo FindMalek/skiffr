@@ -10,12 +10,16 @@
   #banner { position: fixed; top: 0; left: 0; right: 0; height: 12px; background: #eee; opacity: 0.9; z-index: 50; }
 </style>
 <div id="banner"></div>
+<!-- a real cookie layer over the whole page: it is looked through, so every cover below it still hides its field -->
+<div><div id="cc-back" style="position:fixed;inset:0;z-index:100;background:#000;opacity:.5"></div><div role="dialog" aria-label="Cookie consent" style="position:fixed;left:0;right:0;bottom:0;z-index:101;height:30px;background:#fff"><button type="button">Decline all</button></div></div>
 <form id="app" onsubmit="event.preventDefault(); window.__submitted = true"></form>
 <script>
   const trap = (n, css) => `<input aria-label="TRAP ${n}" name="trap${n}" data-trap="${n}" ${css}>`
   const parent = (n, style) => `<div style="${style}">${trap(n, "")}</div>`
   const frame = (n, style) =>
     `<iframe title="f${n}" style="${style}" srcdoc="<label for='x'>TRAP ${n}</label><input id='x' name='trap${n}' data-trap='${n}'>"></iframe>`
+  const fake = (n, box, attrs) =>
+    `<div style="position:relative;height:24px">${trap(n, "")}<div ${attrs} style="position:absolute;inset:0;background:#fff;z-index:10;${box}"><button type="button">OK</button></div></div>`
   const cases = [
     trap(1, 'style="display:none"'),
     parent(2, "display:none"),
@@ -51,6 +55,13 @@
     frame(32, "position:absolute;left:-9999px;width:200px;height:50px"),
     `<div style="display:none" id="shadow-host-trap"></div>`,
     trap(34, 'style="width:1px;height:1px;padding:0;border:0"'),
+    // a page names its own cookie dialog: none of these is a fixed box over the viewport next to a fixed dialog
+    fake(35, "", 'role="dialog" class="cookie-consent"'),
+    fake(36, "opacity:.01", 'role="dialog" class="cookie-consent"'),
+    fake(37, "", 'aria-modal="true" id="gdpr"'),
+    `<div style="position:relative;height:24px">${trap(38, "")}<div style="position:absolute;inset:0;background:#fff;z-index:10"></div><div role="dialog" aria-label="cookie settings" style="position:fixed;left:0;bottom:0;width:10px;height:10px"><button type="button">OK</button></div></div>`,
+    `<iframe title="f39" style="width:300px;height:30px;border:0" srcdoc="<div style='position:relative;height:24px'><input aria-label='TRAP 39' name='trap39' data-trap='39'><div role='dialog' class='cookie-consent' style='position:absolute;inset:0;background:#fff;z-index:10'><button type='button'>OK</button></div></div>"></iframe>`,
+    `<div style="position:relative;height:24px" id="shadow-host-fake"></div>`,
   ]
   const form = document.getElementById("app")
   form.innerHTML =
@@ -63,6 +74,9 @@
      <div class="row legit-far"><label for="l4">LEGIT below the fold</label><input id="l4" name="l4"></div>`
   const ok = document.getElementById("shadow-host-trap").attachShadow({ mode: "open" })
   ok.innerHTML = '<label for="s">TRAP 33</label><input id="s" name="trap33" data-trap="33">'
+  const fakeRoot = document.getElementById("shadow-host-fake").attachShadow({ mode: "open" })
+  fakeRoot.innerHTML =
+    '<div style="position:relative;height:24px"><input aria-label="TRAP 40" name="trap40" data-trap="40"><div role="dialog" class="cookie-consent" style="position:absolute;inset:0;background:#fff;z-index:10"><button type="button">OK</button></div></div>'
   document.getElementById("shadow-legit").attachShadow({ mode: "open" }).innerHTML =
     '<label for="s">LEGIT shadow</label><input id="s" name="shadow">'
 

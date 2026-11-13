@@ -247,7 +247,7 @@ await (async () => {
 })()
 
 await (async () => {
-  log("\n== honeypots (34 hidden fields, 5 legit ones)")
+  log("\n== honeypots (40 hidden fields, 5 legit ones)")
   const page = await open("honeypots.html", { width: 1000, height: 1600 })
   const res = await page.evaluate(async () => {
     const fill = window.skiffrFill
@@ -257,10 +257,10 @@ await (async () => {
     return { labels: fields.map((f) => f.descriptor.label ?? f.descriptor.name), traps: window.__trapValues() }
   })
   const collectedTraps = res.labels.filter((l) => /TRAP/.test(l))
-  check("honeypots: none of the 34 hidden fields is collected", collectedTraps.length === 0, collectedTraps.join(", "))
+  check("honeypots: none of the 40 hidden fields is collected", collectedTraps.length === 0, collectedTraps.join(", "))
   check(
     "honeypots: none of them received a value",
-    res.traps.length === 34 && res.traps.every(([, v]) => v === ""),
+    res.traps.length === 40 && res.traps.every(([, v]) => v === ""),
     res.traps
       .filter(([, v]) => v)
       .map(([n]) => n)

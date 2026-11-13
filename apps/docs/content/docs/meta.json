@@ -1,9 +1,12 @@
 {
   "pages": [
+    "install",
     "index",
     "setup",
     "extension",
     "snapshots",
+    "playground",
+    "drift",
     "smoke",
     "dashboard",
     "environment",
@@ -11,6 +14,7 @@
     "scripts",
     "seeding",
     "deploy",
+    "releasing",
     "previews",
     "learning",
     "gmail",

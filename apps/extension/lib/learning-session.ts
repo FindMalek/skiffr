@@ -56,6 +56,8 @@ type Active = {
   fields: CollectedField[]
   /** What the fill put in each field. */
   baseline: Map<string, string>
+  /** Fields where the page shows less than the fill wrote (the dial code of a phone): untouched, they teach nothing. */
+  moved: Set<string>
   /** What the person left in a field they edited, from trusted gestures only. */
   finals: Map<string, string>
   mappings: Map<string, FieldMapping>
@@ -114,6 +116,7 @@ export function createLearningSession({
         values.set(field.id, final)
         // a field that did not change since the last delivered batch stays in the form but counts for nothing
         if (active.sent.get(field.id) === final) return { filled: "", final: "", mapping }
+        if (active.moved.has(field.id) && final === filled) return { filled: "", final: "", mapping }
         return { filled, final, mapping }
       },
     )
@@ -160,6 +163,7 @@ export function createLearningSession({
         active.finals.delete(id)
         active.mappings.delete(id)
         active.sent.delete(id)
+        active.moved.delete(id)
       }
     })().finally(() => {
       active.retiring = undefined
@@ -222,6 +226,8 @@ export function createLearningSession({
       if (field.status !== "filled" || field.value === undefined) continue
       active.baseline.set(field.id, field.value)
       active.finals.delete(field.id)
+      if (field.moved) active.moved.add(field.id)
+      else active.moved.delete(field.id)
     }
     for (const entry of start.mapping) active.mappings.set(entry.id, entry)
     watch(active, start)
@@ -234,6 +240,7 @@ export function createLearningSession({
       roots: [start.root],
       fields: [...start.fields],
       baseline: new Map(),
+      moved: new Set(),
       finals: new Map(),
       mappings: new Map(),
       sent: new Map(),

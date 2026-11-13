@@ -1,4 +1,4 @@
-export const LIMIT_CLASSES = ["read", "write", "embed", "ai", "expensive", "upload"] as const
+export const LIMIT_CLASSES = ["read", "write", "embed", "ai", "expensive", "upload", "sensitive"] as const
 export type LimitClass = (typeof LIMIT_CLASSES)[number]
 
 /** A bucket holds `burst` calls and gets `perMinute` back every minute. */
@@ -19,6 +19,8 @@ export const DEFAULT_RATE_RULES: RateRules = {
   expensive: { burst: 8, perMinute: 12 },
   /** Up to 4 MB each: a burst of 3, then one every ten minutes, about 144 a day at the very most. */
   upload: { burst: 3, perMinute: 0.1 },
+  /** Export and account deletion, which re-check a password: five tries, then one a minute. */
+  sensitive: { burst: 5, perMinute: 1 },
 }
 
 export type Verdict = { ok: true } | { ok: false; retryAfterSeconds: number }

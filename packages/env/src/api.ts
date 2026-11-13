@@ -44,6 +44,12 @@ const schema = z.object({
   BETTER_AUTH_SECRET: z.string().min(32),
   GITHUB_CLIENT_ID: optional,
   GITHUB_CLIENT_SECRET: optional,
+  /** `true` lets the api ask GitHub once in a while for the latest release, so `GET /version` can say an update exists. It sends nothing about you. Off by default. */
+  UPDATE_CHECK: z.enum(["true", "false"]).default("false"),
+  /** Set by the release image build, shown by `GET /version`. */
+  SKIFFR_COMMIT: optional,
+  /** Where the extension zip of this build lives, served at `/downloads`. Default `downloads` under the working directory. */
+  DOWNLOADS_DIR: optional,
   /** First admin, created (or its password reset) on every start. */
   ADMIN_EMAIL: optional,
   ADMIN_PASSWORD: optional,

@@ -108,18 +108,24 @@ const BOARDS: Board[] = [
     filled: {
       "#firstname": "Ana",
       "#lastname": "Silva",
-      "#phone": "+351 912 345 678",
+      "#email": "ana.silva@example.com",
+      "#input_phone": "912 345 678",
       "#summary": "Short drafted answer.",
       "#input_CA_10627_input": "2 weeks",
       "#CA_10629": "LinkedIn",
     },
     shown: {},
     on: ["#wrapper_m74ZhVJHLkaayzr8", "#wrapper_l1ZK6o4KqoX0DPuC"],
-    state: { firstname: "Ana", email: "ana.silva@example.com", CA_47143: "https://github.com/ana-silva" },
+    state: {
+      firstname: "Ana",
+      email: "ana.silva@example.com",
+      phone: "912 345 678",
+      CA_47143: "https://github.com/ana-silva",
+    },
     untouched: ["input[name=QA_12487770]", "#EEO_2", "input[name=EEO_1]", "input[name=EEO_9]"],
     private: /gender|veteran|diversity|agree|equal employment|please select one/i,
     submit: "button[data-ui=apply-button]",
-    correction: { selector: "#phone", label: /^Phone$/, value: "+351 000 111 222" },
+    correction: { selector: "#input_phone", label: /Phone$/, value: "000 111 222" },
   },
 ]
 
@@ -141,6 +147,22 @@ const isOn = (locator: Locator): Promise<boolean> =>
   )
 
 type Asked = { label: string; type?: string; options: string[] }
+
+/** What every answerable control of the form holds, so a fill is counted by what it changed and not by what was there. */
+const holds = (page: Page): Promise<Record<string, string>> =>
+  page.evaluate(() => {
+    const out: Record<string, string> = {}
+    const controls = document.querySelectorAll<HTMLInputElement>(
+      "form input:not([type=hidden],[type=file],[aria-hidden]), form textarea, form [role=radio]",
+    )
+    controls.forEach((control, index) => {
+      const checkable = control.type === "checkbox" || control.hasAttribute("aria-checked")
+      out[`${index}:${control.id || control.name}`] = checkable
+        ? String(control.checked ?? control.getAttribute("aria-checked"))
+        : control.value
+    })
+    return out
+  })
 
 const lookupFields = (requests: { path: string; body: unknown }[]): Asked[] =>
   requests
@@ -199,7 +221,7 @@ for (const board of BOARDS) {
         mockApi,
       }) => {
         await connect(serviceWorker, mockApi)
-        const { page, toast } = await openAdapterPage(context, fixtureServer, board.name, generic)
+        const { page, toast } = await openAdapterPage(context, fixtureServer, board.name, { generic })
         await toast.click("yes")
         await toast.waitFor((s) => s.title !== null && FILLED.test(s.title), 30_000)
         await page.evaluate(() => document.addEventListener("submit", (event) => event.preventDefault()))
@@ -222,6 +244,54 @@ for (const board of BOARDS) {
   })
 }
 
+test("workable: the first screen is filled while the cookie dialog still dims it, and the toast counts what stayed", async ({
+  context,
+  serviceWorker,
+  fixtureServer,
+  mockApi,
+}) => {
+  await connect(serviceWorker, mockApi)
+  const { page, toast } = await openAdapterPage(context, fixtureServer, "workable", { keepConsent: true })
+  await expect(page.locator("[data-ui=backdrop]")).toBeVisible()
+  const hit = await page.locator("#firstname").evaluate((el) => {
+    const box = el.getBoundingClientRect()
+    return document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)?.getAttribute("data-ui")
+  })
+  expect(hit).toBe("backdrop")
+
+  const before = await holds(page)
+  await toast.click("yes")
+  const done = await toast.waitFor((s) => s.title !== null && FILLED.test(s.title), 30_000)
+
+  await expect(page.locator("#firstname")).toHaveValue("Ana")
+  await expect(page.locator("#lastname")).toHaveValue("Silva")
+  await expect(page.locator("#email")).toHaveValue("ana.silva@example.com")
+  // the country picker took the dial code, so the input shows the national number
+  await expect(page.locator("#input_phone")).toHaveValue("912 345 678")
+  await expect(page.locator(".iti__selected-country")).toHaveAttribute("aria-label", /Portugal \(\+351\)/)
+  await expect(page.locator("#EEO_2")).toHaveValue("")
+
+  await page.evaluate(() => (window as unknown as Partial<Widgets>).Fixture?.render())
+  await expect(page.locator("#input_phone")).toHaveValue("912 345 678")
+  const state = await page.evaluate(() => ({ ...(window as unknown as Partial<Widgets>).Fixture?.state }))
+  expect(state).toMatchObject({
+    firstname: "Ana",
+    lastname: "Silva",
+    email: "ana.silva@example.com",
+    phone: "912 345 678",
+  })
+
+  const kept = Object.entries(await holds(page)).filter(([key, value]) => before[key] !== value).length
+  expect(Number(/^Filled (\d+)/.exec(done.title ?? "")?.[1])).toBe(kept)
+
+  const labels = lookupLabels(mockApi.requests)
+  for (const label of [/First name/, /Last name/, /Email/, /Phone$/, /Github profile/]) {
+    expect(labels.some((text) => label.test(text))).toBe(true)
+  }
+  expect(labels.some((label) => /gender|veteran|diversity|equal employment|agree/i.test(label))).toBe(false)
+  expect(fixtureServer.submissions).toEqual([])
+})
+
 test("a board page on a host no adapter knows is still filled by the generic path, and keeps the private questions out", async ({
   context,
   serviceWorker,
@@ -229,7 +299,7 @@ test("a board page on a host no adapter knows is still filled by the generic pat
   mockApi,
 }) => {
   await connect(serviceWorker, mockApi)
-  const { page, toast } = await openAdapterPage(context, fixtureServer, "greenhouse", true)
+  const { page, toast } = await openAdapterPage(context, fixtureServer, "greenhouse", { generic: true })
 
   await toast.click("yes")
   await toast.waitFor((s) => s.title !== null && FILLED.test(s.title), 30_000)
