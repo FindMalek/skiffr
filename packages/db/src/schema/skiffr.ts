@@ -257,6 +257,9 @@ export const apiToken = pgTable(
     tokenHash: text("token_hash").notNull().unique(),
     createdAt: createdAt(),
     lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    /** From the `x-skiffr-client` header (name and version only), for the connection health card. Null for older clients. */
+    client: text("client"),
+    clientVersion: text("client_version"),
     expiresAt: timestamp("expires_at", { withTimezone: true }),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
   },

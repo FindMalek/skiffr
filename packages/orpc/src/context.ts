@@ -1,4 +1,5 @@
 import type { Auth, Session } from "@skiffr/auth"
+import { CLIENT_HEADER, parseClient } from "@skiffr/common/utils"
 import type { Db } from "@skiffr/db"
 import type { Storage } from "@skiffr/storage"
 import type { EmbeddingModel, LanguageModel } from "ai"
@@ -63,7 +64,7 @@ export async function createContext(
   const secret = bearerSecret(headers)
   if (secret !== null) {
     try {
-      const token = await verifyToken(services.db, secret, services.now())
+      const token = await verifyToken(services.db, secret, services.now(), parseClient(headers.get(CLIENT_HEADER)))
       return { ...services, requestId, headers, session: null, bearer: true, token, tokenUnavailable: false }
     } catch (error) {
       if (!(error instanceof TokenStoreError)) throw error
