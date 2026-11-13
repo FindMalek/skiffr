@@ -45,7 +45,7 @@ const NAV: { href: Route; label: string; icon: typeof LayoutDashboardIcon; admin
   { href: "/stats", label: "Stats", icon: BarChart3Icon },
   { href: "/notes", label: "Notes", icon: NotebookPenIcon },
   { href: "/answers", label: "Answers", icon: ListChecksIcon },
-  { href: "/extension", label: "Extension", icon: PuzzleIcon },
+  { href: "/settings/extension", label: "Extension", icon: PuzzleIcon },
   { href: "/users", label: "Users", icon: UsersIcon, admin: true },
   { href: "/settings/gmail", label: "Gmail", icon: MailIcon },
   { href: "/settings/sources", label: "Sources", icon: RadarIcon },

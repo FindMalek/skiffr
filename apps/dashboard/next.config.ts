@@ -29,6 +29,8 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   typedRoutes: true,
   headers: async () => [{ source: "/:path*", headers: securityHeaders }],
+  // /extension moved under settings; /settings itself redirects in its page.
+  redirects: async () => [{ source: "/extension", destination: "/settings/extension", permanent: true }],
 }
 
 const plugins: Array<(config: NextConfig) => NextConfig> = []

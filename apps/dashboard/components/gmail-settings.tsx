@@ -346,8 +346,8 @@ export function GmailSettings({ notice, docsUrl }: { notice: string | null; docs
   )
 
   return (
-    <div className="grid gap-4 p-4 md:p-6 lg:grid-cols-3">
-      <div className="grid content-start gap-4 lg:col-span-2">
+    <div className="grid gap-4 p-4 md:p-6 @4xl:grid-cols-3">
+      <div className="grid content-start gap-4 @4xl:col-span-2">
         {message && (
           <Alert variant={message.ok ? "default" : "destructive"} role="status">
             {message.ok ? <MailIcon /> : <TriangleAlertIcon />}
@@ -408,7 +408,7 @@ export function GmailSettings({ notice, docsUrl }: { notice: string | null; docs
         {status.connected && <Recent />}
       </div>
 
-      <div className="grid content-start gap-4 lg:col-span-1">
+      <div className="grid content-start gap-4 @4xl:col-span-1">
         {status.connected && <Senders />}
         <PrivacyNote />
       </div>
