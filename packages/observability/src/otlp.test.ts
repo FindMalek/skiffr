@@ -23,7 +23,12 @@ test("headers come in the standard otel format", () => {
 test("logs and metrics reach the collector with the headers, and only allowlisted attributes", async () => {
   collector.requests.length = 0
   const o = make()
-  o.logEvent("info", "http.request", { "http.method": "GET", "http.status_code": 200, cookie: "session=1" })
+  o.logEvent(
+    "info",
+    "http.request",
+    { "http.method": "GET", "http.status_code": 200, cookie: "session=1" },
+    "GET /health 200 3ms",
+  )
   o.count("skiffr.http.requests", 1, { "http.status_class": "2xx" })
   o.count("skiffr.http.requests", 1, { "http.status_class": "2xx" })
   o.gauge("skiffr.db.up", 1)
@@ -35,9 +40,10 @@ test("logs and metrics reach the collector with the headers, and only allowliste
   expect(collector.requests[0]?.headers.get("stream-name")).toBe("skiffr")
   const logs = JSON.parse(collector.requests.find((r) => r.path.endsWith("/logs"))?.body ?? "{}")
   const record = logs.resourceLogs[0].scopeLogs[0].logRecords[0]
-  expect(record.body.stringValue).toBe("http.request")
+  expect(record.body.stringValue).toBe("GET /health 200 3ms")
   expect(record.attributes.map((a: { key: string }) => a.key).sort()).toEqual([
     "deploy_env",
+    "event",
     "http.method",
     "http.status_code",
   ])
@@ -48,6 +54,42 @@ test("logs and metrics reach the collector with the headers, and only allowliste
   expect(named["skiffr.http.requests"].sum.dataPoints[0].asDouble).toBe(2)
   expect(named["skiffr.db.up"].gauge.dataPoints[0].asDouble).toBe(1)
   expect(named["skiffr.http.duration_ms"].histogram.dataPoints[0].count).toBe("1")
+})
+
+test("the log body is the readable line, the event name stays an attribute, and a line that isn't plain falls back to the event", async () => {
+  collector.requests.length = 0
+  const o = make()
+  o.logEvent("warn", "http.request", {}, "GET /v1/answers/:id 404 9ms")
+  o.logEvent("info", "http.request", {}, "GET /v1/answers/jane@example.com?token=abc 200 9ms")
+  await o.flush()
+  const logs = JSON.parse(collector.requests.find((r) => r.path.endsWith("/logs"))?.body ?? "{}")
+  const [readable, hostile] = logs.resourceLogs[0].scopeLogs[0].logRecords
+  expect(readable.body.stringValue).toBe("GET /v1/answers/:id 404 9ms")
+  expect(readable.severityNumber).toBe(13)
+  expect(readable.severityText).toBe("WARN")
+  expect(readable.attributes).toContainEqual({ key: "event", value: { stringValue: "http.request" } })
+  expect(hostile.body.stringValue).toBe("http.request")
+})
+
+test("a captured error is also a log line with only its kind and class", async () => {
+  collector.requests.length = 0
+  const o = make()
+  o.captureError(Object.assign(new TypeError("boom for jane@example.com"), { detail: "jane" }), {
+    job: "gmail",
+    error_kind: "internal",
+  })
+  o.captureError(new RangeError("x"), { error_kind: "has spaces" })
+  await o.flush()
+  const sent = collector.everything()
+  const records = JSON.parse(collector.requests.find((r) => r.path.endsWith("/logs"))?.body ?? "{}").resourceLogs[0]
+    .scopeLogs[0].logRecords
+  expect(records.map((r: { body: { stringValue: string } }) => r.body.stringValue)).toEqual([
+    "error internal: TypeError",
+    "error internal: RangeError",
+  ])
+  expect(records[0].severityText).toBe("ERROR")
+  expect(sent).not.toContain("jane")
+  expect(sent).not.toContain("boom")
 })
 
 test("with nothing set no request leaves and nothing throws", async () => {

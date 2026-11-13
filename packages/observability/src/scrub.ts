@@ -8,6 +8,11 @@ export type Allowlist = Readonly<Record<string, AttrRule>>
 const SAFE_STRING = /^[A-Za-z0-9_.:/-]{1,80}$/
 const NAME = /^[a-z][a-z0-9_.]{0,63}$/
 
+/** A readable log line: words, digits and the route characters only. No quote, `@`, `=`, `?`, `%` or `#`, so a query string or an email can't ride along. */
+const SAFE_LINE = /^[A-Za-z0-9 _.:/*-]{1,160}$/
+
+export const isSafeLine = (line: unknown): line is string => typeof line === "string" && SAFE_LINE.test(line)
+
 export const isSafeName = (name: unknown): name is string => typeof name === "string" && NAME.test(name)
 
 function keep(value: unknown, rule: AttrRule): string | number | boolean | undefined {
@@ -39,6 +44,7 @@ export const OUTCOMES = ["ok", "error", "skipped", "budget", "refused"] as const
  * Adding a key is a privacy decision and goes through review.
  */
 export const ATTRIBUTES = {
+  event: "string",
   "http.method": METHODS,
   "http.route": "string",
   "http.status_code": "number",
