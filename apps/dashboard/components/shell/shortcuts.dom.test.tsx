@@ -47,8 +47,8 @@ const dialog = () => document.querySelector('[role="dialog"]')
 const input = () => host.querySelector("input") as HTMLInputElement
 const button = () => host.querySelector("main button") as HTMLButtonElement
 
-function Probe({ onRun }: { onRun: () => void }) {
-  useShortcut({ id: "probe", keys: ["n"], label: "Open next job", group: "Queue", run: onRun })
+function Probe({ onRun, keys = ["n"] }: { onRun: () => void; keys?: string[] }) {
+  useShortcut({ id: "probe", keys, label: "Open next job", group: "Queue", run: onRun })
   return null
 }
 
@@ -80,9 +80,11 @@ test("? opens the help dialog with what pages registered, and closing it returns
   // The only tab stop is the close button: Tab must stay on it, not walk out into the page behind.
   const close = dialog()?.querySelector<HTMLElement>("button")
   close?.focus()
-  const tab = new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true })
-  await act(async () => close?.dispatchEvent(tab))
-  expect(tab.defaultPrevented).toBe(true)
+  for (const shiftKey of [false, true]) {
+    const tab = new KeyboardEvent("keydown", { key: "Tab", shiftKey, bubbles: true, cancelable: true })
+    await act(async () => close?.dispatchEvent(tab))
+    expect(tab.defaultPrevented).toBe(true)
+  }
 
   await press(document.activeElement as Element, "Escape")
   await wait(300)
@@ -165,6 +167,12 @@ test("the user menu opens the help dialog even with shortcuts off, and focus goe
   await wait(100)
   expect(dialog()?.textContent).toContain("Single key shortcuts are off in this browser")
   expect(dialog()?.querySelector('a[href="/settings/appearance"]')).not.toBeNull()
+  const headings = [...(dialog()?.querySelectorAll("h3") ?? [])].map((heading) => heading.textContent)
+  expect(headings).toEqual(["Anywhere", "Go to (off)", "On the page (off)"])
+  const sidebarRow = [...(dialog()?.querySelectorAll("dl > div") ?? [])].find((row) =>
+    row.textContent?.includes("sidebar"),
+  )
+  expect(sidebarRow?.className).toContain("max-md:hidden")
 
   await press(document.activeElement as Element, "Escape")
   await wait(300)
@@ -187,4 +195,102 @@ test("Ctrl B toggles the sidebar, but not while typing in a field", async () => 
   expect(expanded()).toBe(before)
   await press(host.querySelector("button") as Element, "b", { ctrlKey: true })
   expect(expanded()).not.toBe(before)
+})
+
+test("a page that registers the shell's own keys wins on the first mount and after a later one", async () => {
+  const runs: string[] = []
+  await render(page(<Probe keys={["g", "q"]} onRun={() => runs.push("page")} />))
+  await press(button(), "g")
+  await press(button(), "q")
+  expect(runs).toEqual(["page"])
+  expect(nav.pushed).toEqual([])
+
+  await render(page())
+  await press(button(), "g")
+  await press(button(), "q")
+  expect(nav.pushed).toEqual(["/queue"])
+  await render(page(<Probe keys={["g", "q"]} onRun={() => runs.push("page")} />))
+  await press(button(), "g")
+  await press(button(), "q")
+  expect(runs).toEqual(["page", "page"])
+  expect(nav.pushed).toEqual(["/queue"])
+})
+
+test("g, then focus leaving the page and coming back, does not leave a sequence waiting", async () => {
+  await render(
+    page(
+      <a href="/stats" id="side">
+        side
+      </a>,
+    ),
+  )
+  const chip = () => document.querySelector('[role="status"]')?.textContent
+  await press(button(), "g")
+  expect(chip()).toContain("Queue")
+  button().focus()
+  await act(async () => {
+    const side = document.getElementById("side")
+    button().dispatchEvent(new FocusEvent("focusout", { bubbles: true, relatedTarget: side }))
+    side?.focus()
+  })
+  expect(chip()).toBe("")
+  button().focus()
+  await press(button(), "q")
+  expect(nav.pushed).toEqual([])
+})
+
+test("turning the switch off drops a sequence that is waiting", async () => {
+  await render(page())
+  await press(button(), "g")
+  expect(document.querySelector('[role="status"]')?.textContent).toContain("Queue")
+  await act(async () => writeShortcutsEnabled(false))
+  expect(document.querySelector('[role="status"]')?.textContent).toBe("")
+})
+
+test("the provider takes its document listeners off when it unmounts", async () => {
+  const add: string[] = []
+  const remove: string[] = []
+  const realAdd = document.addEventListener.bind(document)
+  const realRemove = document.removeEventListener.bind(document)
+  document.addEventListener = ((type: string, ...rest: unknown[]) => {
+    add.push(type)
+    return (realAdd as (...args: unknown[]) => void)(type, ...rest)
+  }) as typeof document.addEventListener
+  document.removeEventListener = ((type: string, ...rest: unknown[]) => {
+    remove.push(type)
+    return (realRemove as (...args: unknown[]) => void)(type, ...rest)
+  }) as typeof document.removeEventListener
+  try {
+    await render(page())
+    await act(async () => root.unmount())
+    root = createRoot(host)
+  } finally {
+    document.addEventListener = realAdd
+    document.removeEventListener = realRemove
+  }
+  for (const type of ["keydown", "focusout"]) {
+    expect(add).toContain(type)
+    expect(remove.filter((removed) => removed === type)).toHaveLength(add.filter((added) => added === type).length)
+  }
+})
+
+test("shortcuts work on a fresh load, with nothing focused", async () => {
+  const runs: string[] = []
+  await render(page(<Probe onRun={() => runs.push("n")} />))
+  expect(document.activeElement).toBe(document.body)
+  await press(document.body, "n")
+  expect(runs).toEqual(["n"])
+})
+
+test("if the element that had focus is gone when the dialog closes, focus goes to the page, not the body", async () => {
+  await render(page())
+  button().focus()
+  await press(button(), "?")
+  await wait(100)
+  await act(async () => button().remove())
+  await press(document.activeElement as Element, "Escape")
+  await wait(300)
+  expect(dialog()).toBeNull()
+
+  expect(document.activeElement?.id).toBe("main")
 })

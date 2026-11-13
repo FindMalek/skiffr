@@ -272,8 +272,8 @@ Single-character shortcuts must not fire from anywhere. Rules:
    field, select, or an open overlay. They are never attached to `document` while focus is on the browser chrome,
    the sidebar or a dialog. List keys (`j k x o a s u e c f` and friends) are active only while the list or one of
    its rows has focus.
-2. **Off switch**: Settings > Appearance > "Keyboard shortcuts" (on by default). When off, no single-key shortcut is
-   registered. The modified shortcuts below keep working.
+2. **Off switch**: Settings > Appearance > "Keyboard shortcuts" (on by default). When off, no single-key shortcut fires (they stay
+   registered and the setting is checked on every key press). The modified shortcuts below keep working.
 3. **Never the only way**: every shortcut action also exists as a visible control and in the command palette.
 4. **Modified shortcuts** (`⌘K` / `Ctrl K`, the palette) are exempt from 2.1.4 and may be global. `Esc` is not a
    character key, so it is exempt too (close, clear selection).
@@ -296,16 +296,21 @@ Map (one list, all pages use it; the `?` dialog is generated from it):
 | `Esc` | anywhere | close, clear selection |
 
 Implementation: `components/shell/shortcuts.tsx` holds the one provider (inside `AppShell`) and its `document` `keydown`
-listener; the rules live in `lib/shortcuts.ts` (`createShortcuts`). A page registers with
-`useShortcut({ id, keys, label, group, scope, run })` and the registration ends with the component, so there is no second
-list. `keys` is one key or a sequence (`["g", "q"]`); a sequence waits 1.5s for its next key and is dropped by any other
-key, by focus leaving `main`, or by the switch turning off. A press is ignored when it has `Ctrl`, `Cmd` or `Alt`, is a
-repeat, was already handled (`defaultPrevented`), comes from a text input, textarea, select, contenteditable or
-`textbox` / `combobox` role (`isTypingTarget` in `@skiffr/ui/lib/typing-target`, also used by the `Ctrl B` sidebar toggle,
-so that does not fire while typing either), or while a `dialog`, `alertdialog` or `menu` is open. Scope `page` is focus
-inside `#main`; scope `list` also needs focus inside an element with `data-shortcuts-list`. A sequence in progress shows its
-next keys in a `role="status"` chip above the bottom bars. The `?` dialog (`shortcuts-help.tsx`, a separate chunk) lists
-the modified keys plus whatever is registered at that moment. Single keys with `aria-keyshortcuts` get it only while the
+and `focusout` listeners; the rules live in `lib/shortcuts.ts` (`createShortcuts`). A page registers with
+`useShortcut({ id, keys, label, group, scope, priority, run })` and the registration ends with the component, so there is
+no second list. When two registrations have the same keys, the higher `priority` wins (the shell's own use -1, a page
+uses the default 0), then the latest registration, whichever mounted first. `keys` is one key or a sequence
+(`["g", "q"]`); a sequence waits 1.5s for its next key and is dropped by any other key, by focus moving out of `main`
+(`focusout`), or by the switch turning off. A press is ignored when it has `Ctrl`, `Cmd` or `Alt`, is a repeat or an
+IME keystroke (`isComposing`, key `Process`, keyCode 229), was already handled (`defaultPrevented`), comes from a text
+input, textarea, select, contenteditable or `textbox` / `combobox` role (`isTypingTarget` in
+`@skiffr/ui/lib/typing-target`, also used by the `Ctrl B` sidebar toggle, so that does not fire while typing either),
+or while a `dialog`, `alertdialog` or `menu` is open. Scope `page` is focus inside `#main`, or nothing focused (the body,
+so the keys work on a fresh load); scope `list` also needs focus inside an element with `data-shortcuts-list`. A
+sequence in progress shows its next keys in a `role="status"` chip above the bottom bars. The `?` dialog
+(`shortcuts-help.tsx`, a separate chunk) lists the modified keys plus whatever is registered at that moment; with the
+switch off it marks those groups "(off)". Its `Ctrl B` row is hidden below `md`, where there is no sidebar. When it
+closes and its opener is gone, focus goes to the page title. Single keys with `aria-keyshortcuts` get it only while the
 switch is on; a sequence has no valid `aria-keyshortcuts` value, so it is shown as visible `kbd` hints only. Only `?` and
 `g` + key exist so far; the list and row keys in the map are registered by their pages.
 

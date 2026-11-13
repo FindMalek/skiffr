@@ -17,7 +17,7 @@ import {
 } from "react"
 import { mayNavigate } from "@/lib/navigation-guard"
 import { createShortcuts, keyLabel, type Shortcut, type Shortcuts } from "@/lib/shortcuts"
-import { readShortcutsEnabled } from "@/lib/shortcuts-setting"
+import { readShortcutsEnabled, useShortcutsEnabled } from "@/lib/shortcuts-setting"
 
 const ShortcutsHelp = lazy(() => import("./shortcuts-help").then((module) => ({ default: module.ShortcutsHelp })))
 
@@ -54,12 +54,12 @@ export function useShortcut(shortcut: Shortcut & { enabled?: boolean }): void {
   useEffect(() => {
     run.current = shortcut.run
   })
-  const { id, label, group, scope, enabled = true } = shortcut
+  const { id, label, group, scope, priority, enabled = true } = shortcut
   const keys = shortcut.keys.join("\n")
   useEffect(() => {
     if (!enabled) return
-    return shortcuts.register({ id, keys: keys.split("\n"), label, group, scope, run: () => run.current() })
-  }, [shortcuts, id, keys, label, group, scope, enabled])
+    return shortcuts.register({ id, keys: keys.split("\n"), label, group, scope, priority, run: () => run.current() })
+  }, [shortcuts, id, keys, label, group, scope, priority, enabled])
 }
 
 /** `g then q`: one `kbd` per key. The word between them is text, so a screen reader reads the order. */
@@ -76,6 +76,9 @@ export function ShortcutKeys({ keys }: { keys: readonly string[] }) {
   )
 }
 
+/** Below a page's own shortcuts: a page may take over a pair of keys, whichever of them mounted first. */
+const SHELL_PRIORITY = -1
+
 const GO_TO: { key: string; label: string; href: Route }[] = [
   { key: "h", label: "Today", href: "/" },
   { key: "q", label: "Queue", href: "/queue" },
@@ -91,6 +94,7 @@ function GoTo({ target }: { target: (typeof GO_TO)[number] }) {
     keys: ["g", target.key],
     label: target.label,
     group: "Go to",
+    priority: SHELL_PRIORITY,
     run: () => {
       if (mayNavigate(target.href)) router.push(target.href)
     },
@@ -100,7 +104,14 @@ function GoTo({ target }: { target: (typeof GO_TO)[number] }) {
 
 /** The shell's own shortcuts: the help dialog and go to. Each also exists as a visible control and in the palette. */
 function ShellShortcuts({ openHelp }: { openHelp: () => void }) {
-  useShortcut({ id: "help", keys: ["?"], label: "Show this list", group: "On the page", run: openHelp })
+  useShortcut({
+    id: "help",
+    keys: ["?"],
+    label: "Show this list",
+    group: "On the page",
+    priority: SHELL_PRIORITY,
+    run: openHelp,
+  })
   return GO_TO.map((target) => <GoTo key={target.key} target={target} />)
 }
 
@@ -141,8 +152,18 @@ export function ShortcutsProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     document.addEventListener("keydown", shortcuts.handle)
-    return () => document.removeEventListener("keydown", shortcuts.handle)
+    document.addEventListener("focusout", shortcuts.focusOut)
+    return () => {
+      document.removeEventListener("keydown", shortcuts.handle)
+      document.removeEventListener("focusout", shortcuts.focusOut)
+    }
   }, [shortcuts])
+
+  // Turning the switch off (here or in another tab) ends a sequence that is waiting for its last key.
+  const enabled = useShortcutsEnabled()
+  useEffect(() => {
+    if (!enabled) shortcuts.cancel()
+  }, [shortcuts, enabled])
 
   return (
     <ShortcutsContext.Provider value={value}>

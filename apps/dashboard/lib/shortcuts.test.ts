@@ -90,7 +90,6 @@ test("modified keys, held keys and keys outside the page content never fire", ()
     press(button, "j", init)
   press(button, "J", { shiftKey: true })
   press(document.getElementById("nav") as Element, "?")
-  press(document.body, "j")
   expect(calls).toEqual([])
   press(button, "g")
   press(button, "q", { ctrlKey: true })
@@ -105,7 +104,7 @@ test("a sequence completes in order and is dropped after the timeout or a wrong 
   const button = document.getElementById("b") as HTMLElement
 
   press(button, "g")
-  expect(shortcuts.pending()?.next.map((next) => next.id)).toEqual(["answers", "queue"])
+  expect(shortcuts.pending()?.next.map((next) => next.id)).toEqual(["queue", "answers"])
   press(button, "Shift")
   press(button, "q")
   expect(calls).toEqual(["queue"])
@@ -176,4 +175,104 @@ test("a handler another listener already used is not run twice", () => {
   button.addEventListener("keydown", (event) => event.preventDefault())
   press(button, "?")
   expect(calls).toEqual([])
+})
+
+test("with nothing focused (a fresh load) page shortcuts work, list shortcuts do not", () => {
+  shortcuts.register(shortcut("help", ["?"]))
+  shortcuts.register(shortcut("next", ["j"], { scope: "list" }))
+  press(document.body, "?")
+  press(document.body, "j")
+  expect(calls).toEqual(["help"])
+})
+
+test("a sequence is dropped when focus leaves the page content, even if it comes back before the next key", () => {
+  shortcuts.register(shortcut("queue", ["g", "q"]))
+  const button = document.getElementById("b") as HTMLElement
+  const nav = document.getElementById("nav") as HTMLElement
+  press(button, "g")
+  shortcuts.focusOut(new FocusEvent("focusout", { relatedTarget: nav }))
+  expect(shortcuts.pending()).toBeNull()
+  press(button, "q")
+  expect(calls).toEqual([])
+
+  // Focus moving between things inside the page keeps it.
+  press(button, "g")
+  shortcuts.focusOut(new FocusEvent("focusout", { relatedTarget: on("input", { type: "checkbox" }) }))
+  expect(shortcuts.pending()?.typed).toEqual(["g"])
+  press(button, "q")
+  expect(calls).toEqual(["queue"])
+})
+
+test("a sequence is dropped by cancel and when the shortcut it waits for is unregistered", () => {
+  const off = shortcuts.register(shortcut("queue", ["g", "q"]))
+  const button = document.getElementById("b") as HTMLElement
+  press(button, "g")
+  shortcuts.cancel()
+  expect(shortcuts.pending()).toBeNull()
+  press(button, "g")
+  off()
+  expect(shortcuts.pending()).toBeNull()
+})
+
+test("page shortcuts beat shell ones whichever mounted first, and the loser comes back", () => {
+  const button = document.getElementById("b") as HTMLElement
+  const offShellFirst = shortcuts.register(shortcut("shell", ["g", "q"], { priority: -1 }))
+  const offPage = shortcuts.register(shortcut("page", ["g", "q"]))
+  press(button, "g")
+  expect(shortcuts.pending()?.next.map((next) => next.id)).toEqual(["page"])
+  press(button, "q")
+  offPage()
+  offShellFirst()
+
+  const offPageFirst = shortcuts.register(shortcut("page", ["g", "q"]))
+  const offShell = shortcuts.register(shortcut("shell", ["g", "q"], { priority: -1 }))
+  press(button, "g")
+  press(button, "q")
+  offPageFirst()
+  press(button, "g")
+  press(button, "q")
+  offShell()
+  expect(calls).toEqual(["page", "page", "shell"])
+  expect(shortcuts.list()).toEqual([])
+})
+
+test("the finishing keys of a sequence are listed in registration order", () => {
+  for (const key of ["h", "q", "a"]) shortcuts.register(shortcut(key, ["g", key]))
+  press(document.getElementById("b") as Element, "g")
+  expect(shortcuts.pending()?.next.map((next) => next.id)).toEqual(["h", "q", "a"])
+})
+
+test("an IME keystroke is not a shortcut", () => {
+  shortcuts.register(shortcut("help", ["?"]))
+  shortcuts.register(shortcut("queue", ["g", "q"]))
+  const button = document.getElementById("b") as HTMLElement
+  press(button, "?", { isComposing: true })
+  press(button, "?", { keyCode: 229 })
+  press(button, "g", { isComposing: true })
+  press(button, "g", { keyCode: 229 })
+  expect(shortcuts.pending()).toBeNull()
+  expect(calls).toEqual([])
+})
+
+test("a timer left by an earlier sequence cannot drop a newer one", async () => {
+  const slow = createShortcuts({ isEnabled: () => true, timeoutMs: 100 })
+  document.addEventListener("keydown", slow.handle)
+  slow.register(shortcut("queue", ["g", "q"]))
+  const button = document.getElementById("b") as HTMLElement
+  press(button, "g")
+  await wait(60)
+  press(button, "x")
+  press(button, "g")
+  await wait(60)
+  expect(slow.pending()?.typed).toEqual(["g"])
+  document.removeEventListener("keydown", slow.handle)
+})
+
+test("a Process key (an IME) in the middle of a sequence does not break it", () => {
+  shortcuts.register(shortcut("queue", ["g", "q"]))
+  const button = document.getElementById("b") as HTMLElement
+  press(button, "g")
+  press(button, "Process")
+  press(button, "q")
+  expect(calls).toEqual(["queue"])
 })

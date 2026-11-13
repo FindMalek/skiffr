@@ -2,6 +2,7 @@
 
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@skiffr/ui/components/dialog"
 import { Kbd } from "@skiffr/ui/components/kbd"
+import { cn } from "@skiffr/ui/lib/utils"
 import Link from "next/link"
 import { useId } from "react"
 import { keepFocusInside } from "@/lib/keep-focus-inside"
@@ -9,8 +10,8 @@ import { useShortcutsEnabled } from "@/lib/shortcuts-setting"
 import { useIsApple } from "./palette"
 import { ShortcutKeys, useRegisteredShortcuts } from "./shortcuts"
 
-type Row = { id: string; label: string; keys: React.ReactNode }
-type Group = { name: string; rows: Row[] }
+type Row = { id: string; label: string; keys: React.ReactNode; className?: string }
+type Group = { name: string; rows: Row[]; off?: boolean }
 
 function Rows({ group }: { group: Group }) {
   const headingId = useId()
@@ -18,17 +19,27 @@ function Rows({ group }: { group: Group }) {
     <section aria-labelledby={headingId} className="flex flex-col gap-2">
       <h3 id={headingId} className="font-medium text-sm">
         {group.name}
+        {group.off && <span className="font-normal text-muted-foreground"> (off)</span>}
       </h3>
       <dl className="flex flex-col border-y">
         {group.rows.map((row) => (
-          <div key={row.id} className="flex items-center justify-between gap-4 border-b py-2 last:border-b-0">
-            <dt className="min-w-0 text-sm">{row.label}</dt>
+          <div
+            key={row.id}
+            className={cn("flex items-center justify-between gap-4 border-b py-2 last:border-b-0", row.className)}
+          >
+            <dt className={cn("min-w-0 text-sm", group.off && "text-muted-foreground line-through")}>{row.label}</dt>
             <dd className="shrink-0">{row.keys}</dd>
           </div>
         ))}
       </dl>
     </section>
   )
+}
+
+/** The page title, for when whatever opened the dialog is gone by the time it closes. */
+function pageTarget(): HTMLElement | null {
+  const main = document.getElementById("main")
+  return main?.querySelector<HTMLElement>("h1") ?? main
 }
 
 /**
@@ -40,7 +51,6 @@ export function ShortcutsHelp({ open, onOpenChange }: { open: boolean; onOpenCha
   const enabled = useShortcutsEnabled()
   const apple = useIsApple()
   const registered = useRegisteredShortcuts()
-
   const mod = apple ? "⌘" : "Ctrl"
   const groups: Group[] = [
     {
@@ -58,6 +68,7 @@ export function ShortcutsHelp({ open, onOpenChange }: { open: boolean; onOpenCha
         },
         {
           id: "sidebar",
+          className: "max-md:hidden",
           label: "Show or hide the sidebar",
           keys: (
             <span className="inline-flex gap-1">
@@ -75,7 +86,7 @@ export function ShortcutsHelp({ open, onOpenChange }: { open: boolean; onOpenCha
   for (const shortcut of byKeys.values()) {
     let group = groups.find((candidate) => candidate.name === shortcut.group)
     if (!group) {
-      group = { name: shortcut.group, rows: [] }
+      group = { name: shortcut.group, rows: [], off: !enabled }
       groups.push(group)
     }
     group.rows.push({ id: shortcut.id, label: shortcut.label, keys: <ShortcutKeys keys={shortcut.keys} /> })
@@ -83,7 +94,18 @@ export function ShortcutsHelp({ open, onOpenChange }: { open: boolean; onOpenCha
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent onKeyDown={keepFocusInside} className="max-h-11/12 overflow-y-auto sm:max-w-lg">
+      <DialogContent
+        onKeyDown={keepFocusInside}
+        finalFocus={() => {
+          // The default is the element that had focus. If that is gone, focus would land on the body.
+          setTimeout(() => {
+            const active = document.activeElement
+            if (!active || active === document.body) pageTarget()?.focus({ preventScroll: true })
+          }, 0)
+          return true
+        }}
+        className="max-h-11/12 overflow-y-auto sm:max-w-lg"
+      >
         <DialogHeader>
           <DialogTitle>Keyboard shortcuts</DialogTitle>
           <DialogDescription>
