@@ -24,8 +24,10 @@ on:
         type: boolean
         default: true
 
+# Only runs that will really release take the group. A red or foreign ci completion gets a group of its own and is skipped by the plan
+# job, so it can never replace a pending run of a green commit. Runs in the group queue one after the other and are never cancelled.
 concurrency:
-  group: release
+  group: release-${{ (github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')) && 'main' || github.run_id }}
   cancel-in-progress: false
 
 permissions:
@@ -74,7 +76,11 @@ jobs:
               exit 0
             fi
           fi
-          node scripts/release/plan.mjs --sha "$SHA" --bump "$BUMP" --notes-out RELEASE_NOTES.md | tee plan.json
+          # a published release of the planned version means it is done, a draft (an interrupted run) is built again
+          check=--check-release
+          if [ "$DRY" = true ]; then check=; fi
+          # shellcheck disable=SC2086
+          node scripts/release/plan.mjs --sha "$SHA" --bump "$BUMP" --notes-out RELEASE_NOTES.md $check | tee plan.json
           if [ "$(jq -r .release plan.json)" != true ]; then
             echo "nothing to release: $(jq -r .reason plan.json)" | tee -a "$GITHUB_STEP_SUMMARY"
             if [ "$DRY" = true ]; then
@@ -82,17 +88,14 @@ jobs:
               printf 'release=true\nversion=0.0.0\ntag=v0.0.0\n' >> "$GITHUB_OUTPUT"
               echo "dry run: building as 0.0.0" >> "$GITHUB_STEP_SUMMARY"
               echo "rehearsal build, no release notes" > RELEASE_NOTES.md
+            else
+              echo "release=false" >> "$GITHUB_OUTPUT"
             fi
             exit 0
           fi
           tag=$(jq -r .tag plan.json)
-          if [ "$DRY" != true ] && gh release view "$tag" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
-            echo "release=false" >> "$GITHUB_OUTPUT"
-            echo "$tag is already released, nothing to do" | tee -a "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
           printf 'release=true\nversion=%s\ntag=%s\n' "$(jq -r .version plan.json)" "$tag" >> "$GITHUB_OUTPUT"
-          { echo "### $tag"; echo; cat RELEASE_NOTES.md; } >> "$GITHUB_STEP_SUMMARY"
+          { echo "### $tag ($(jq -r '.state // "dry run"' plan.json))"; echo; cat RELEASE_NOTES.md; } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v7
         if: steps.decide.outputs.release == 'true'
         with:
@@ -223,11 +226,23 @@ jobs:
         run: |
           set -euo pipefail
           image="$IMAGE_PREFIX-$APP"
-          cd digests
-          sources=$(printf "$image@sha256:%s " *)
-          # shellcheck disable=SC2086
-          docker buildx imagetools create -t "$image:v$VERSION" -t "$image:${VERSION%.*}" -t "$image:latest" $sources
+          if docker buildx imagetools inspect "$image:v$VERSION" > /dev/null 2>&1; then
+            # a rerun after an earlier run tagged the images but did not publish the release: the version tag is never moved,
+            # it must come from this commit, and X.Y and latest follow it
+            if ! docker buildx imagetools inspect "$image:v$VERSION" --format '{{json .Image}}' | grep -q "\"org.opencontainers.image.revision\": \"$SHA\""; then
+              echo "::error::$image:v$VERSION already exists and was not built from $SHA. Image version tags are never moved: fix forward with a new commit, or delete that tag in the package settings if it was never released"
+              exit 1
+            fi
+            docker buildx imagetools create -t "$image:${VERSION%.*}" -t "$image:latest" "$image:v$VERSION"
+          else
+            cd digests
+            sources=$(printf "$image@sha256:%s " *)
+            # shellcheck disable=SC2086
+            docker buildx imagetools create -t "$image:v$VERSION" -t "$image:${VERSION%.*}" -t "$image:latest" $sources
+          fi
           docker buildx imagetools inspect "$image:v$VERSION"
+      # Self hosters pull anonymously. A release whose images nobody can pull would break every new install, and install.sh
+      # resolves the latest release, so this stops the run before the release is published. Make the package public once, then run again.
       - name: check an anonymous pull works
         env:
           APP: ${{ matrix.app }}
@@ -236,7 +251,8 @@ jobs:
           token=$(curl -fsS "https://ghcr.io/token?scope=repository:findmalek/skiffr-$APP:pull" | jq -r .token)
           code=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $token" -H 'Accept: application/vnd.oci.image.index.v1+json' "https://ghcr.io/v2/findmalek/skiffr-$APP/manifests/v$VERSION")
           if [ "$code" != 200 ]; then
-            echo "::warning::ghcr.io/findmalek/skiffr-$APP is not public (HTTP $code): self hosters cannot pull it. Make the package public in the package settings"
+            echo "::error::ghcr.io/findmalek/skiffr-$APP is not pullable anonymously (HTTP $code). Make the package public in its settings, then run the release workflow again. Nothing was published"
+            exit 1
           fi
 
   publish:
@@ -271,16 +287,18 @@ jobs:
           cd assets
           sha256sum -- * > SHA256SUMS
           cat SHA256SUMS
+      # The release is a draft until every asset is uploaded, so install.sh (which follows the latest published release) never sees a
+      # half uploaded one. A rerun finds the draft, replaces its assets and publishes it.
       - name: create or update the release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.plan.outputs.tag }}
         run: |
           set -euo pipefail
-          # a rerun after a partial failure updates the same release instead of failing
-          if gh release view "$TAG" > /dev/null 2>&1; then
-            gh release edit "$TAG" --notes-file artifacts/RELEASE_NOTES.md
-            gh release upload "$TAG" assets/* --clobber
+          if gh release list --limit 200 --json tagName,isDraft --jq '.[] | select(.isDraft) | .tagName' | grep -qx "$TAG"; then
+            gh release edit "$TAG" --notes-file artifacts/RELEASE_NOTES.md --target "$SHA"
           else
-            gh release create "$TAG" assets/* --target "$SHA" --title "$TAG" --notes-file artifacts/RELEASE_NOTES.md --latest
+            gh release create "$TAG" --draft --target "$SHA" --title "$TAG" --notes-file artifacts/RELEASE_NOTES.md
           fi
+          gh release upload "$TAG" assets/* --clobber
+          gh release edit "$TAG" --draft=false --latest

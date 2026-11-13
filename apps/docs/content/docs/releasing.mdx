@@ -12,10 +12,10 @@ Releases are automatic. Every push to `main` whose `ci` run is green goes throug
 | docker images `ghcr.io/findmalek/skiffr-api`, `-web`, `-dashboard`, `-docs` | tags `vX.Y.Z`, `X.Y` and `latest`, for `linux/amd64` and `linux/arm64` |
 | `skiffr-extension-vX.Y.Z.zip` | the GitHub release, and baked into the api image at `/downloads` |
 | `docker-compose.yml`, `install.sh`, `skiffr` (the helper) | the GitHub release |
-| `SHA256SUMS` | the GitHub release. `install.sh` and `./skiffr update` verify the compose file and the helper against it |
+| `SHA256SUMS` | the GitHub release. `install.sh` and `./skiffr update` check the compose file and the helper against it. It guards against a truncated or corrupted download, not against a compromised release, since the sums come from the same place as the files |
 | release notes | the squash titles since the last release, grouped by type, each with its pull request link |
 
-The version is written into the `package.json` of every app at build time from the tag, which is the single source: the extension manifest, `GET /version` on the api and the image labels all carry it. `vX.Y.Z` image tags are published once and never moved.
+The version is written into the `package.json` of every app at build time from the tag, which is the single source: the extension manifest, `GET /version` on the api and the image labels all carry it. A `vX.Y.Z` image tag is never moved to a different build: if it already exists the run only continues when it was built from the same commit, otherwise it stops.
 
 ## How the next version is chosen
 
@@ -36,14 +36,14 @@ When only the last group landed there is no release, so a docs fix does not make
 
 - **Rehearse:** Actions, release, Run workflow. `dry_run` is on by default: it plans the version, builds the extension and all eight images and pushes nothing. The plan and the notes are in the run summary.
 - **Force a release** (for example after a docs-only history): run the workflow with `dry_run` off and a `bump` of `patch`, `minor` or `major`. It still needs commits since the last tag.
-- **Rerun** is safe. A version that already has a GitHub release is skipped, an interrupted run is finished by running it again (the release is created last and updated in place).
-- **Roll a self-hosted server back:** `SKIFFR_VERSION=v0.1.2` in `.env`, then `docker compose up -d`, or `./skiffr update --version v0.1.2`. Migrations only add, so the older code runs on the newer schema.
+- **Rerun** is safe. The release is created as a draft, every asset is uploaded, and only then it is published as the latest one, so `install.sh` never sees a half uploaded release. A version that is already published is skipped. A run that died before that leaves a draft or untagged images: run it again, it replaces the draft's assets and publishes it, and the existing `vX.Y.Z` images are reused when they come from the same commit.
+- **Roll a self-hosted server back:** `SKIFFR_VERSION=v0.1.2` in `.env`, then `docker compose up -d`, or `./skiffr update --version v0.1.2`. Migrations are meant to only add (a rule for reviewers, not enforced yet), so the older code runs on the newer schema.
 - **Undo a bad release:** fix forward with a `fix` commit, that releases a new patch. Do not delete tags or move image tags.
 
 ## Checks before the first run in a fork or a new repo
 
 - the workflow only runs on `FindMalek/skiffr`, change the repository check in `release.yml` and the `IMAGE_PREFIX` for a fork
-- ghcr packages are private after their first push: open each of the four packages, Package settings, and make them public so self hosters can pull. The workflow warns when one is not public
+- ghcr packages are private after their first push: open each of the four packages, Package settings, and make them public so self hosters can pull. The workflow checks an anonymous pull and stops before publishing the release when one fails, so make them public and run it again
 - it needs no secret beyond the automatic `GITHUB_TOKEN`, with `contents: write` only in the publish job and `packages: write` only in the image jobs
 
 The Chrome Web Store listing, which would also update the extension itself, is a separate piece of work ([issue 26](https://github.com/FindMalek/skiffr/issues/26)).

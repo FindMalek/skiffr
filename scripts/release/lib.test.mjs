@@ -1,6 +1,16 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
-import { latestTag, parseCommit, parseLog, plan, renderNotes, setPackageVersion } from "./lib.mjs"
+import {
+  latestTag,
+  neutralizeMentions,
+  parseCommit,
+  parseLog,
+  plan,
+  releaseStateOf,
+  renderNotes,
+  setPackageVersion,
+  withReleaseState,
+} from "./lib.mjs"
 
 const c = (subject, body = "") => parseCommit({ sha: "a".repeat(40), subject, body })
 
@@ -83,4 +93,45 @@ test("setPackageVersion changes only the version line and rejects junk", () => {
   assert.equal(setPackageVersion(text, "1.2.3"), text.replace("0.0.1", "1.2.3"))
   assert.throws(() => setPackageVersion(text, "1.2"))
   assert.throws(() => setPackageVersion('{"name":"x"}', "1.2.3"))
+})
+
+test("only a published release counts as done: a draft is redone, nothing is built", () => {
+  const decision = plan({ lastTag: "v0.2.0", commits: [c("feat(a): b")] })
+  const list = [
+    { tagName: "v0.3.0", isDraft: true },
+    { tagName: "v0.2.0", isDraft: false },
+  ]
+  assert.equal(releaseStateOf(list, "v0.3.0"), "draft")
+  assert.equal(releaseStateOf(list, "v0.2.0"), "published")
+  assert.equal(releaseStateOf(list, "v0.4.0"), "none")
+
+  assert.deepEqual(withReleaseState(decision, "draft"), { ...decision, state: "draft" })
+  assert.deepEqual(withReleaseState(decision, "none"), { ...decision, state: "none" })
+  const done = withReleaseState(decision, "published")
+  assert.equal(done.release, false)
+  assert.match(done.reason, /already released/)
+  const nothing = { release: false, reason: "no commits since the last release" }
+  assert.equal(withReleaseState(nothing, "published"), nothing)
+})
+
+test("mentions in titles cannot notify anyone, code spans stay as they are", () => {
+  assert.equal(neutralizeMentions("thanks @everyone and @octo-cat"), "thanks `@everyone` and `@octo-cat`")
+  assert.equal(neutralizeMentions("bump `@types/node` and @scope/pkg"), "bump `@types/node` and `@scope/pkg`")
+  assert.equal(neutralizeMentions("mail me@example.com"), "mail me@example.com")
+  const notes = renderNotes({
+    version: "0.3.0",
+    previous: null,
+    commits: [c("fix(@team): ping @everyone (#3)")],
+    repo: "o/r",
+  })
+  assert.match(notes, /\*\*`@team`:\*\* ping `@everyone`/)
+})
+
+test("a 50k character title is matched in linear time", () => {
+  const started = performance.now()
+  const commit = c(`fix(a): x${" ".repeat(50_000)}y`)
+  assert.ok(performance.now() - started < 50)
+  assert.equal(commit.type, "fix")
+  const odd = c(`${" ".repeat(50_000)}!`)
+  assert.equal(odd.type, null)
 })

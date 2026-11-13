@@ -35,6 +35,32 @@ test("the update check asks GitHub once per window and survives a failure", asyn
   expect(await check("0.2.0")).toEqual({ latest: null, updateAvailable: false })
 })
 
+test("the update check shares one lookup between concurrent callers and refuses a repo that is not owner/name", async () => {
+  let calls = 0
+  const check = createUpdateCheck({
+    repo: "FindMalek/skiffr",
+    fetch: (async () => {
+      calls++
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      return Response.json({ tag_name: "v0.3.0" })
+    }) as unknown as typeof fetch,
+  })
+  const results = await Promise.all([check("0.2.0"), check("0.2.0"), check("0.2.0")])
+  expect(calls).toBe(1)
+  expect(results.every((r) => r.latest === "v0.3.0")).toBe(true)
+
+  let asked = false
+  const bad = createUpdateCheck({
+    repo: "../../evil?x=1",
+    fetch: (async () => {
+      asked = true
+      return Response.json({})
+    }) as unknown as typeof fetch,
+  })
+  expect(await bad("0.2.0")).toEqual({ latest: null, updateAvailable: false })
+  expect(asked).toBe(false)
+})
+
 const dir = mkdtempSync(join(tmpdir(), "skiffr-downloads-"))
 afterAll(() => rmSync(dir, { recursive: true, force: true }))
 

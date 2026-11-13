@@ -2,7 +2,7 @@
 # skiffr helper, installed next to docker-compose.yml by install.sh. Run it from anywhere: ./skiffr <command>
 #
 #   status             what runs, which version, and whether a newer release exists
-#   update [--version vX.Y.Z]   fetch the compose file and images of the latest (or a given) release and restart
+#   update [--version vX.Y.Z] [--no-backup]   back up the database, fetch the compose file and images of the latest (or a given) release, restart
 #   logs [service]     follow the logs
 #   backup [dir]       dump the database to <dir>/skiffr-<time>.sql.gz (default ./backups)
 #   version            the running version
@@ -42,8 +42,20 @@ sha256_of() {
   fi
 }
 
+# Remote downloads are https only. A test or mirror BASE_URL may be file:// or http.
+curl_remote() {
+  if [ -z "$BASE_URL" ]; then curl --proto '=https' --tlsv1.2 "$@"; else curl "$@"; fi
+}
+
+valid_version() {
+  case $1 in
+    '' | *[!0-9A-Za-z.-]*) return 1 ;;
+  esac
+  printf '%s\n' "$1" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'
+}
+
 latest_tag() {
-  url=$(curl -fsSL -o /dev/null -w '%{url_effective}' "https://github.com/$REPO/releases/latest") || return 1
+  url=$(curl_remote -fsSL -o /dev/null -w '%{url_effective}' "https://github.com/$REPO/releases/latest") || return 1
   tag=${url##*/}
   case $tag in
     v[0-9]*.[0-9]*.[0-9]*) printf '%s\n' "$tag" ;;
@@ -52,7 +64,7 @@ latest_tag() {
 }
 
 running_version() {
-  curl -fsS -m 5 "http://127.0.0.1:$(env_get SKIFFR_API_PORT)/version" 2>/dev/null | sed -n 's/.*"version":"\([^"]*\)".*/\1/p'
+  curl --noproxy '*' -fsS -m 5 "http://127.0.0.1:$(env_get SKIFFR_API_PORT)/version" 2>/dev/null | sed -n 's/.*"version":"\([^"]*\)".*/\1/p'
 }
 
 case ${COMPOSE_FILE:-$(env_get COMPOSE_FILE)} in
@@ -73,14 +85,25 @@ cmd_status() {
 }
 
 cmd_update() {
-  target=''
+  target='' backup=1
   while [ $# -gt 0 ]; do
     case $1 in
       --version) [ $# -ge 2 ] || die "--version needs a value"; target=$2; shift 2 ;;
       --version=*) target=${1#*=}; shift ;;
+      --no-backup) backup=0; shift ;;
       *) die "unknown option $1" ;;
     esac
   done
+  case $target in
+    '' | v[0-9]*) ;;
+    [0-9]*) target=v$target ;;
+  esac
+  if [ -n "$target" ] && ! valid_version "$target"; then die "version must look like v0.1.0"; fi
+  # migrations run when the new api starts and cannot be undone: keep a dump first
+  if [ "$backup" -eq 1 ]; then
+    say "Backing up the database first (skip with --no-backup)"
+    cmd_backup || die "the backup failed, nothing was updated. Fix it, or run again with --no-backup"
+  fi
   # a clone of the repo owns docker-compose.yml: update the checkout, not a downloaded copy
   if [ "$from_source" -eq 1 ] || [ -d .git ]; then
     say "This is a clone of the repo: pulling it, then updating the containers"
@@ -94,25 +117,23 @@ cmd_update() {
     return 0
   fi
   have curl || die "curl is needed"
-  case $target in
-    '') tag=$(latest_tag) || die "could not find the latest release on github" ;;
-    [0-9]*) tag=v$target ;;
-    *) tag=$target ;;
-  esac
-  case $tag in
-    v[0-9]*.[0-9]*.[0-9]*) ;;
-    *) die "version must look like v0.1.0" ;;
-  esac
+  if [ -z "$target" ]; then
+    tag=$(latest_tag) || die "could not find the latest release on github"
+  else
+    tag=$target
+  fi
 
   tmp=$(mktemp -d)
   trap 'rm -rf "$tmp"' EXIT
   if [ -n "$BASE_URL" ]; then base=$BASE_URL; else base="https://github.com/$REPO/releases/download/$tag"; fi
   say "Fetching skiffr $tag"
-  curl -fsSL --retry 3 -o "$tmp/SHA256SUMS" "$base/SHA256SUMS" || die "could not download the checksums of $tag"
+  curl_remote -fsSL --retry 3 -o "$tmp/SHA256SUMS" "$base/SHA256SUMS" || die "could not download the checksums of $tag"
   for name in docker-compose.yml skiffr; do
-    curl -fsSL --retry 3 -o "$tmp/$name" "$base/$name" || die "could not download $name of $tag"
+    curl_remote -fsSL --retry 3 -o "$tmp/$name" "$base/$name" || die "could not download $name of $tag"
     want=$(awk -v f="$name" '$2 == f { print $1 }' "$tmp/SHA256SUMS")
-    [ -n "$want" ] && [ "$(sha256_of "$tmp/$name")" = "$want" ] || die "checksum of $name does not match the $tag release, nothing was changed"
+    if [ -z "$want" ] || [ "$(sha256_of "$tmp/$name")" != "$want" ]; then
+      die "checksum of $name does not match the $tag release, nothing was changed"
+    fi
   done
 
   cp docker-compose.yml docker-compose.yml.bak
@@ -134,8 +155,13 @@ cmd_backup() {
   dir=${1:-backups}
   mkdir -p "$dir"
   file="$dir/skiffr-$(date +%Y%m%d-%H%M%S).sql.gz"
-  docker compose exec -T db pg_dump -U skiffr -d skiffr </dev/null | gzip >"$file"
-  [ -s "$file" ] || { rm -f "$file"; die "the dump is empty, is the db container running?"; }
+  raw="$file.tmp"
+  if ! docker compose exec -T db pg_dump -U skiffr -d skiffr </dev/null >"$raw" || [ ! -s "$raw" ]; then
+    rm -f "$raw"
+    die "the dump failed or is empty, is the db container running? (docker compose ps)"
+  fi
+  gzip -c "$raw" >"$file"
+  rm -f "$raw"
   chmod 600 "$file"
   say "Backup written to $file. Keep .env with it: CV_ENCRYPTION_KEY and BETTER_AUTH_SECRET are not in the dump."
 }

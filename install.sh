@@ -73,10 +73,42 @@ add_profile() {
   esac
 }
 
-fetch() { curl -fsSL --retry 3 --connect-timeout 15 -o "$2" "$1"; }
+# Remote downloads are https only (a redirect to plain http is refused). A test or mirror BASE_URL may be file:// or http.
+curl_remote() {
+  if [ -z "$BASE_URL" ]; then curl --proto '=https' --tlsv1.2 "$@"; else curl "$@"; fi
+}
+
+# Local probes must never go through a proxy from the environment
+curl_local() { curl --noproxy '*' "$@"; }
+
+fetch() { curl_remote -fsSL --retry 3 --connect-timeout 15 -o "$2" "$1"; }
+
+# v1.2.3 or v1.2.3-rc.1: one line of letters, digits, dots and dashes, so it is safe in a url, in .env and in a shell word
+valid_version() {
+  case $1 in
+    '' | *[!0-9A-Za-z.-]*) return 1 ;;
+  esac
+  printf '%s\n' "$1" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'
+}
+
+valid_email() {
+  case $1 in
+    '' | *[!A-Za-z0-9._%+@-]*) return 1 ;;
+  esac
+  printf '%s\n' "$1" | grep -Eq '^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$'
+}
+
+# a lowercase host name with at least one dot and a letter in the last label (so no ip address)
+valid_domain() {
+  case $1 in
+    '' | *[!a-z0-9.-]*) return 1 ;;
+  esac
+  [ "${#1}" -le 253 ] || return 1
+  printf '%s\n' "$1" | grep -Eq '^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]([a-z0-9-]{0,61}[a-z0-9])?$'
+}
 
 latest_tag() {
-  url=$(curl -fsSL -o /dev/null -w '%{url_effective}' "https://github.com/$REPO/releases/latest") || return 1
+  url=$(curl_remote -fsSL -o /dev/null -w '%{url_effective}' "https://github.com/$REPO/releases/latest") || return 1
   tag=${url##*/}
   case $tag in
     v[0-9]*.[0-9]*.[0-9]*) printf '%s\n' "$tag" ;;
@@ -116,7 +148,7 @@ check_docker() {
 # curl exits 7 when nothing listens, any other result means something answers on that port
 port_busy() {
   rc=0
-  curl -s -m 1 -o /dev/null "http://127.0.0.1:$1/" 2>/dev/null || rc=$?
+  curl_local -s -m 1 -o /dev/null "http://127.0.0.1:$1/" 2>/dev/null || rc=$?
   [ "$rc" -ne 7 ]
 }
 
@@ -143,24 +175,30 @@ main() {
     esac
   done
 
-  case $domain in
-    *[!A-Za-z0-9.-]*) die "--domain must be a bare host name like skiffr.example.com" ;;
-  esac
+  if [ -n "$domain" ]; then
+    domain=$(printf '%s' "$domain" | LC_ALL=C tr '[:upper:]' '[:lower:]')
+    valid_domain "$domain" || die "--domain must be a host name like skiffr.example.com (letters, digits, dots and dashes, at least one dot, not an ip address)"
+  fi
   if [ -n "$domain" ] && [ -n "$port" ]; then die "use --domain or --port, not both"; fi
   if [ -n "$port" ]; then
     case $port in
-      '' | *[!0-9]*) die "--port must be a number" ;;
+      0* | *[!0-9]*) die "--port must be a plain number without leading zeros, like 4000" ;;
     esac
-    { [ "$port" -ge 1024 ] && [ "$port" -le 65532 ]; } || die "--port must be between 1024 and 65532 (four consecutive ports are used)"
+    if [ "${#port}" -gt 5 ] || [ "$port" -lt 1024 ] || [ "$port" -gt 65532 ]; then
+      die "--port must be between 1024 and 65532 (four consecutive ports are used)"
+    fi
   fi
   case $version in
     '' | latest) ;;
     [0-9]*) version=v$version ;;
   esac
   case $version in
-    '' | latest | v[0-9]*.[0-9]*.[0-9]*) ;;
-    *) die "--version must look like v0.1.0 or latest" ;;
+    '' | latest) ;;
+    *) valid_version "$version" || die "--version must look like v0.1.0 (or v0.1.0-rc.1) or be latest" ;;
   esac
+  if [ -n "$email" ]; then
+    valid_email "$email" || die "--email must be a plain address like you@example.com"
+  fi
   if [ "$build" -eq 1 ] && [ "$here" -ne 1 ]; then die "--build needs --here, a clone of the repo"; fi
 
   check_docker
@@ -168,10 +206,15 @@ main() {
   umask 077
 
   existing=0
+  cd_hint=''
   if [ "$here" -eq 1 ]; then
-    [ -f docker-compose.yml ] || die "no docker-compose.yml here: run this from a clone of the repo"
+    if [ ! -f docker-compose.yml ]; then die "no docker-compose.yml here: run this from a clone of the repo"; fi
     dir=$(pwd)
   else
+    case $dir in
+      *' '*) cd_hint="cd \"$dir\" && " ;;
+      *) cd_hint="cd $dir && " ;;
+    esac
     mkdir -p "$dir"
     cd "$dir"
     dir=$(pwd)
@@ -246,10 +289,6 @@ ENVEOF
       env_set SKIFFR_DASHBOARD_PORT $((port + 2))
       env_set SKIFFR_DOCS_PORT $((port + 3))
     fi
-    env_default SKIFFR_WEB_PORT 3000
-    env_default SKIFFR_API_PORT 3001
-    env_default SKIFFR_DASHBOARD_PORT 3002
-    env_default SKIFFR_DOCS_PORT 3003
     if [ -n "$port" ] || [ -z "$(env_get WEB_URL)" ]; then
       env_set WEB_URL "http://localhost:$(env_get SKIFFR_WEB_PORT)"
       env_set API_PUBLIC_URL "http://localhost:$(env_get SKIFFR_API_PORT)"
@@ -257,6 +296,11 @@ ENVEOF
       env_set DOCS_URL "http://localhost:$(env_get SKIFFR_DOCS_PORT)"
     fi
   fi
+  # the apps are published on the loopback address in both modes (behind Caddy too), so the ports always exist
+  env_default SKIFFR_WEB_PORT 3000
+  env_default SKIFFR_API_PORT 3001
+  env_default SKIFFR_DASHBOARD_PORT 3002
+  env_default SKIFFR_DOCS_PORT 3003
   if [ "$autoupdate" -eq 1 ]; then
     add_profile autoupdate
     case $(env_get SKIFFR_VERSION) in
@@ -273,7 +317,8 @@ ENVEOF
   dashboard_url=$(env_get DASHBOARD_URL)
 
   if [ "$start" -eq 0 ]; then
-    say "Files written in $dir. Start it with: docker compose up -d"
+    say "Files written in $dir. Start it with:"
+    say "  $cd_hint""docker compose up -d"
     return 0
   fi
 
@@ -292,7 +337,7 @@ ENVEOF
     docker compose up -d --wait --wait-timeout 300 </dev/null || fail_start
   fi
 
-  running=$(curl -fsS -m 5 "http://127.0.0.1:$api_port/version" 2>/dev/null | sed -n 's/.*"version":"\([^"]*\)".*/\1/p') || running=''
+  running=$(curl_local -fsS -m 5 "http://127.0.0.1:$api_port/version" 2>/dev/null | sed -n 's/.*"version":"\([^"]*\)".*/\1/p') || running=''
   say ""
   say "skiffr ${running:+v$running }is running."
   say ""
@@ -303,9 +348,10 @@ ENVEOF
   say ""
   say "  sign in     $(env_get ADMIN_EMAIL)"
   if [ "$new_admin" -eq 1 ]; then
-    say "  password    $(env_get ADMIN_PASSWORD)   (shown once, it is also in $dir/.env)"
+    say "  password    $(env_get ADMIN_PASSWORD)   (shown once, also in $dir/.env)"
+    say "              the api resets the admin to the .env password on every start: change it there"
   else
-    say "  password    in $dir/.env (ADMIN_PASSWORD)"
+    say "  password    ADMIN_PASSWORD in $dir/.env"
   fi
   say ""
   say "Next, the browser extension (about 60 seconds):"
@@ -317,7 +363,10 @@ ENVEOF
   say "  2. open chrome://extensions, turn on Developer mode, Load unpacked, pick that folder"
   say "  3. sign in to the dashboard, open Extension, create a token, then paste $api_url and the token in the extension options"
   say ""
-  say "Update: ./$(if [ "$here" -eq 1 ]; then echo scripts/; fi)skiffr update    Status: ./$(if [ "$here" -eq 1 ]; then echo scripts/; fi)skiffr status    Backup: ./$(if [ "$here" -eq 1 ]; then echo scripts/; fi)skiffr backup"
+  helper=./skiffr
+  if [ "$here" -eq 1 ]; then helper=./scripts/skiffr; fi
+  if [ -n "$cd_hint" ]; then say "These run inside the folder, so start with: ${cd_hint%' && '}"; fi
+  say "  $helper update    $helper status    $helper backup    docker compose down (stop)"
 }
 
 fail_pull() {

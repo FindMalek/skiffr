@@ -11,6 +11,7 @@ import { advisoryLeader, createScheduler, LOCKS } from "@skiffr/orpc/gmail"
 import { createWatchRuntime, createWatchScheduler } from "@skiffr/orpc/watch"
 import { createStorage } from "@skiffr/storage"
 import { ensureAdmin } from "./admin"
+import { cookiePolicy } from "./cookies"
 import { createDownloads } from "./downloads"
 import { gmailFromEnv } from "./gmail-runtime"
 import { pruneRateLimits } from "./prune"
@@ -35,6 +36,10 @@ reportCrashes(observability, { job: "api" })
 const db = createDb(env.DATABASE_URL)
 await runMigrations(db)
 
+// the raw value: the schema default would hide a forgotten DASHBOARD_URL
+const cookies = cookiePolicy({ nodeEnv: env.NODE_ENV, dashboardUrl: process.env.DASHBOARD_URL })
+if (cookies.warning) console.warn(cookies.warning)
+
 const auth = createAuth({
   db,
   secret: env.BETTER_AUTH_SECRET,
@@ -44,8 +49,7 @@ const auth = createAuth({
     env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET
       ? { clientId: env.GITHUB_CLIENT_ID, clientSecret: env.GITHUB_CLIENT_SECRET }
       : undefined,
-  // Secure cookies need https: on a plain http self-host (localhost, a lan address) the browser would drop them.
-  secureCookies: env.NODE_ENV === "production" && env.DASHBOARD_URL.startsWith("https://"),
+  secureCookies: cookies.secure,
 })
 
 const adminId = await ensureAdmin(db, auth, env.ADMIN_EMAIL, env.ADMIN_PASSWORD)

@@ -4,7 +4,7 @@
 import { execFileSync } from "node:child_process"
 import { appendFileSync, writeFileSync } from "node:fs"
 import { parseArgs } from "node:util"
-import { latestTag, parseLog, plan, renderNotes } from "./lib.mjs"
+import { latestTag, parseLog, plan, releaseStateOf, renderNotes, withReleaseState } from "./lib.mjs"
 
 const { values } = parseArgs({
   options: {
@@ -12,6 +12,8 @@ const { values } = parseArgs({
     bump: { type: "string", default: "auto" },
     repo: { type: "string", default: process.env.GITHUB_REPOSITORY ?? "FindMalek/skiffr" },
     "notes-out": { type: "string" },
+    // asks GitHub (gh) whether the release of the planned tag is already published
+    "check-release": { type: "boolean", default: false },
   },
 })
 if (!["auto", "patch", "minor", "major"].includes(values.bump)) {
@@ -25,7 +27,15 @@ const lastTag = latestTag(tags)
 const range = lastTag ? `${lastTag}..${values.sha}` : values.sha
 const commits = parseLog(git("log", "--first-parent", "--format=%H%x1f%s%x1f%b%x1e", range))
 
-const decision = plan({ lastTag, commits, forced: values.bump })
+let decision = plan({ lastTag, commits, forced: values.bump })
+if (decision.release && values["check-release"]) {
+  const list = JSON.parse(
+    execFileSync("gh", ["release", "list", "--limit", "200", "--json", "tagName,isDraft", "--repo", values.repo], {
+      encoding: "utf8",
+    }),
+  )
+  decision = withReleaseState(decision, releaseStateOf(list, `v${decision.version}`))
+}
 const result = { ...decision, tag: decision.release ? `v${decision.version}` : null, commits: commits.length }
 
 if (decision.release && values["notes-out"]) {

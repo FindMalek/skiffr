@@ -118,7 +118,7 @@ Three steps, nothing to build. You need Docker and Chrome (or Edge, Brave, Arc: 
 curl -fsSL https://raw.githubusercontent.com/FindMalek/skiffr/main/install.sh | sh
 ```
 
-It makes a `skiffr/` folder, generates every secret into `skiffr/.env`, starts Postgres, the api, the dashboard, the site and the docs, waits until they are healthy and prints your urls and admin login. It asks nothing and is safe to run again (it never overwrites `.env` or your data). No curl: `git clone https://github.com/FindMalek/skiffr && cd skiffr && ./scripts/setup.sh` does the same from a clone (add `--build` to build the images from the source).
+It makes a `skiffr/` folder, generates every secret into `skiffr/.env`, starts Postgres, the api, the dashboard, the site and the docs, waits until they are healthy and prints your urls and admin login. It asks nothing and is safe to run again (it never overwrites `.env` or your data). The commands further down (`./skiffr update`, `docker compose ...`) run inside that folder, so `cd skiffr` first. No curl: `git clone https://github.com/FindMalek/skiffr && cd skiffr && ./scripts/setup.sh` does the same from a clone (add `--build` to build the images from the source, which does not include the extension zip: build the extension yourself, see below).
 
 | What | Url |
 | --- | --- |
@@ -154,17 +154,18 @@ First run checklist: profile saved, token created and tested, one real applicati
 | `Cannot connect to the Docker daemon` | start Docker Desktop (Linux: `sudo systemctl start docker`) and run the command again |
 | `port 3000 is already in use` | run the installer again with `--port 4000` (it uses 4000 to 4003) |
 | `pull access denied` or `no release is published yet` | use the clone path with `--build`, or ask the host to make the packages public |
+| the api log says `password authentication failed` | a data volume from an earlier install is still there. If that data is disposable run `docker compose down -v` and start again |
 | extension says it cannot connect | the api url must be exactly what the installer printed, no trailing path. Open it plus `/health` in the browser: it must say `"ok":true`. Check `docker compose ps` in the `skiffr/` folder |
 | extension says the token is invalid or expired | dashboard, Extension, create a new token and paste it again |
-| cannot sign in | the password is `ADMIN_PASSWORD` in `skiffr/.env`. It is reset to that value on every restart, so change it there |
+| cannot sign in | the password is `ADMIN_PASSWORD` in `skiffr/.env`. The admin is reset to that value on every api start (also after an update), so change the password there, not in the dashboard |
 | the extension is older than the server after an update | download the zip again from `/downloads`, replace the files in your folder, press reload on the skiffr card in `chrome://extensions` |
 
 ### Update, back up, remove
 
-Run these inside the `skiffr/` folder (in a clone use `./scripts/skiffr`).
+Run these inside the `skiffr/` folder, `cd skiffr` first (in a clone use `./scripts/skiffr`).
 
 ```bash
-./skiffr update          # latest release: new compose file, new images, restart (the database migrates itself)
+./skiffr update          # backs up the database, then latest release: new compose file, new images, restart (migrations run on start)
 ./skiffr status          # what runs, which version, is a newer one out
 ./skiffr backup          # database dump in ./backups (keep .env with it)
 ./skiffr logs api        # follow a service

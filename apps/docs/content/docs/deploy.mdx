@@ -25,23 +25,31 @@ A fresh instance starts empty (`SEED=none`), the demo data is only for developme
 
 Every release publishes new images and a compose file. Three ways to get them, from least to most automatic:
 
-1. **By hand, whenever you like.** `./skiffr update` downloads the compose file of the latest release (verified against its `SHA256SUMS`), pulls the images and recreates the containers that changed. `./skiffr status` tells you whether a newer release exists.
-2. **Automatically, every day.** `install.sh --autoupdate` (or `COMPOSE_PROFILES=autoupdate` in `.env`) starts [Watchtower](https://github.com/nicholas-fedor/watchtower), pinned to `1.24.0`. It checks at 04:00 UTC (`SKIFFR_UPDATE_SCHEDULE`, six field cron), only touches containers labelled `com.centurylinklabs.watchtower.enable=true` (the api, dashboard, web and docs, never the database or itself), cleans old images and restarts one container at a time. It follows the tag in `SKIFFR_VERSION`, so it works with `latest` or `0.1` and does nothing for an exact `vX.Y.Z`.
+1. **By hand, whenever you like.** `./skiffr update` first dumps the database to `./backups` (it stops if that fails, `--no-backup` skips it), then downloads the compose file of the latest release (checked against its `SHA256SUMS`, which guards against a corrupt download, not a compromised release), pulls the images and recreates the containers that changed. `./skiffr status` tells you whether a newer release exists.
+2. **Automatically, every day.** `install.sh --autoupdate` (or `COMPOSE_PROFILES=autoupdate` in `.env`) starts [Watchtower](https://github.com/nicholas-fedor/watchtower), pinned to `1.24.0` (a community maintained fork: the original `containrrr/watchtower` is archived). It checks at 04:00 UTC (`SKIFFR_UPDATE_SCHEDULE`, six field cron), only touches containers labelled `com.centurylinklabs.watchtower.enable=true` (the api, dashboard, web and docs, never the database or itself), cleans old images and restarts one container at a time. It follows the tag in `SKIFFR_VERSION`, so it works with `latest` or `0.1` and does nothing for an exact `vX.Y.Z`.
 3. **Pinned.** An exact `SKIFFR_VERSION=v0.1.2` never changes until you change it.
 
 Watchtower needs the docker socket (`/var/run/docker.sock`), and whoever controls that socket is root on the host. That is why it is opt-in and off by default: enable it only on a machine where you accept that, and prefer `./skiffr update` on a shared server. Automatic updates apply the images only. A change to the compose file itself (a new service or variable) needs `./skiffr update`.
 
-Rules that make automatic updates safe:
+Automatic updates take no backup and have no undo: a release with a bad migration reaches you at 04:00 and the database stays migrated. Run `./skiffr backup` on a schedule of your own if the data matters, or stay on `./skiffr update`.
+
+Rules that make updates safe (a convention reviewed in pull requests, nothing enforces it yet):
 
 - migrations run when the api starts and must stay backwards safe: a release adds tables and columns and never drops or renames one in the same release that stops using it. So the previous version still runs on the new schema, and a rollback is just a pin
 - compose changes keep old `.env` files working: a new variable always has a default
 - the database image is never updated automatically. A new Postgres major version needs a dump and restore: `./skiffr backup`, stop, change the image tag, remove the volume and restore
 
-**Roll back:** set `SKIFFR_VERSION=v0.1.2` in `.env` (or `./skiffr update --version v0.1.2`) and run `docker compose up -d`. Image tags of a version are published once and never moved.
+**Roll back:** set `SKIFFR_VERSION=v0.1.2` in `.env` (or `./skiffr update --version v0.1.2`) and run `docker compose up -d`. The release workflow never moves a `vX.Y.Z` image tag to another build: if one exists it must come from the same commit or the run stops. A bad migration is not undone by a rollback: restore the backup `./skiffr update` took.
 
 **Know when an update exists.** `./skiffr status` always asks GitHub. For the api to know by itself set `UPDATE_CHECK=true`: `GET <api>/version` then also returns `latest` and `updateAvailable`. It is a plain request for the latest release tag every six hours, nothing about you or your server is sent beyond what any HTTP request carries, and it is off by default. `GET /version` always returns the running `version` and `commit`.
 
 **The extension does not update itself.** A folder loaded unpacked is not updated by Chrome. Your server serves the matching zip at `<api>/downloads` (the file is in the api image, built from the same release), so after an update download it again from your own instance, replace the files in your folder and press reload on the extension card. A Chrome Web Store listing would update it automatically and is tracked in [issue 26](https://github.com/FindMalek/skiffr/issues/26).
+
+### Known limits of the bundled setup
+
+- the Caddy of the `domain` profile sets no request size limit and no security headers of its own (the apps send theirs, and the api sends HSTS on https)
+- the release images are built without a public url: the pages read it at request time, but static output such as a sitemap or canonical link of the docs and site may say `localhost` until that is fixed
+- the first admin is reset to the `.env` password on every api start
 
 ### Backup and restore
 

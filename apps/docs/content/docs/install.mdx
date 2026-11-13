@@ -11,7 +11,7 @@ You need [Docker](https://docs.docker.com/get-docker/) (Desktop on macOS and Win
 curl -fsSL https://raw.githubusercontent.com/FindMalek/skiffr/main/install.sh | sh
 ```
 
-The script makes a `skiffr/` folder, downloads the compose file of the latest release (checked against that release's `SHA256SUMS`), generates every secret into `skiffr/.env` (permissions `600`), pulls the images, starts everything, waits until it is healthy and prints:
+The script makes a `skiffr/` folder, downloads the compose file of the latest release (checked against that release's `SHA256SUMS`), generates every secret into `skiffr/.env` (permissions `600`), pulls the images, starts everything, waits until it is healthy and prints (all later commands run inside that folder, so `cd skiffr` first):
 
 ```text
   dashboard   http://localhost:3002
@@ -23,6 +23,10 @@ The script makes a `skiffr/` folder, downloads the compose file of the latest re
   password    <20 random characters>   (shown once, it is also in skiffr/.env)
 ```
 
+The admin is created and reset to the `.env` values on every api start, so a password you change in the dashboard is reverted by the next restart or update. Change it in `.env`.
+
+The download of the compose file is checked against the `SHA256SUMS` of the same release. That catches a truncated or corrupted download, not a compromised repository or release: the sums and the files come from the same place, and `install.sh` itself comes from the `main` branch. If that matters to you, read the script first (it is one file), and pin a release you have looked at with `--version v0.1.0`. Signed attestations of the release files are planned.
+
 It asks nothing. Run it again at any time: `.env` and the data are never overwritten, only missing keys are added.
 
 No curl, or you want the source? Clone and run the same thing:
@@ -33,6 +37,8 @@ cd skiffr
 ./scripts/setup.sh           # pulls the released images
 ./scripts/setup.sh --build   # builds them from this checkout instead (several minutes)
 ```
+
+A build from source has no extension zip at `/downloads`: build the extension yourself with `pnpm install && pnpm --filter extension build` and load `apps/extension/.output/chrome-mv3`.
 
 ### Options
 
@@ -96,23 +102,24 @@ AI keys are optional. Without them the profile, saved answers, the queue and sav
 | Problem | Fix |
 | --- | --- |
 | `Cannot connect to the Docker daemon` | start Docker Desktop (Linux: `sudo systemctl start docker`), run the command again |
-| `permission denied` on the docker socket (Linux) | add yourself to the `docker` group and log in again, or run the installer with `sudo` |
+| `permission denied` on the docker socket (Linux) | add yourself to the `docker` group (`sudo usermod -aG docker $USER`) and log in again. Do not run the installer with `sudo`: it would make the folder and `.env` root owned |
 | `port 3000 is already in use` | run again with `--port 4000` |
 | `pull access denied`, or no release published yet | the images are on `ghcr.io/findmalek/skiffr-<app>`. Use the clone path with `--build`, or ask the maintainer to make the packages public |
+| the api log says `password authentication failed for user "skiffr"` | a data volume from an earlier install with another `.env` is still there (the database password is fixed when the volume is created). If that data is disposable: `docker compose down -v`, then start again |
 | the installer stops with "did not become healthy" | read the log it prints, then `docker compose logs`. A wrong value in `.env` makes the api refuse to start and says which one |
 | the extension cannot connect | the api url must be exactly the printed one, no trailing path. Open it plus `/health` in a browser, it must answer `"ok":true`. Run `docker compose ps` in the `skiffr/` folder |
 | the extension says the token is invalid or expired | create a new token in the dashboard, Extension, paste it again |
 | cannot sign in | the password is `ADMIN_PASSWORD` in `skiffr/.env`. The admin is reset to the `.env` values on every api start, so change the password there |
 | the extension is older than the server | download the zip again, replace the files in your folder and press reload on the skiffr card at `chrome://extensions` |
-| sign-in fails on a LAN address | the dashboard url must be the address you type in the browser. Use `localhost`, a domain, or set `WEB_URL`, `DASHBOARD_URL` and `API_PUBLIC_URL` in `.env` to it |
+| you want to use it from another device on your network | the extension only accepts `https` api urls, or plain `http` for `localhost`, so a bare LAN address will not work for it. Use `--domain` (or your own tls proxy) and an https url. The dashboard alone also needs `WEB_URL`, `DASHBOARD_URL` and `API_PUBLIC_URL` in `.env` to be the address you type in the browser |
 
 ## Update, back up, remove
 
-Run these inside the `skiffr/` folder (from a clone: `./scripts/skiffr`).
+Run these inside the `skiffr/` folder, `cd skiffr` first (from a clone: `./scripts/skiffr`).
 
 | Command | What it does |
 | --- | --- |
-| `./skiffr update` | fetches the latest release's compose file (checksum verified) and images, restarts. The api migrates the database on start |
+| `./skiffr update` | backs up the database to `./backups` first (stops if that fails, `--no-backup` skips it), then fetches the latest release's compose file (checksum checked) and images and restarts. The api migrates the database on start |
 | `./skiffr update --version v0.1.0` | the same for one release: how to roll back |
 | `./skiffr status` | what runs, the running version, whether a newer release exists |
 | `./skiffr logs api` | follow the logs of a service |

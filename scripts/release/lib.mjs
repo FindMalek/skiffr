@@ -18,7 +18,11 @@ export const FIRST_VERSION = "0.1.0"
 export const STABLE_TAG = /^v(\d+)\.(\d+)\.(\d+)$/
 
 /** `{ sha, subject, body }` to a commit with `type` (null when the title does not follow the format), scope, breaking flag and PR number. */
-export function parseCommit({ sha, subject, body = "" }) {
+export const MAX_SUBJECT = 200
+
+export function parseCommit({ sha, subject: rawSubject, body = "" }) {
+  // the title pattern backtracks on long runs of spaces: cap the input, a real title is far shorter
+  const subject = rawSubject.slice(0, MAX_SUBJECT)
   const match = TITLE.exec(subject.trim())
   const breaking = /^BREAKING[ -]CHANGE:/m.test(body) || Boolean(match?.[3])
   if (!match) {
@@ -105,12 +109,17 @@ function group(commit) {
   return commit.scope === "deps" ? "deps" : "maintenance"
 }
 
+/** `@user` and `@everyone` in a title would notify people from the release body: put them in code spans. */
+export function neutralizeMentions(text) {
+  return text.replace(/(^|[^\w`@])@([A-Za-z0-9][\w-]*(?:\/[\w.-]+)?)/g, "$1`@$2`")
+}
+
 const line = (commit, repo) => {
-  const scope = commit.scope ? `**${commit.scope}:** ` : ""
+  const scope = commit.scope ? `**${neutralizeMentions(commit.scope)}:** ` : ""
   const ref = commit.pr
     ? `[#${commit.pr}](https://github.com/${repo}/pull/${commit.pr})`
     : `[${commit.sha.slice(0, 7)}](https://github.com/${repo}/commit/${commit.sha})`
-  return `- ${scope}${commit.description} (${ref})`
+  return `- ${scope}${neutralizeMentions(commit.description)} (${ref})`
 }
 
 /** Markdown notes: commits grouped by type, each with its PR link, then how to upgrade. */
@@ -154,4 +163,21 @@ export function parseLog(raw) {
       const [sha, subject, body] = entry.split("\x1f")
       return parseCommit({ sha, subject, body })
     })
+}
+
+/** `gh release list --json tagName,isDraft` output to the state of one tag: only a published release counts as done. */
+export function releaseStateOf(list, tag) {
+  const found = list.find((release) => release.tagName === tag)
+  if (!found) return "none"
+  return found.isDraft ? "draft" : "published"
+}
+
+/**
+ * Applies what exists on GitHub to a plan. A published release is finished and is skipped, a draft or nothing is (re)built:
+ * a run that died half way leaves a draft, and running again replaces its assets and publishes it.
+ */
+export function withReleaseState(decision, state) {
+  if (!decision.release) return decision
+  if (state === "published") return { release: false, reason: `v${decision.version} is already released`, state }
+  return { ...decision, state }
 }
