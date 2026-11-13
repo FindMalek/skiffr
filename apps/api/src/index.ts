@@ -116,6 +116,7 @@ const fetch = createServer(
       dir: env.DOWNLOADS_DIR ?? "downloads",
       version: VERSION,
       publicUrl: env.API_PUBLIC_URL,
+      repo: env.GITHUB_REPO ?? "FindMalek/skiffr",
     }),
     version: async () => ({
       version: VERSION,
