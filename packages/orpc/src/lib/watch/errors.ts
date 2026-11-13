@@ -1,4 +1,5 @@
 import type { WATCH_SOURCE_ERRORS } from "@skiffr/common/constants"
+import { getObservability } from "@skiffr/observability"
 
 export type WatchError = (typeof WATCH_SOURCE_ERRORS)[number]
 
@@ -36,4 +37,9 @@ export function logWatchFailure(sourceId: string, error: unknown, extra?: Record
   const fields: Record<string, unknown> = { sourceId, ...extra, kind: watchErrorOf(error) }
   if (error instanceof FetchError && error.status) fields.status = error.status
   console.error("[watch] fetch failed", fields)
+  const obs = getObservability()
+  const kind = watchErrorOf(error)
+  obs.count("skiffr.sync.failures", 1, { job: "watch", error_kind: kind })
+  // A page that is gone or unreadable is the site's: counted above. Only our own faults page us.
+  if (kind === "internal") obs.captureError(error, { job: "watch", source_id: sourceId, error_kind: kind })
 }

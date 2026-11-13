@@ -1,0 +1,217 @@
+---
+title: Product and roadmap
+description: Who skiffr is for, what job seekers complain about, where skiffr stands today, and what comes next.
+---
+
+This page is the product research behind the board ([#102](https://github.com/FindMalek/skiffr/issues/102)). It is opinionated on purpose and meant to be argued with. Every item on the roadmap is an issue on the [project board](https://github.com/users/FindMalek/projects/25).
+
+## Vision
+
+Applying for jobs is mostly retyping the same facts into forms that all behave differently. Tools that promise to do it for you tend to make things up, spam employers, hide behind a paywall and send your CV somewhere you cannot see. skiffr takes the other side:
+
+1. **You stay the applicant.** It fills, you review, you press submit. It never invents a fact and never bypasses a captcha or a login.
+2. **It gets better with use.** Corrections become answers, and it shows where every value came from.
+3. **Your data stays yours.** Open source, self hosted, no analytics. A model is optional: it runs on your server with the key you configure, and it only sees what a feature needs, when you press it. Importing a CV sends the CV text, and you review the result before anything is saved.
+4. **It covers the whole journey**, not only the form: finding jobs, checking they are real, the CV, the form, tracking replies, following up.
+
+## Who it is for
+
+| Persona | What they need | What would make them leave |
+| --- | --- | --- |
+| The active seeker (engineer, designer, analyst) applying to 5 to 20 jobs a week | Fast, correct fills on Greenhouse, Lever, Ashby, Workday; tailored CV; a queue; knowing what got a reply | A wrong visa or salary answer, a form left half filled with no explanation |
+| The international applicant or career changer | Work authorization per country, other languages, other date and phone formats, relocation answers | An English only tool that guesses |
+| The privacy minded self hoster | Own Postgres, no telemetry, clear list of what the model sees, easy upgrades and backups | Data leaving without a switch, a broken upgrade |
+| The coach or helper (later) | A read only view of a client's queue and stats | Needing the client's password or profile |
+| The contributor | A clear way to add an ats adapter or a language | No contract, no starter issues, slow reviews |
+
+## What job seekers say
+
+Method and honest limits: Reddit blocks the research crawler, so there are no first hand Reddit threads here. The evidence is Hacker News threads, Trustpilot pages, Firefox add-on reviews, the README of an open source Workday filler, community forums of two password managers and a set of surveys. Trustpilot and add-on reviews are self selected and not fact checked: a claim about a named product below is what its reviewers report, with the month of the review, not a finding of ours. Many comparison blogs are written by competitors, and those are marked as such and used only where nothing better exists. Ratings and prices move: prices were read in November 2026, check the vendor before you trust a number.
+
+### Top 25 pains and desires
+
+| # | Pain or desire | Evidence |
+| --- | --- | --- |
+| 1 | Retyping the same CV data into every form | [HN: Upload your resume and then type it out](https://news.ycombinator.com/item?id=30291081) (184 points, "if I have to retype my CV in your obnoxious web form, its just not worth the effort") |
+| 2 | Workday: an account per employer, many pages, repeated sections | [HN thread](https://news.ycombinator.com/item?id=30291081) (a commenter calls making a new Workday account for each company the worst), [Workday filler README](https://github.com/pixotags/workday-application-autofill) ("the same 40-odd fields from scratch") |
+| 3 | Workday widgets break fillers: React components, custom dropdowns, date spinners, value saved only on blur, multi step | [Workday filler README](https://github.com/pixotags/workday-application-autofill) |
+| 4 | Autofill that makes things up or fills irrelevant fields | [Simplify on Trustpilot](https://uk.trustpilot.com/review/simplify.jobs) (a June 2026 reviewer says the AI "will lie by default"), [LazyApply on Trustpilot](https://ca.trustpilot.com/review/lazyapply.com) (a June 2026 reviewer reports consistent mistakes when applying) |
+| 5 | Dangerous defaults on visa, sponsorship and veteran questions | [LazyApply on Trustpilot](https://ca.trustpilot.com/review/lazyapply.com) (a May 2026 reviewer reports a default "yes" that was incorrect on visa and veteran questions) |
+| 6 | Dropdowns and education options missed or wrong, demographic answers wrong | [Simplify Firefox reviews](https://addons.mozilla.org/en-US/firefox/addon/simplify-jobs/reviews/) (December 2024: the degree dropdown is not filled when the degree is missing from the list; July 2023: skills and education fills fail when list options do not match; December 2021: no education on Workday forms), [review roundup](https://www.wobo.ai/blog/lazyapply-review/) (competitor blog, relays a report of wrong demographic data) |
+| 7 | Blank or wrong name fields, an invented middle name | [LazyApply on Trustpilot](https://ca.trustpilot.com/review/lazyapply.com) (February and May 2026 reviewers report first and last name not entered or blanked), [review roundup](https://www.wobo.ai/blog/lazyapply-review/) (competitor blog, quotes a Reddit comment about a middle name added when there is none) |
+| 8 | Spam: bots applying to roles outside the person's scope | [LazyApply on Trustpilot](https://uk.trustpilot.com/review/lazyapply.com?page=3) (2024 reviewers report applications to jobs outside their profile or filters) |
+| 9 | Fear of account restrictions from automation on LinkedIn | [Scoutify](https://scoutify.com/blog/linkedin-auto-apply/) and [FastApply](https://blog.fastapply.co/can-you-get-banned-for-auto-applying-on-linkedin-2026) (both vendors, mostly temporary Easy Apply pauses, no independent count) |
+| 10 | Ghost jobs: postings that never lead anywhere | [Enhancv survey](https://enhancv.com/blog/ghost-jobs-survey-2026-bls-data-comparison/) (47 percent say they applied to a role that did not exist), [Greenhouse via HR Review](https://hrreview.co.uk/hr-news/recruitment/one-in-three-uk-job-ads-may-be-fake-as-ghost-jobs-erode-trust-in-recruitment/385524), [Resume Genius via CPA Practice Advisor](https://www.cpapracticeadvisor.com/2026/04/30/ghost-jobs-still-haunting-67-of-job-seekers-report-finds/) |
+| 11 | Applications vanish into a black hole, no status | [HN thread](https://news.ycombinator.com/item?id=30291081) ("black holes"), the praise for trackers in [Teal on Trustpilot](https://uk.trustpilot.com/review/tealhq.com) |
+| 12 | Refund and cancellation disputes, trial to subscription surprises | [Simplify](https://uk.trustpilot.com/review/simplify.jobs) (refunds denied or delayed, a "3 months free" offer that was a 50 percent discount), [LazyApply](https://ca.trustpilot.com/review/lazyapply.com) (a June 2026 reviewer says it took two weeks to get a response to a refund request inside the 30 day window), [Jobscan](https://uk.trustpilot.com/review/jobscan.co) (a September 2026 reviewer says a trial turned into a paid plan early) on Trustpilot, as reported by reviewers |
+| 13 | Price and paywalls: autofill free, everything else paid | [Huntr pricing](https://huntr.co/pricing) (free plan tracks up to 100 jobs, Pro $40 a month or $30 a month billed quarterly), [Simplify+ pricing](https://help.simplify.jobs/articles/5623502-whats-included-in-simplify-features-and-pricing) ($39.99 a month, $89.99 a quarter, basic autofill and tracker free), [Teal+ price](https://toolradar.com/tools/teal-hq/pricing) (third party, $29 a month as of October 2026), [AIApply credit packs on top](https://www.resumly.ai/best/best-job-application-bots) (third party reported, the vendor site shows no prices) |
+| 14 | A tool that is slow or heavy in the browser | [Simplify Firefox reviews](https://addons.mozilla.org/en-US/firefox/addon/simplify-jobs/reviews/) (June 2024 to October 2026: reviewers report RAM and CPU spikes and freezes, on Workday pages in two of them) |
+| 15 | Login loops, profile not connecting | [Simplify Firefox reviews](https://addons.mozilla.org/en-US/firefox/addon/simplify-jobs/reviews/) (December 2023, August 2025 and October 2025 reviewers say the extension keeps asking to log in or cannot reach their profile) |
+| 16 | Parsed or pre filled CV data comes out garbled | [HN thread](https://news.ycombinator.com/item?id=30291081) (LaTeX and multi column PDFs) |
+| 17 | File format friction and CV upload quirks | [HN thread](https://news.ycombinator.com/item?id=30291081) |
+| 18 | Generic, robotic cover letters that need a heavy edit | [Teal on Trustpilot](https://uk.trustpilot.com/review/tealhq.com) (a May 2026 reviewer: cover letters "usually need a heavy edit"), [Jobscan on Trustpilot](https://uk.trustpilot.com/review/jobscan.co) (a September 2026 reviewer: generated bullets "sound stiff and need manual editing"), recruiter side view in [Cake](https://www.cake.me/resources/job-searching-guide/ai-to-write-cover-letter) (vendor) |
+| 19 | Support that does not answer | [LazyApply](https://ca.trustpilot.com/review/lazyapply.com) (2026 reviewers report no replies to support emails), [Simplify](https://uk.trustpilot.com/review/simplify.jobs) (reviewers describe slow or unresponsive support) on Trustpilot |
+| 20 | Where does my CV go: unclear privacy and which AI vendor sees it | [JobWizard guide](https://jobwizard.ai/blog/are-job-application-autofill-extensions-safe-to-use) (vendor blog) tells people to check what an autofill extension reads and stores |
+| 21 | Password managers are built for logins, not job forms: custom fields need setup and are not offered inline | [1Password community](https://www.1password.community/1password-at-home-31/use-custom-fields-for-autofill-possible-in-1password-5285) (a September 2023 staff reply: custom fields "won't appear in the inline menu or be filled with a shortcut", the feature request was still open in September 2026), [Bitwarden help](https://bitwarden.com/help/auto-fill-custom-fields/) (custom fields are set per item and "typically" fill in form or input elements) |
+| 22 | Tools that report "applied" when it never reached the employer | [Remote Job Assistant on Sonara](https://www.remotejobassistant.com/blog/sonara-ai-review) (competitor blog, relays user reports of silent failures at email verification steps, could not reach the vendor site, unverified) |
+| 23 | Distrust of ATS scores and keyword games | mixed accuracy in [Jobscan on Trustpilot](https://uk.trustpilot.com/review/jobscan.co); [Jobscan on ATS and AI detection](https://www.jobscan.co/blog/can-ats-detect-ai-resume/) (vendor) |
+| 24 | A cheap way to tailor a CV per job and see missing keywords | the top praise for Huntr and Jobscan in [Huntr](https://uk.trustpilot.com/review/huntr.co) and [Jobscan](https://uk.trustpilot.com/review/jobscan.co) Trustpilot reviews |
+| 25 | Autofill that still leaves cleanup, and the employer side backlash against auto apply | [JobCopilot on Simplify](https://jobcopilot.com/simplify-jobs-review/) (competitor blog, quotes Reddit users: "glorified autofill", one Reddit user is paraphrased as saying fixing errors took longer than applying by hand), [Inquirer on employers and auto apply](https://www.inquirer.com/business/ai-resum-jobs-applications-employers-artificial-intelligence-hiring-20260301.html) (an HR officer calls auto apply services "snake oil") |
+
+What people love, in short: free autofill that works on common systems (Simplify), a tracker that keeps the search organized (Teal, Huntr), keyword gap feedback (Jobscan, Huntr), and time saved when the fills are right.
+
+### Competitors at a glance
+
+| Product | Kind | What reviewers like | What reviewers report as problems | Price signal (verify) |
+| --- | --- | --- | --- | --- |
+| Simplify | Autofill and tracker, free core | Free autofill, broad ats coverage | Missed dropdowns and Workday education, refund disputes, performance on Firefox | Simplify+ $39.99 a month, $89.99 a quarter |
+| Teal | Tracker and resume tools | Easy tracker, keyword analysis | Cover letters needing heavy edits, listings that feel like ghost jobs, email volume | Teal+ about $29 a month (third party) |
+| Huntr | Tracker and tailoring | Tailoring, kanban, keyword feedback | One reviewer found auto fill hit or miss | Free up to 100 jobs, Pro $40 a month |
+| LazyApply | Auto apply bot | Volume, some interviews | Wrong or blank fields, jobs outside the person's profile, refund delays, little support | Subscription |
+| Sonara, JobCopilot, AIApply | Auto apply services | Hands off | Competitor blogs relay billing and renewal complaints, AIApply sells credit packs on top of a subscription | Trial then recurring, credit packs (third party reports) |
+| Jobscan | Resume scoring and building | Keyword gap analysis | Billing and cancellation disputes, stiff AI text, mixed score accuracy | Subscription |
+| LinkedIn Easy Apply bots | Automation | Easy Apply is liked by many | Account restriction risk, terms of service | Varies |
+| Chrome, Bitwarden, 1Password autofill | General form fill | Already installed | Built for logins and addresses: custom fields need setup | Free or bundled |
+
+skiffr's lane: the autofill and answer memory of Simplify, the queue and funnel of Teal and Huntr, CV tailoring that cannot invent facts, all in a place the user owns.
+
+## Where skiffr stands today
+
+Status is as of this page: solved means it works and is tested, partial means it exists with known limits, unsolved means nothing yet.
+
+| Area | Status | What exists | What is missing | Issues |
+| --- | --- | --- | --- | --- |
+| Detect forms, ask, fill | solved | Greenhouse, Lever, Ashby, Workable adapters, toast, shortcut, iframes (same origin) | Cross origin iframes | [#131](https://github.com/FindMalek/skiffr/issues/131) |
+| Fill engine (React safe, selects, comboboxes, shadow dom) | partial | Works on fixtures and the four ats | Known gaps in [#48](https://github.com/FindMalek/skiffr/issues/48) | [#48](https://github.com/FindMalek/skiffr/issues/48) |
+| Workday and account walls | unsolved | `myworkdayjobs.com`, `icims.com` and SmartRecruiters hosts are detected | No adapter for any of them, no multi page flow, no hand over | [#127](https://github.com/FindMalek/skiffr/issues/127), [#128](https://github.com/FindMalek/skiffr/issues/128), [#129](https://github.com/FindMalek/skiffr/issues/129), [#130](https://github.com/FindMalek/skiffr/issues/130) |
+| Never submit, honeypots, hidden fields | solved | Enforced and tested | Keep testing per adapter | |
+| Sensitive fields | partial | Central guard in five languages | Long tail of wording | [#98](https://github.com/FindMalek/skiffr/issues/98), [#120](https://github.com/FindMalek/skiffr/issues/120) |
+| Learning from corrections | solved | Log, lookup, suggestions, per site profile | Stale answers, scope, never learn | [#115](https://github.com/FindMalek/skiffr/issues/115), [#116](https://github.com/FindMalek/skiffr/issues/116), [#117](https://github.com/FindMalek/skiffr/issues/117) |
+| Onboarding (profile from a CV) | unsolved | A typed profile form | Import and a first run checklist | [#107](https://github.com/FindMalek/skiffr/issues/107), [#108](https://github.com/FindMalek/skiffr/issues/108), [#109](https://github.com/FindMalek/skiffr/issues/109), [#110](https://github.com/FindMalek/skiffr/issues/110) |
+| Resume upload | unsolved | A file fill primitive that nothing feeds | User confirmed attach, tailored PDF | [#123](https://github.com/FindMalek/skiffr/issues/123) |
+| CV tailoring | solved | Reactive Resume copy, extractive edits, keyword score | Posting is pasted, not tried on a real instance ([#88](https://github.com/FindMalek/skiffr/issues/88)) | |
+| ATS score honesty | solved | Plain counting, docs say it is not an ats score | | |
+| Cover letters | unsolved | | Draft per job | [#125](https://github.com/FindMalek/skiffr/issues/125) |
+| Free text screening answers | partial | The api can draft an answer, the extension does not call it | Review flow | [#124](https://github.com/FindMalek/skiffr/issues/124) |
+| Work authorization and visa | partial | Profile has the data | Deterministic answers per country | [#118](https://github.com/FindMalek/skiffr/issues/118) |
+| Salary expectations | partial | Min and max in the profile | Policy, currency, never fill default | [#126](https://github.com/FindMalek/skiffr/issues/126) |
+| Dates, phone, number formats | partial | Date and number helpers | Phone format, ambiguity rules by field | [#119](https://github.com/FindMalek/skiffr/issues/119) |
+| Names and address | partial | First and last name, city, region, country and postal code | Middle and preferred name, street address lines, a full name composer, address widgets | [#107](https://github.com/FindMalek/skiffr/issues/107), [#121](https://github.com/FindMalek/skiffr/issues/121) |
+| Other languages | partial | Sensitive lists in en, fr, de, es, ar | Field matching synonyms | [#122](https://github.com/FindMalek/skiffr/issues/122) |
+| Captcha, bot checks | unsolved | Nothing is bypassed, but nothing is said | A calm hand over | [#129](https://github.com/FindMalek/skiffr/issues/129) |
+| Duplicate applications | partial | One queue row per canonical url | Same company and role, cooldown, toast warning | [#133](https://github.com/FindMalek/skiffr/issues/133) |
+| Ghost and closed postings | unsolved | | Signals and badges | [#132](https://github.com/FindMalek/skiffr/issues/132) |
+| Application tracking | partial | Manual statuses, funnel stats, Gmail job alert import | Reply detection, reminders, deadlines | [#135](https://github.com/FindMalek/skiffr/issues/135), [#136](https://github.com/FindMalek/skiffr/issues/136) |
+| Personas, referrals, analytics by what works | partial | Stats by source, ats, role, match score | Per resume persona, referrals | [#138](https://github.com/FindMalek/skiffr/issues/138), [#137](https://github.com/FindMalek/skiffr/issues/137) |
+| Bulk apply safety | partial | Api rate limits, never auto submit | Pacing and quality gate for next job | [#134](https://github.com/FindMalek/skiffr/issues/134) |
+| Trust: why a value, undo, dry run, per site off | partial | Outlined uncertain fields, "don't ask on this site" | Provenance panel, undo, dry run, list | [#113](https://github.com/FindMalek/skiffr/issues/113), [#114](https://github.com/FindMalek/skiffr/issues/114) |
+| Failure modes | partial | Clear errors on some paths | Offline mode, version handshake, report a broken site | [#139](https://github.com/FindMalek/skiffr/issues/139), [#112](https://github.com/FindMalek/skiffr/issues/112), [#140](https://github.com/FindMalek/skiffr/issues/140), [#20](https://github.com/FindMalek/skiffr/issues/20) |
+| Other browsers, phone | unsolved | Chrome 142 plus only | Edge, Firefox, share to queue from a phone | [#141](https://github.com/FindMalek/skiffr/issues/141), [#142](https://github.com/FindMalek/skiffr/issues/142) |
+| Data export, import, delete | unsolved | | gdpr export and erase, JSON Resume | [#111](https://github.com/FindMalek/skiffr/issues/111), [#109](https://github.com/FindMalek/skiffr/issues/109) |
+| Self hosting upgrades, backups | partial | Deploy guide, backup workflow | Restore drill, upgrade guide, tagged releases | [#147](https://github.com/FindMalek/skiffr/issues/147), [#145](https://github.com/FindMalek/skiffr/issues/145), [#31](https://github.com/FindMalek/skiffr/issues/31) |
+| Accessibility | unsolved | | Audit of the toast, panels and dashboard | [#146](https://github.com/FindMalek/skiffr/issues/146) |
+| Open source health | partial | Contributing guide, code of conduct, ci | Adapter contract, starter issues, translations | [#143](https://github.com/FindMalek/skiffr/issues/143), [#144](https://github.com/FindMalek/skiffr/issues/144) |
+| Coach and team sharing | unsolved | | Not started, see ideas below | |
+| Interview prep | unsolved | Notes board | Not started, see ideas below | |
+
+## Edge cases and designs
+
+Short answers to the hard cases, with where each lands.
+
+- **Account walls (Workday and others).** skiffr never types a password and never creates an account. It detects the wall, says "your turn", and offers the fill again afterwards. A ledger of which tenant you have an account at, with the email used and no password, helps people who sign up for twenty companies ([#129](https://github.com/FindMalek/skiffr/issues/129), [#130](https://github.com/FindMalek/skiffr/issues/130)). An optional application email or alias in the profile keeps signups apart from the main inbox.
+- **Resume upload.** The person picks the PDF once in the extension options, and confirms the attach on each form. The tailored PDF from CV tailoring can be pulled in per job. Cover letter and photo slots never get the resume ([#123](https://github.com/FindMalek/skiffr/issues/123)).
+- **Cover letters and free text.** Drafts come from the profile, the tailored CV and the posting. Numbers, employers and dates must exist in the sources or the draft is refused. Drafts are outlined, labelled and undoable, and an edit is learned ([#124](https://github.com/FindMalek/skiffr/issues/124), [#125](https://github.com/FindMalek/skiffr/issues/125)).
+- **Salary.** Never filled by default. A policy per person (range, target, never) and per currency. A "current salary" question stays empty and outlined, because asking is illegal in some places. A negotiation note per job stays local ([#126](https://github.com/FindMalek/skiffr/issues/126)).
+- **Work authorization, relocation, remote.** Answered by rules from structured data, never by the model. Unknown means empty and outlined, never a default yes ([#118](https://github.com/FindMalek/skiffr/issues/118)).
+- **Formats.** Dates follow the field first, the locale second, and stay empty when ambiguous. Phones are stored as E.164 and shaped per field. Names carry parts, a preferred name and a transliteration slot ([#119](https://github.com/FindMalek/skiffr/issues/119), [#107](https://github.com/FindMalek/skiffr/issues/107), [#121](https://github.com/FindMalek/skiffr/issues/121)).
+- **Captcha and bot checks.** Never bypassed. Hand over to the person, then re arm ([#129](https://github.com/FindMalek/skiffr/issues/129)).
+- **Duplicates and volume.** A warning, not a block: same company and title, a cooldown after a recent application, and a pacing prompt in "open next" ([#133](https://github.com/FindMalek/skiffr/issues/133), [#134](https://github.com/FindMalek/skiffr/issues/134)). skiffr will not become an auto apply bot: that is the line between it and the tools users complain about.
+- **Ghost jobs.** Signals with reasons, never a hidden score, and one click to say "it is open" ([#132](https://github.com/FindMalek/skiffr/issues/132)).
+- **Tracking.** Reply emails become suggestions the person confirms. skiffr stores the status, company and date, never the mail ([#135](https://github.com/FindMalek/skiffr/issues/135)). Reminders and deadlines come out as a private ics feed, with no calendar login ([#136](https://github.com/FindMalek/skiffr/issues/136)).
+- **Learning quality.** Facts expire (notice period, availability), answers have a scope (this site, this ats, global) with a conflict view, and the person can mark a field "never learn" ([#116](https://github.com/FindMalek/skiffr/issues/116), [#117](https://github.com/FindMalek/skiffr/issues/117), [#115](https://github.com/FindMalek/skiffr/issues/115)).
+- **Trust.** A panel with the source of each value, undo per field and for the whole fill, and a dry run ([#113](https://github.com/FindMalek/skiffr/issues/113), [#114](https://github.com/FindMalek/skiffr/issues/114)).
+- **Failure modes.** Offline cache and queued learning, model down falls back to saved answers, a version handshake between extension and api, and a "this site did not work" report that shows exactly what it would share ([#139](https://github.com/FindMalek/skiffr/issues/139), [#112](https://github.com/FindMalek/skiffr/issues/112), [#140](https://github.com/FindMalek/skiffr/issues/140)).
+- **Mobile and other browsers.** Extensions do not run on phones, so the phone adds jobs to the queue through a share target and the form is done on a laptop ([#142](https://github.com/FindMalek/skiffr/issues/142)). Edge and Firefox are builds, Safari is a plan ([#141](https://github.com/FindMalek/skiffr/issues/141)).
+- **Data rights.** Export everything, delete everything, import JSON Resume and the LinkedIn archive ([#111](https://github.com/FindMalek/skiffr/issues/111), [#109](https://github.com/FindMalek/skiffr/issues/109)).
+- **LinkedIn Easy Apply and Indeed Apply.** Open question, listed in the ideas below and not an issue yet. A person driven fill of those modals is not the same as a bot, but both sites forbid automation in their terms and users report restrictions. Until there is a clear reading of the terms skiffr does not touch them. Decide before building.
+
+## Roadmap
+
+Ordering rule: first value, then trust, then the pains people name most, then breadth. Nothing here makes skiffr submit for you.
+
+### Now
+
+Why: a new person should reach a correct fill in minutes, see why a value was used, and never get a wrong answer on the questions that reject an application. Then Workday, the pain every source names.
+
+| Issue | Item | Size |
+| --- | --- | --- |
+| [#107](https://github.com/FindMalek/skiffr/issues/107) | profile: work history, education and address | M |
+| [#108](https://github.com/FindMalek/skiffr/issues/108) | profile: import a cv with the model, review before save | L |
+| [#110](https://github.com/FindMalek/skiffr/issues/110) | dashboard: first run wizard, first fill in 3 minutes | M |
+| [#113](https://github.com/FindMalek/skiffr/issues/113) | extension: why this value, undo and diff after a fill | M |
+| [#114](https://github.com/FindMalek/skiffr/issues/114) | extension: dry run mode and per site disable list | S |
+| [#112](https://github.com/FindMalek/skiffr/issues/112) | api: version handshake between extension and api | S |
+| [#145](https://github.com/FindMalek/skiffr/issues/145) | ci: tagged releases with changelog and extension zip | S |
+| [#118](https://github.com/FindMalek/skiffr/issues/118) | fill: work authorization and sponsorship from structured data | M |
+| [#119](https://github.com/FindMalek/skiffr/issues/119) | fill: phone, date and number formats per field | M |
+| [#123](https://github.com/FindMalek/skiffr/issues/123) | extension: attach my cv with a file the person confirms | M |
+| [#127](https://github.com/FindMalek/skiffr/issues/127) | extension: workday adapter and tenant flow | L |
+| [#128](https://github.com/FindMalek/skiffr/issues/128) | extension: multi step and spa forms keep state | M |
+| [#129](https://github.com/FindMalek/skiffr/issues/129) | extension: hand over on captcha, login and account walls | M |
+| [#133](https://github.com/FindMalek/skiffr/issues/133) | jobs: duplicate and cooldown guard | M |
+| [#134](https://github.com/FindMalek/skiffr/issues/134) | extension: guardrails for applying to many jobs | S |
+| [#111](https://github.com/FindMalek/skiffr/issues/111) | account: export all my data and delete my account | M |
+
+### Next
+
+Why: the answer bank gets smarter, the journey after the form gets tracked, and the project becomes easy to contribute to. [#120](https://github.com/FindMalek/skiffr/issues/120) is an evaluation only: it decides whether a model beats word lists for sensitive fields before anything is built.
+
+| Issue | Item | Size |
+| --- | --- | --- |
+| [#109](https://github.com/FindMalek/skiffr/issues/109) | profile: import json resume and linkedin data export | M |
+| [#115](https://github.com/FindMalek/skiffr/issues/115) | learning: never learn this field | S |
+| [#116](https://github.com/FindMalek/skiffr/issues/116) | learning: expiring answers and facts | M |
+| [#117](https://github.com/FindMalek/skiffr/issues/117) | learning: answer scope per site, ats or global, with conflict view | M |
+| [#121](https://github.com/FindMalek/skiffr/issues/121) | fill: name parts and address autocomplete widgets | M |
+| [#122](https://github.com/FindMalek/skiffr/issues/122) | fill: match labels in other languages | M |
+| [#120](https://github.com/FindMalek/skiffr/issues/120) | fill: model assisted sensitive field classifier (evaluate regex vs embeddings vs llm) | eval |
+| [#124](https://github.com/FindMalek/skiffr/issues/124) | extension: draft free text answers for review | M |
+| [#125](https://github.com/FindMalek/skiffr/issues/125) | cv: cover letter draft per job, reviewed before use | M |
+| [#126](https://github.com/FindMalek/skiffr/issues/126) | profile: salary expectation policy and negotiation notes | M |
+| [#131](https://github.com/FindMalek/skiffr/issues/131) | extension: cross origin iframes for fill and learning | M |
+| [#132](https://github.com/FindMalek/skiffr/issues/132) | jobs: detect closed and ghost postings | M |
+| [#135](https://github.com/FindMalek/skiffr/issues/135) | gmail: detect rejections and interviews, update status | L |
+| [#136](https://github.com/FindMalek/skiffr/issues/136) | dashboard: follow up reminders, deadlines and an ics feed | M |
+| [#138](https://github.com/FindMalek/skiffr/issues/138) | dashboard: resume personas per job type and stats per persona | M |
+| [#139](https://github.com/FindMalek/skiffr/issues/139) | extension: api down and model down modes | M |
+| [#140](https://github.com/FindMalek/skiffr/issues/140) | extension: report a broken site with a sanitized snapshot | M |
+| [#143](https://github.com/FindMalek/skiffr/issues/143) | extension: adapter contract, contributing guide and good first issues | M |
+| [#146](https://github.com/FindMalek/skiffr/issues/146) | accessibility: toast, panels and dashboard audit | M |
+| [#147](https://github.com/FindMalek/skiffr/issues/147) | deploy: restore drill and upgrade guide | M |
+
+### Later
+
+Why: valuable, but they depend on the above or carry more risk.
+
+| Issue | Item | Size |
+| --- | --- | --- |
+| [#130](https://github.com/FindMalek/skiffr/issues/130) | dashboard: which ats accounts I have, without passwords | S |
+| [#137](https://github.com/FindMalek/skiffr/issues/137) | dashboard: referrals on jobs and in stats | S |
+| [#141](https://github.com/FindMalek/skiffr/issues/141) | extension: firefox and edge builds, safari plan | M |
+| [#142](https://github.com/FindMalek/skiffr/issues/142) | dashboard: pwa and share target to queue jobs from a phone | M |
+| [#144](https://github.com/FindMalek/skiffr/issues/144) | dashboard and extension: translations setup | M |
+
+Already on the board and kept as they are: learned http replay recipes ([#18](https://github.com/FindMalek/skiffr/issues/18), after the trust items above), read only smoke across real ats sites ([#20](https://github.com/FindMalek/skiffr/issues/20)), the Chrome Web Store account ([#26](https://github.com/FindMalek/skiffr/issues/26)), and the follow up issues from earlier reviews.
+
+### Ideas without an issue yet
+
+- **Team and coach sharing.** A read only link to a person's queue and stats, with no profile and no answers. Large, depends on the data export work.
+- **Interview prep sheet per application.** Questions and stories drawn from the person's own answer bank and the posting, never invented experience.
+- **Learning quality replay.** A harness that replays correction logs and reports hit rate by source, correction rate and stale rate, run in ci on fixtures. Follows the recorded real model eval ([#41](https://github.com/FindMalek/skiffr/issues/41)).
+- **LinkedIn Easy Apply and Indeed Apply.** See the edge case above: a terms reading comes first, then maybe an issue.
+- **Safari.** An app store build costs money and a native wrapper. Only after Edge and Firefox.
+- **A browser independent fill bookmarklet** for pages where an extension is blocked. Low priority and hard to keep safe.
+
+## How this page is kept
+
+When an item ships, move it to the gap table as solved and delete the row from the roadmap. When a pain shows up in a bug report or a review more than twice, add it to the top 25 with the link. The reviewer guide in [`.github/REVIEW.md`](https://github.com/FindMalek/skiffr/blob/main/.github/REVIEW.md) is updated the same way with new bug classes.

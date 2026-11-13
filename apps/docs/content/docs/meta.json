@@ -9,11 +9,15 @@
     "environment",
     "structure",
     "scripts",
+    "seeding",
     "deploy",
+    "previews",
     "learning",
     "gmail",
     "sources",
     "cv-tailoring",
-    "privacy"
+    "observability",
+    "privacy",
+    "roadmap"
   ]
 }
