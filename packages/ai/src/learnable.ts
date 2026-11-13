@@ -422,13 +422,16 @@ function isPinSecret(padded: string): boolean {
 }
 
 /** Whether a field's value may be stored and filled back later. Case, spaces and zero-width characters in `type` can't dodge it. */
-/** A page controls its labels: only this many characters are split into tails, or `a: a: a: ...` is quadratic. */
-const OWN_LABEL_MAX = 2000
+/** A page controls its labels: only this many `: ` tails are built, or `a: a: a: ...` is quadratic. */
+const OWN_LABEL_TAILS = 20
 
-/** The label and each tail of it after a section prefix (`Payment details: Code` also reads `Code`), normalized. */
+/** The label and each of its last tails after a section prefix (`Payment details: Code` also reads `Code`), normalized. */
 function ownLabels(label: string): string[] {
-  const parts = label.slice(-OWN_LABEL_MAX).split(/:\s+/)
-  return parts.map((_, index) => clean(parts.slice(index).join(" ")))
+  const parts = label.split(/:\s+/)
+  const tails = parts.slice(-OWN_LABEL_TAILS)
+  const owns = tails.map((_, index) => clean(tails.slice(index).join(" ")))
+  if (tails.length < parts.length) owns.push(clean(label))
+  return owns
 }
 
 export function isLearnableField(field: { label: string; type?: string; autocomplete?: string }): boolean {

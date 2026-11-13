@@ -434,3 +434,12 @@ test("a long prefix cannot push a bare label out of the scanned window", () => {
     expect(isLearnableField({ label: `${pad}: ${bare}`, type: "text" })).toBe(false)
   }
 })
+
+test("padding after a bare label cannot hide it either", () => {
+  const pad = ".".repeat(2100)
+  for (const bare of ["Code", "Firma", "Ccv", "Expiry date", "Ablaufdatum"]) {
+    expect(isLearnableField({ label: `${bare}${pad}`, type: "text" })).toBe(false)
+    expect(isLearnableField({ label: `${pad}${bare}${pad}`, type: "text" })).toBe(false)
+  }
+  expect(isLearnableField({ label: `Code${"\u2060".repeat(5000)}`, type: "text" })).toBe(false)
+})
