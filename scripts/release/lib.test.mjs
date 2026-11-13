@@ -114,6 +114,14 @@ test("a release needs the newest ci run of a push to main to be green", () => {
     ]),
     false,
   )
+  // the newest run decides, whatever order the list comes in
+  assert.equal(
+    hasGreenCi([
+      run("push", "main", "success", "2026-01-01T10:00:00Z"),
+      run("push", "main", "failure", "2026-01-01T11:00:00Z"),
+    ]),
+    false,
+  )
 })
 
 test("git log output is split into commits", () => {

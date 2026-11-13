@@ -22,9 +22,10 @@ on:
         type: boolean
         default: true
 
-# Runs queue one after the other and are never cancelled.
+# Real runs queue one after the other and are never cancelled. A dry run gets a group of its own, so a rehearsal can never replace a
+# pending real release (GitHub keeps only one pending run per group).
 concurrency:
-  group: release
+  group: release-${{ inputs.dry_run && github.run_id || 'main' }}
   cancel-in-progress: false
 
 permissions:
