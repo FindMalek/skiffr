@@ -1,7 +1,9 @@
 import { createORPCClient } from "@orpc/client"
 import { RPCLink } from "@orpc/client/fetch"
 import type { ExtensionSettings } from "@skiffr/common"
+import { CLIENT_HEADER } from "@skiffr/common/utils"
 import type { AppRouterClient } from "@skiffr/orpc/client"
+import { CLIENT_HEADER_VALUE } from "./client"
 import { getSettings } from "./storage"
 
 export class NotConfiguredError extends Error {
@@ -13,7 +15,7 @@ export class NotConfiguredError extends Error {
 export function createApiClient(settings: ExtensionSettings, fetch?: typeof globalThis.fetch): AppRouterClient {
   const link = new RPCLink({
     url: `${settings.apiUrl}/rpc`,
-    headers: { authorization: `Bearer ${settings.token}` },
+    headers: { authorization: `Bearer ${settings.token}`, [CLIENT_HEADER]: CLIENT_HEADER_VALUE },
     fetch,
   })
   return createORPCClient<AppRouterClient>(link)
