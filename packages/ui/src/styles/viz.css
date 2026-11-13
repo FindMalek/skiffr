@@ -1,34 +1,49 @@
-/* Monochrome series: position and length first, then luminance, then the hatch (--viz-4 lines, see viz-hatch).
-   Adjacent marks differ by luminance and are separated by a 1px --background gap or the hatch, never by hue.
-   --viz-1..3 are the categorical order, --viz-seq and --viz-o1..o4 the ordinal ramp (o1 lowest, o4 highest). */
+/* Monochrome series (DESIGN.md 4.8). Every mark is at least 3:1 on its surface; adjacent marks are not told apart by
+   luminance alone, so draw a 1px --background gap, direct labels and `viz-hatch` on series 2.
+   --viz-1..3 are the series, --viz-seq (= series 2) the single series, --viz-o1..o4 the ordinal ramp (o4 is the
+   furthest stage: darkest in light, lightest in dark). Every fill has a `-foreground` token with at least 4.5:1 on it,
+   for text printed on a mark: `text-(--viz-1-foreground)`. */
 @utility viz {
   --viz-1: oklch(0.145 0 0);
   --viz-2: oklch(0.5 0 0);
-  --viz-3: oklch(0.74 0 0);
-  --viz-4: oklch(0.5 0 0);
-  --viz-seq: oklch(0.3 0 0);
-  --viz-o1: oklch(0.74 0 0);
-  --viz-o2: oklch(0.6 0 0);
-  --viz-o3: oklch(0.46 0 0);
+  --viz-3: oklch(0.66 0 0);
+  --viz-seq: oklch(0.5 0 0);
+  --viz-o1: oklch(0.66 0 0);
+  --viz-o2: oklch(0.55 0 0);
+  --viz-o3: oklch(0.42 0 0);
   --viz-o4: oklch(0.3 0 0);
+  --viz-1-foreground: oklch(1 0 0);
+  --viz-2-foreground: oklch(1 0 0);
+  --viz-3-foreground: oklch(0.145 0 0);
+  --viz-seq-foreground: oklch(1 0 0);
+  --viz-o1-foreground: oklch(0.145 0 0);
+  --viz-o2-foreground: oklch(1 0 0);
+  --viz-o3-foreground: oklch(1 0 0);
+  --viz-o4-foreground: oklch(1 0 0);
 
   .dark & {
     --viz-1: oklch(0.985 0 0);
-    --viz-2: oklch(0.65 0 0);
-    --viz-3: oklch(0.45 0 0);
-    --viz-4: oklch(0.65 0 0);
-    --viz-seq: oklch(0.85 0 0);
-    --viz-o1: oklch(0.45 0 0);
-    --viz-o2: oklch(0.58 0 0);
-    --viz-o3: oklch(0.7 0 0);
-    --viz-o4: oklch(0.85 0 0);
+    --viz-2: oklch(0.7 0 0);
+    --viz-3: oklch(0.52 0 0);
+    --viz-seq: oklch(0.7 0 0);
+    --viz-o1: oklch(0.52 0 0);
+    --viz-o2: oklch(0.62 0 0);
+    --viz-o3: oklch(0.76 0 0);
+    --viz-o4: oklch(0.9 0 0);
+    --viz-1-foreground: oklch(0.145 0 0);
+    --viz-2-foreground: oklch(0.145 0 0);
+    --viz-3-foreground: oklch(0.985 0 0);
+    --viz-seq-foreground: oklch(0.145 0 0);
+    --viz-o1-foreground: oklch(0.985 0 0);
+    --viz-o2-foreground: oklch(0.145 0 0);
+    --viz-o3-foreground: oklch(0.145 0 0);
+    --viz-o4-foreground: oklch(0.145 0 0);
   }
 }
 
-/* The fourth series: 1px lines at 45deg in --viz-4 over the surface. Combine with a 1px outline in --viz-4 on small marks. */
+/* Series 2: 1px --foreground lines at 45deg over the mark's own fill. Not for marks that carry a printed value. */
 @utility viz-hatch {
-  background-color: transparent;
-  background-image: repeating-linear-gradient(45deg, var(--viz-4) 0 1px, transparent 1px 4px);
+  background-image: repeating-linear-gradient(45deg, var(--foreground) 0 1px, transparent 1px 4px);
 }
 
 @keyframes viz-grow-y {
@@ -46,14 +61,14 @@
 @utility viz-grow-y {
   @media (prefers-reduced-motion: no-preference) {
     transform-origin: bottom;
-    animation: viz-grow-y 0.45s ease-out both;
+    animation: viz-grow-y 0.3s var(--ease-out) both;
   }
 }
 
 @utility viz-grow-x {
   @media (prefers-reduced-motion: no-preference) {
     transform-origin: left;
-    animation: viz-grow-x 0.45s ease-out both;
+    animation: viz-grow-x 0.3s var(--ease-out) both;
   }
 }
 

@@ -48,12 +48,15 @@ function CommandDialog({
 
 function CommandInput({ className, ...props }: React.ComponentProps<typeof CommandPrimitive.Input>) {
   return (
-    <div data-slot="command-input-wrapper" className="flex h-(--control-h) items-center gap-2 border-b border-border px-3">
+    <div
+      data-slot="command-input-wrapper"
+      className="flex h-(--control-h) items-center gap-2 border-b border-border px-3 has-focus-visible:outline-2 has-focus-visible:-outline-offset-2 has-focus-visible:outline-ring"
+    >
       <SearchIcon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
       <CommandPrimitive.Input
         data-slot="command-input"
         className={cn(
-          "flex h-full w-full bg-transparent text-base outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50 md:text-sm",
+          "flex h-full w-full bg-transparent text-base focus-visible:outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50 md:text-sm",
           className
         )}
         {...props}
@@ -114,7 +117,7 @@ function CommandItem({ className, ...props }: React.ComponentProps<typeof Comman
 
 /** Hint at the end of an item, e.g. `<CommandShortcut>g q</CommandShortcut>`. */
 function CommandShortcut({ className, ...props }: React.ComponentProps<"span">) {
-  return <span data-slot="command-shortcut" className={cn("ml-auto font-mono text-xs text-muted-foreground", className)} {...props} />
+  return <span data-slot="command-shortcut" className={cn("ms-auto font-mono text-xs text-muted-foreground", className)} {...props} />
 }
 
 export {

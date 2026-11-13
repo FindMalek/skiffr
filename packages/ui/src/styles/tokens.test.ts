@@ -52,8 +52,24 @@ const theme = read("theme.css")
 const themes = { light: tokens(theme, ":root"), dark: tokens(theme, ".dark") }
 const STATUS = ["--destructive", "--success", "--warning"]
 
+const blockTokens = (block: string): Record<string, Oklch> =>
+  Object.fromEntries(
+    [...block.matchAll(/(--[\w-]+):\s*(oklch\([^)]*\))\s*;/g)].map((m) => [m[1] as string, parseOklch(m[2] as string)]),
+  )
+
+const viz = read("viz.css")
+const vizStart = viz.indexOf("@utility viz {")
+const vizDark = viz.indexOf(".dark & {", vizStart)
+const vizTokens = {
+  light: blockTokens(viz.slice(vizStart, vizDark)),
+  dark: blockTokens(viz.slice(vizDark, viz.indexOf("\n}", vizDark))),
+}
+const SERIES = ["--viz-1", "--viz-2", "--viz-3"]
+const ORDINAL = ["--viz-o1", "--viz-o2", "--viz-o3", "--viz-o4"]
+
 for (const [name, t] of Object.entries(themes)) {
   const at = (key: string): Oklch => t[key] as Oklch
+  const surfaces = ["--background", "--card", "--muted"]
 
   test(`${name}: control borders and the focus ring are at least 3:1 on page and card`, () => {
     for (const surface of ["--background", "--card"]) {
@@ -63,11 +79,24 @@ for (const [name, t] of Object.entries(themes)) {
     }
   })
 
-  test(`${name}: muted text and status colours are at least 4.5:1 as text`, () => {
-    for (const surface of ["--background", "--card", "--muted"]) {
-      expect(contrast(at("--muted-foreground"), at(surface))).toBeGreaterThanOrEqual(4.5)
-    }
-    for (const key of STATUS) expect(contrast(at(key), at("--background"))).toBeGreaterThanOrEqual(4.5)
+  test(`${name}: text pairs are at least 4.5:1`, () => {
+    const pairs: [string, string][] = [
+      ["--foreground", "--background"],
+      ["--card-foreground", "--card"],
+      ["--popover-foreground", "--popover"],
+      ["--primary-foreground", "--primary"],
+      ["--secondary-foreground", "--secondary"],
+      ["--accent-foreground", "--accent"],
+      ["--sidebar-foreground", "--sidebar"],
+      ["--sidebar-primary-foreground", "--sidebar-primary"],
+      ["--sidebar-accent-foreground", "--sidebar-accent"],
+      ["--muted-foreground", "--background"],
+      ["--muted-foreground", "--card"],
+      ["--muted-foreground", "--muted"],
+      ...["--destructive", "--success", "--warning"].flatMap((k): [string, string][] => surfaces.map((s) => [k, s])),
+    ]
+    for (const [fg, bg] of pairs)
+      expect({ fg, bg, ratio: contrast(at(fg), at(bg)) >= 4.5 }).toEqual({ fg, bg, ratio: true })
   })
 
   test(`${name}: structure borders are visible against the page`, () => {
@@ -80,12 +109,31 @@ for (const [name, t] of Object.entries(themes)) {
       else expect({ key, c: value.c }).toEqual({ key, c: 0 })
     }
   })
+
+  test(`${name}: chart series are grey, 3:1 on page and card, told apart, with readable text on each fill`, () => {
+    const v = vizTokens[name as "light" | "dark"]
+    const fills = [...SERIES, ...ORDINAL, "--viz-seq"]
+    for (const key of fills) {
+      const fill = v[key] as Oklch
+      expect(fill.c).toBe(0)
+      for (const surface of ["--background", "--card"]) {
+        expect({ key, surface, ok: contrast(fill, at(surface)) >= 3 }).toEqual({ key, surface, ok: true })
+      }
+      expect({ key, ok: contrast(v[`${key}-foreground`] as Oklch, fill) >= 4.5 }).toEqual({ key, ok: true })
+    }
+    // adjacent series: never equal, and never closer than the 1.9:1 the gap and hatch rule is written for
+    for (const [a, b] of [SERIES.slice(0, 2), SERIES.slice(1, 3)] as [string, string][]) {
+      expect(contrast(v[a] as Oklch, v[b] as Oklch)).toBeGreaterThanOrEqual(1.9)
+    }
+    expect(v["--viz-seq"]).toEqual(v["--viz-2"])
+    // ordinal: one step per stage, always more contrast with the surface than the step before
+    const steps = ORDINAL.map((k) => contrast(v[k] as Oklch, at("--background")))
+    expect(steps).toEqual([...steps].sort((x, y) => x - y))
+    expect(new Set(steps).size).toBe(ORDINAL.length)
+  })
 }
 
-test("viz tokens are greys, with no hue, in both themes", () => {
-  const viz = read("viz.css")
-  const values = [...viz.matchAll(/--viz-[\w]+:\s*([^;]+);/g)].map((m) => (m[1] as string).trim())
-  expect(values.length).toBeGreaterThanOrEqual(18)
-  for (const value of values) expect(parseOklch(value).c).toBe(0)
-  expect(viz).not.toMatch(/#[0-9a-f]{3,8}\b/i)
+test("viz.css and theme.css have no hex or hue colours", () => {
+  expect(read("viz.css")).not.toMatch(/#[0-9a-f]{3,8}\b/i)
+  for (const v of Object.values(vizTokens)) expect(Object.values(v).length).toBeGreaterThanOrEqual(16)
 })

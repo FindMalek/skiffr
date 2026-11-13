@@ -7,6 +7,12 @@
 @import "./viz.css";
 
 @custom-variant dark (&:is(.dark *));
+@custom-variant coarse (@media (pointer: coarse));
+
+/* The only easing curve (DESIGN.md 2.6). Tailwind's `ease-out` utility and `var(--ease-out)` both resolve to it. */
+@theme {
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
+}
 @source "../../../apps/**/*.{ts,tsx}";
 @source "../**/*.{ts,tsx}";
 
@@ -109,6 +115,45 @@
   [data-ending-style] {
     transform: none !important;
   }
+  /* Skeletons are static blocks, spinners are static icons next to a text label. */
+  .animate-skeleton,
+  .animate-spin {
+    animation: none !important;
+  }
+}
+
+/* Layering scale (DESIGN.md 2.7). A select or menu opened from a dialog mounts later in the DOM, so it stacks above
+   the dialog at the same z. */
+@utility z-sticky {
+  z-index: 20;
+}
+@utility z-bar {
+  z-index: 30;
+}
+@utility z-action {
+  z-index: 35;
+}
+@utility z-overlay {
+  z-index: 50;
+}
+@utility z-tooltip {
+  z-index: 60;
+}
+@utility z-toast {
+  z-index: 100;
+}
+@utility z-skip {
+  z-index: 110;
+}
+
+/* prefers-contrast: more. Structure edges become control edges and secondary text gets darker. */
+@media (prefers-contrast: more) {
+  :root,
+  .dark {
+    --border: var(--border-strong);
+    --sidebar-border: var(--border-strong);
+    --muted-foreground: color-mix(in oklch, var(--foreground) 85%, var(--background));
+  }
 }
 
 /* Coarse pointers (touch): controls grow to 44px. Components read these through h-(--control-h). */
@@ -152,7 +197,7 @@
   }
 }
 
-/* Skeletons are static blocks that fade between 1 and 0.6, no pulse and no shimmer. */
+/* Skeletons are static `bg-border` blocks with at most a slow 1.6s fade between 1 and 0.6, no pulse and no shimmer. */
 @keyframes skeleton-fade {
   from {
     opacity: 1;
@@ -163,7 +208,7 @@
 }
 
 @utility animate-skeleton {
-  animation: skeleton-fade 1.2s ease-in-out infinite alternate;
+  animation: skeleton-fade 1.6s var(--ease-out) infinite alternate;
 }
 
 @utility animate-caret {

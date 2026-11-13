@@ -44,7 +44,7 @@ function StatusBadge({
   const Icon = TONE_ICON[tone ?? "neutral"]
   return (
     <span data-slot="status-badge" data-tone={tone} className={cn(statusBadgeVariants({ tone }), className)} {...props}>
-      {icon ?? <Icon aria-hidden="true" />}
+      {icon ? <span aria-hidden="true" className="inline-flex">{icon}</span> : <Icon aria-hidden="true" />}
       {children}
     </span>
   )
