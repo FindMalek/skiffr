@@ -206,6 +206,15 @@ Settings         (one sidebar entry, sub-navigation inside)
 Admin > Users    (admins only, bottom of sidebar)
 ```
 
+Routes: `/settings` redirects to `/settings/account`; the pages are `profile`, `account`, `extension`, `gmail`, `sources`,
+`cv` (Resume), `privacy` (Data and privacy) and `appearance`. `/extension` redirects to `/settings/extension`. The
+sub-nav (`components/settings/settings-nav.tsx`, one labelled `nav`, `aria-current="page"`) is a list of links from `lg`
+and a `Select` below it; the settings layout renders the page header from the same entry list, so a page holds only its
+content. Settings content is a container (`@container`): page grids switch on the container width (`@4xl:`), not the
+viewport, because the sub-nav takes 240px. Appearance stores the theme with `next-themes` (`theme` in `localStorage`)
+and the shortcuts switch in `localStorage` under `skiffr.shortcuts` (`on` or `off`, read through
+`lib/shortcuts-setting.ts`), both per browser.
+
 Gmail and Careers pages stay two routes because the Gmail OAuth return path is fixed to `/settings/gmail`
 (`RETURN_PATHS` in `packages/orpc/src/lib/gmail/state.ts` and the redirect URI registered with Google); merging them
 into one page means moving both.

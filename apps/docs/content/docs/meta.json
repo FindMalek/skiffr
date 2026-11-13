@@ -5,6 +5,8 @@
     "setup",
     "extension",
     "snapshots",
+    "playground",
+    "drift",
     "smoke",
     "dashboard",
     "environment",

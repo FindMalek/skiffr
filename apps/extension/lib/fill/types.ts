@@ -11,6 +11,8 @@ export type FillResult = {
   reason?: string
   /** What the page shows after the attempt, as read back from the control. */
   value?: string
+  /** The page shows the value without a part it took elsewhere, such as the dial code of a phone number. */
+  moved?: boolean
 }
 
 export type FieldChoice = { text: string; value: string; el: HTMLElement }

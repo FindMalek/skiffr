@@ -57,5 +57,6 @@ catalog:
   tailwindcss: ^4
   turbo: 2.11.9
   typescript: ^5.9.3
+  vue: 3.5.45
   wxt: 0.21.5
   zod: 4.6.7

@@ -1,0 +1,6 @@
+{
+  "extends": "@skiffr/config/base.json",
+  "compilerOptions": { "types": ["node", "bun"], "allowImportingTsExtensions": true, "jsx": "react-jsx" },
+  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  "exclude": ["node_modules"]
+}

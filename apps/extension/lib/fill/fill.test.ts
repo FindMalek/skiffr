@@ -113,6 +113,49 @@ describe("fillField", () => {
     expect(result.status).toBe("filled")
   })
 
+  test("a phone widget that moves the dial code to its country picker keeps the number", async () => {
+    const { document } = mount(`<input id="x" type="tel">`)
+    const input = el<HTMLInputElement>(document, "#x")
+    input.addEventListener("input", () => {
+      input.value = input.value.replace(/^\+351\s*/, "")
+    })
+    expect(await fillField(input, "+351 912 345 678")).toMatchObject({ status: "filled", value: "912 345 678" })
+    expect(input.value).toBe("912 345 678")
+  })
+
+  test("a text input that drops the dial code is not a phone widget: the value is not kept", async () => {
+    const { document } = mount(`<input id="x" type="text">`)
+    const input = el<HTMLInputElement>(document, "#x")
+    input.addEventListener("input", () => {
+      input.value = input.value.replace(/^\+351\s*/, "")
+    })
+    expect((await fillField(input, "+351 912 345 678")).status).toBe("failed")
+    expect(input.value).toBe("")
+  })
+
+  test("the trunk prefix a country picker adds to the national number is kept", async () => {
+    const { document } = mount(`<input id="x" type="tel">`)
+    const input = el<HTMLInputElement>(document, "#x")
+    input.addEventListener("input", () => {
+      if (input.value.startsWith("+44")) input.value = `0${input.value.slice(3).trim()}`
+    })
+    expect(await fillField(input, "+44 7911 123456")).toMatchObject({
+      status: "filled",
+      value: "07911 123456",
+      moved: true,
+    })
+  })
+
+  test("a phone input that cuts digits out of the number is still reported failed and left as it was", async () => {
+    const { document } = mount(`<input id="x" type="tel">`)
+    const input = el<HTMLInputElement>(document, "#x")
+    input.addEventListener("input", () => {
+      input.value = input.value.slice(-6)
+    })
+    expect((await fillField(input, "+351 912 345 678")).status).toBe("failed")
+    expect(input.value).toBe("")
+  })
+
   test("select picks USA against United States and reports the option text", async () => {
     const { document } = mount(
       `<select id="c"><option value="">Choose</option><option value="DE">Germany</option><option value="US">United States of America</option></select>`,
