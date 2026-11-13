@@ -33,6 +33,8 @@ export const MATCH_BUCKETS = [
 export const JOB_SETTABLE_STATUSES = ["queued", "skipped"] as const
 /** The `ORPCError` code (status 429) a call gets once the user's daily model budget is spent. */
 export const AI_BUDGET_EXHAUSTED = "AI_BUDGET_EXHAUSTED"
+/** The `ORPCError` code (status 503) a call gets when the server has no AI provider key. */
+export const AI_NOT_CONFIGURED = "AI_NOT_CONFIGURED"
 export const AI_FIELDS_MAX = 60
 export const AI_OPTIONS_MAX = 50
 export const AI_OPTION_TEXT_MAX = 100

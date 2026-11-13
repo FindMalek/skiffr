@@ -1,5 +1,6 @@
 import { ORPCError } from "@orpc/server"
 import { AiInputError, AiModelError, draftAnswer, mapFields } from "@skiffr/ai"
+import { AI_NOT_CONFIGURED } from "@skiffr/common/constants"
 import {
   draftAnswerInputSchema,
   draftAnswerOutputSchema,
@@ -18,7 +19,8 @@ import { protectedProcedure } from "../procedures"
 
 /** The profile is read here, not sent by the caller: the payload stays small and a client can't ask about someone else's data. */
 async function loadAi(context: Context & { user: { id: string } }) {
-  if (!context.model) throw new ORPCError("SERVICE_UNAVAILABLE", { message: "No AI provider key is configured." })
+  if (!context.model)
+    throw new ORPCError(AI_NOT_CONFIGURED, { status: 503, message: "No AI provider key is configured." })
   const [row] = await context.db.select().from(profile).where(eq(profile.userId, context.user.id))
   if (!row) throw new ORPCError("PRECONDITION_FAILED", { message: "Save your profile first." })
   return { model: context.model, profile: row }

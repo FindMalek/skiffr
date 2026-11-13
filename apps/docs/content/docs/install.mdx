@@ -9,7 +9,7 @@ Skiffr has two parts: a server (api, dashboard and database) that keeps your pro
 
 - Chrome, or another Chromium browser, version 142 or newer (Edge, Brave, Arc). Check it at `chrome://version`. Firefox is not supported yet.
 - An account on a skiffr dashboard: create one on the hosted instance, or use the admin login the installer prints on your own server.
-- An AI key on the server, to fill forms. The key lives in the server's environment, not in your account and not in the extension. Without it the dashboard works but a fill stops with "skiffr had a problem. Try again in a moment." Details in [AI key](#ai-key).
+- An AI key on the server, to fill forms. The key lives in the server's environment, not in your account and not in the extension. Without it the dashboard works but a fill stops with "The skiffr server has no AI key yet." Details in [AI key](#ai-key).
 - Only for your own server: [Docker](https://docs.docker.com/get-docker/) (Desktop on macOS and Windows, Engine with the compose plugin 2.24 or newer on Linux), `curl` and about 3 GB of disk. The first start downloads about 700 MB of images.
 
 ## Where the server runs
@@ -97,7 +97,7 @@ A bundled Caddy gets the certificates from Let's Encrypt and proxies each name t
 Filling a form needs a model: the extension asks the api which profile key or saved answer belongs to each field, and the api asks the model. There is no fill path without a key today, and a form where any field is not covered by a saved answer needs it. The dashboard, queue, answers, stats and tokens work without one.
 
 - Your own server: open `skiffr/.env`, put your key after `GROQ_API_KEY=` ([get one](https://console.groq.com/keys), the line is already there and empty), then run `docker compose up -d` in the `skiffr/` folder. Other providers are in [environment](/docs/environment).
-- Hosted instance: the maintainer sets it on his server. If a fill fails with "skiffr had a problem", the key is missing or the provider is down, and you cannot fix it from your side.
+- Hosted instance: the maintainer sets it on his server. If a fill says "The skiffr server has no AI key yet", the maintainer has not set one, and you cannot fix it from your side. "skiffr had a problem" means the provider is down.
 
 `OPENAI_API_KEY` is optional and adds similar-question suggestions. What is sent to the provider is in [privacy](/docs/privacy).
 
@@ -161,7 +161,8 @@ The server holds your data, the extension only holds a token, so any number of m
 | the options say "That is not a Skiffr token, it starts with skp_" | you pasted the wrong thing. Create a token in the dashboard under **Extension** and copy the whole `skp_...` text |
 | **Test connection** says "The token was rejected. It may be revoked or expired" | create a new token in the dashboard under **Extension** and paste it again. Tokens made with an expiry run out, and a revoked token never works again |
 | **Test connection** says "The API had a problem" | the server answered with an error, your token may be fine. Try again in a moment, on your own server read `docker compose logs api` |
-| the toast says "skiffr had a problem. Try again in a moment." with **Retry** | the most likely cause today is that the server has no AI key. On your own server `docker compose logs api` shows `ai.mapFields` with `SERVICE_UNAVAILABLE`: set the key, see [AI key](#ai-key). On the hosted instance tell the maintainer |
+| the toast says "The skiffr server has no AI key yet" | the server has no AI key: set the key, see [AI key](#ai-key). On the hosted instance tell the maintainer |
+| the toast says "skiffr had a problem. Try again in a moment." with **Retry** | the server answered with an error or the model provider is down. On your own server `docker compose logs api` shows the failing call |
 | the toast says "No profile saved yet. Fill in your profile in the dashboard first." | save it in Settings, Profile, step 2 of [connect it](#connect-it-and-apply) |
 | the toast says "The daily AI limit on this server is used up. It resets at midnight UTC." | wait, or on your own server raise the limit, see [environment](/docs/environment) |
 | the toast says "skiffr is not connected yet" or "no longer accepts this connection" | open the extension options and add the api url and a valid token |
