@@ -12,9 +12,9 @@ const ATS = z
   .string()
   .regex(/^[a-z0-9-]+$/)
   .max(32)
-/** Page derived sentences are cut here, so one hostile row cannot make a body that github refuses. */
-const SENTENCE = z.string().max(500)
-const SENTENCES = z.array(SENTENCE).max(20)
+/** Page derived sentences are cut here, not rejected: one long reason must not make the whole summary unreadable. */
+const SENTENCE = z.string().transform((text) => text.slice(0, 500))
+const SENTENCES = z.preprocess((value) => (Array.isArray(value) ? value.slice(0, 20) : value), z.array(SENTENCE))
 
 const observationSchema = z.looseObject({
   toast: z.boolean(),
@@ -35,6 +35,8 @@ export const resultSchema = z.looseObject({
   reasons: SENTENCES.default([]),
   notes: SENTENCES.default([]),
   observation: observationSchema.nullable().default(null),
+  /** Non GET requests a page tried that the runner aborted. */
+  writesAborted: z.number().default(0),
   ms: z.number().default(0),
 })
 export const summarySchema = z.array(resultSchema).max(200)
@@ -76,6 +78,7 @@ export const targetReportSchema = z.object({
   collected: z.number().nullable(),
   deltas: z.object({ filled: z.number(), collected: z.number() }).nullable(),
   signatureChanged: z.boolean(),
+  writesAborted: z.number().default(0),
   /** drift that was not in the previous report (or there is no previous report) */
   newSince: z.boolean(),
   /** drift that was already in the previous report */
@@ -89,6 +92,8 @@ export const reportSchema = z.object({
   schemaVersion: z.literal(1),
   generatedAt: z.string(),
   drifted: z.boolean(),
+  /** At least one target ended `ok` or `drift`. Without that nothing was checked, which is not the same as clean. */
+  verified: z.boolean().default(true),
   totals: z.object({
     targets: z.number(),
     drift: z.number(),

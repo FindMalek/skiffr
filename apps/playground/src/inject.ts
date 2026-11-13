@@ -32,7 +32,6 @@ const LOOKALIKE = new Set(["linkedin", "workday"])
 
 /** Pages that borrow a well known brand's layout say loudly that they are not it. */
 function banner({ site, switches }: InjectOptions): string {
-  if (switches.bare && !LOOKALIKE.has(site.id)) return ""
   const brand = LOOKALIKE.has(site.id)
     ? `This is not ${site.id === "linkedin" ? "LinkedIn" : "Workday"} and has no connection to it. `
     : ""
@@ -48,7 +47,6 @@ function pgConfig({ site, switches }: InjectOptions): string {
     layout: switches.layout === "b" ? "b" : "",
     variant: switches.variant ?? "",
     run: switches.run,
-    bare: switches.bare ? "1" : "",
   }
   return `<script>window.__PG=${JSON.stringify(cfg).replace(/</g, "\\u003c")}</script><script src="/pg.js"></script>`
 }

@@ -120,5 +120,5 @@ Drift is inert until the smoke job is merged: `drift.yml` reacts to the workflow
 
 ## The exporters are temporary
 
-`packages/telemetry` is a stop gap with the same variable names as `@skiffr/observability` (`GLITCHTIP_DSN`, `UMAMI_URL`, `UMAMI_WEBSITE_ID`). It does not follow redirects, never throws (an object that cannot be serialized resolves as an error result), sends the error class and scalar extras only (never a message or a stack), and drops Umami events past 20 a minute. When `@skiffr/observability` lands, this package is deleted and the playground and drift switch to it.
+`packages/telemetry` is a stop gap with the same variable names as `@skiffr/observability` (`GLITCHTIP_DSN`, `UMAMI_URL`, `UMAMI_WEBSITE_ID`). It does not follow redirects, never throws (an object that cannot be serialized resolves as an error result), sends the error class and scalar extras only (never a message or a stack), and drops Umami events past 20 a minute. The swap to `@skiffr/observability` is tracked in #202: this package is deleted then and the playground and drift use it.
 

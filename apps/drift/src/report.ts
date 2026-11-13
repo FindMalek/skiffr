@@ -52,6 +52,7 @@ export function buildReport({ results, baselines, targets, previous, now }: Buil
           ? { filled: seen.filled - baseline.filled, collected: seen.collected - baseline.collected }
           : null,
       signatureChanged,
+      writesAborted: result.writesAborted,
       newSince: drifted && !before.has(result.id),
       persisting: drifted && before.has(result.id),
       url: target?.url ?? null,
@@ -66,6 +67,7 @@ export function buildReport({ results, baselines, targets, previous, now }: Buil
     schemaVersion: 1,
     generatedAt: now.toISOString(),
     drifted: drift > 0 || severity("critical") > 0,
+    verified: rows.some((row) => row.status === "ok" || row.status === "drift"),
     totals: {
       targets: rows.length,
       drift,
@@ -111,6 +113,16 @@ export function escapeMd(text: string, max = CELL_MAX): string {
     .replace(/www\./gi, `www${ZWSP}.`)
 }
 
+/** What the exit code and the tracking issue follow: drift, nothing verified, or a runner that errored. */
+export type Outcome = "drift" | "unverified" | "errors" | "clean"
+
+export function outcomeOf(report: DriftReport): Outcome {
+  if (report.drifted) return "drift"
+  if (!report.verified) return "unverified"
+  if (report.totals.error > 0) return "errors"
+  return "clean"
+}
+
 const signed = (n: number): string => (n > 0 ? `+${n}` : String(n))
 
 export const BODY_MAX = 60_000
@@ -119,18 +131,28 @@ export const MARKER = "<!-- skiffr-drift-report -->"
 /** The body of the tracking issue: lowercase, plain, one table, under the size github accepts. */
 export function renderMarkdown(report: DriftReport): string {
   const { totals } = report
+  const runnerErrors =
+    totals.error > 0 ? `, runner errors on ${totals.error} target${totals.error === 1 ? "" : "s"}` : ""
   const head = report.drifted
-    ? `drift on ${totals.drift} of ${totals.targets} real pages (critical ${totals.bySeverity.critical}, high ${totals.bySeverity.high}, medium ${totals.bySeverity.medium})`
-    : `no drift on ${totals.targets} real pages`
+    ? `drift on ${totals.drift} of ${totals.targets} real pages (critical ${totals.bySeverity.critical}, high ${totals.bySeverity.high}, medium ${totals.bySeverity.medium})${runnerErrors}`
+    : !report.verified
+      ? `nothing was verified, no target ended ok or drift (gone ${totals.gone}, blocked ${totals.blocked}, skipped ${totals.skipped}, errors ${totals.error})${runnerErrors}`
+      : totals.error > 0
+        ? `runner errors on ${totals.error} of ${totals.targets} real pages, the rest is clean`
+        : `no drift on ${totals.targets} real pages`
   const title =
     totals.bySeverity.critical > 0
       ? `critical: a sensitive field was touched on ${totals.bySeverity.critical} real page${totals.bySeverity.critical === 1 ? "" : "s"}. ${head}`
       : head
-  const interesting = report.targets.filter((row) => row.severity !== "none" || row.status === "error")
+  const interesting = report.targets.filter(
+    (row) => row.severity !== "none" || row.status === "error" || row.writesAborted > 0,
+  )
   const rows = interesting.map((row) => {
     const delta = row.deltas ? `filled ${signed(row.deltas.filled)}, collected ${signed(row.deltas.collected)}` : ""
     const age = row.newSince ? "new" : row.persisting ? "persisting" : ""
-    const detail = [...row.reasons, ...row.notes, delta].filter(Boolean).join("; ")
+    const writes =
+      row.writesAborted > 0 ? `the page tried ${row.writesAborted} non GET requests, the runner aborted them` : ""
+    const detail = [...row.reasons, ...row.notes, delta, writes].filter(Boolean).join("; ")
     return `| ${[escapeMd(row.id, 64), escapeMd(row.ats, 32), row.status, row.severity, age, escapeMd(detail)].join(" | ")} |`
   })
   const lines = [`drift report ${report.generatedAt.slice(0, 10)}: ${title}`, ""]

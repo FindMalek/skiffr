@@ -18,3 +18,8 @@ const locked = config.locked && !config.token
 console.log(
   `playground listening on ${port}, index ${config.publicUrl.origin}${locked ? ", inspect and admin are off until PLAYGROUND_TOKEN is set" : ""}`,
 )
+if (process.env.NODE_ENV === "production" && config.trustedProxies === 0) {
+  console.warn(
+    "playground: TRUSTED_PROXY_COUNT is 0, so every visitor behind a proxy shares one rate limit bucket. Set it to the number of proxies in front",
+  )
+}

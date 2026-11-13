@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process"
 import { writeFile } from "node:fs/promises"
 import { join } from "node:path"
-import { MARKER } from "./report.ts"
+import { MARKER, outcomeOf } from "./report.ts"
 import type { DriftReport } from "./schema.ts"
 
 export interface CommandResult {
@@ -86,7 +86,9 @@ export async function updateTrackingIssue(input: {
   ])
   if (found.code !== 0) throw new Error("could not list issues with gh")
   const number = ownIssue(found.stdout, input.authors ?? authorsFromEnv(process.env))
-  if (input.report.drifted) {
+  const outcome = outcomeOf(input.report)
+  // drift and runner errors keep the issue open, and a run that verified nothing never closes it
+  if (outcome === "drift" || outcome === "errors" || (outcome === "unverified" && input.report.totals.error > 0)) {
     if (number) {
       await must(gh(["issue", "edit", number, ...repo, "--body-file", input.bodyFile]))
       return "updated"
@@ -104,7 +106,7 @@ export async function updateTrackingIssue(input: {
     await must(gh(["issue", "create", ...repo, "--title", TITLE, "--label", LABEL, "--body-file", input.bodyFile]))
     return "created"
   }
-  if (!number) return "nothing"
+  if (!number || outcome === "unverified") return "nothing"
   const comment = join(input.out, "drift-clean.md")
   await writeFile(comment, "the latest smoke run is clean again, closing.\n")
   await must(gh(["issue", "comment", number, ...repo, "--body-file", comment]))

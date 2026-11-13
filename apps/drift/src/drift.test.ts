@@ -362,3 +362,85 @@ describe("hostile summary", () => {
     expect(code).toBe(2)
   })
 })
+
+describe("nothing verified is never clean", () => {
+  const withStatus = (status: string, count = 3) =>
+    Array.from({ length: count }, (_, index) => ({ ...base, id: `t${index}`, status, observation: null }))
+
+  async function runWith(summary: unknown, open = OWN, extra: string[] = ["--github"]) {
+    const dir = await workspace({ "summary.json": summary })
+    const calls: string[][] = []
+    const gh: GhRunner = async (call) => {
+      calls.push(call)
+      return { code: 0, stdout: call[1] === "list" ? open : "" }
+    }
+    const logs: string[] = []
+    const code = await run(
+      ["report", "--summary", join(dir, "summary.json"), "--baselines", dir, "--out", join(dir, "out"), ...extra],
+      { gh, log: (line) => logs.push(line) },
+    )
+    return { code, calls, logs, dir }
+  }
+
+  for (const status of ["gone", "skipped", "blocked"]) {
+    test(`every target ${status}: exit 3, the open issue is left alone, nobody says clean`, async () => {
+      const { code, calls, logs, dir } = await runWith(withStatus(status))
+      expect(code).toBe(3)
+      expect(calls.map((call) => call.slice(0, 2).join(" "))).toEqual(["issue list"])
+      expect(logs[0]).toContain("nothing was verified")
+      expect(await readFile(join(dir, "out", "drift-report.md"), "utf8")).not.toContain("clean")
+    })
+  }
+
+  test("every target errored: exit 3, and the issue is kept open as runner errors", async () => {
+    const { code, calls, dir } = await runWith(withStatus("error"))
+    expect(code).toBe(3)
+    expect(calls.map((call) => call.slice(0, 2).join(" "))).toEqual(["issue list", "issue edit"])
+    expect(await readFile(join(dir, "out", "drift-report.md"), "utf8")).toContain("runner errors on 3 targets")
+  })
+
+  test("one error next to ok rows still exits 1 and opens the issue, it is not clean", async () => {
+    const { code, calls } = await runWith(
+      [...withStatus("ok", 2), ...withStatus("error", 1).map((row) => ({ ...row, id: "bad" }))],
+      "[]",
+    )
+    expect(code).toBe(1)
+    expect(calls.map((call) => call.slice(0, 2).join(" "))).toEqual(["issue list", "label create", "issue create"])
+  })
+
+  test("a summary that cannot be read is exit 2 with a fixed message, never exit 0", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "drift-test-"))
+    await writeFile(join(dir, "bad.json"), "{not json")
+    const logs: string[] = []
+    const common = ["--baselines", dir, "--out", join(dir, "o")]
+    expect(
+      await run(["report", "--summary", join(dir, "bad.json"), ...common], { log: (line) => logs.push(line) }),
+    ).toBe(2)
+    expect(await run(["report", "--summary", join(dir, "missing.json"), ...common], { log: () => undefined })).toBe(2)
+    await writeFile(join(dir, "big.json"), `[${" ".repeat(5_100_000)}]`)
+    expect(await run(["report", "--summary", join(dir, "big.json"), ...common], { log: () => undefined })).toBe(2)
+    expect(logs[0]).toBe(
+      "the smoke summary could not be read: missing, over 5 MB, not json, or a field outside what the schema allows",
+    )
+  })
+
+  test("a 600 character reason is cut, not a reason to reject the whole summary", async () => {
+    const long = [{ ...base, id: "lever-acme", status: "drift", reasons: ["x".repeat(600)], observation: seen }]
+    const { code, dir } = await runWith(long, "[]", [])
+    expect(code).toBe(1)
+    const report = JSON.parse(await readFile(join(dir, "out", "drift-report.json"), "utf8"))
+    expect(report.targets[0].reasons[0]).toHaveLength(500)
+  })
+
+  test("writes the runner aborted are listed in the issue", async () => {
+    const aborted = [
+      { ...base, id: "lever-acme", status: "ok", observation: seen, writesAborted: 2 },
+      { ...base, id: "ashby-acme", status: "ok", observation: seen },
+    ]
+    const { code, dir } = await runWith(aborted, "[]", [])
+    expect(code).toBe(0)
+    expect(await readFile(join(dir, "out", "drift-report.md"), "utf8")).toContain(
+      "the page tried 2 non GET requests, the runner aborted them",
+    )
+  })
+})

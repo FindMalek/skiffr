@@ -127,6 +127,16 @@ jobs:
           path: ${{ runner.temp }}/drift
           retention-days: 30
           if-no-files-found: ignore
-      - name: Fail on drift
-        if: steps.report.outputs.code == '1'
-        run: exit 1
+      # 0 is the only green: 1 drift or runner errors, 2 an unreadable summary, 3 nothing was verified
+      - name: Fail unless the report is clean
+        if: always() && steps.smoke.outcome == 'success' && steps.report.outputs.code != '0'
+        env:
+          CODE: ${{ steps.report.outputs.code }}
+        run: |
+          echo "drift report exit code ${CODE:-unknown}: 1 drift or runner errors, 2 unreadable summary, 3 nothing verified"
+          exit 1
+      - name: Fail when there is no smoke summary
+        if: always() && steps.smoke.outcome != 'success'
+        run: |
+          echo "the smoke artifact could not be downloaded, so nothing was checked"
+          exit 1

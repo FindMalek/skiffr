@@ -10,7 +10,6 @@ export interface Switches {
   /** Tags the submissions of one test run, so parallel runs do not read each other's. */
   run: string
   wall: boolean
-  bare: boolean
 }
 
 const MAX_LATENCY = 10_000
@@ -30,7 +29,6 @@ export function readSwitches(params: URLSearchParams, adminVariant: Variant | nu
     variant: isVariant(asked) ? asked : asked === "none" ? null : adminVariant,
     run: (params.get("run") ?? "").replace(/[^\w-]/g, "").slice(0, 40),
     wall: params.get("wall") === "1",
-    bare: params.get("bare") === "1",
   }
 }
 

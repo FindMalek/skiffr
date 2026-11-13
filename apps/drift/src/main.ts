@@ -1,11 +1,11 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises"
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { parseArgs } from "node:util"
 import type { Env } from "@skiffr/telemetry"
 import { exportReport } from "./export.ts"
 import { type GhRunner, updateTrackingIssue } from "./github.ts"
-import { buildReport, renderMarkdown } from "./report.ts"
+import { buildReport, outcomeOf, renderMarkdown } from "./report.ts"
 import {
   type Baseline,
   baselineSchema,
@@ -24,7 +24,7 @@ const USAGE = `usage: node src/cli.ts report --summary <summary.json> --baseline
                          [--targets <targets.json>] [--previous <drift-report.json>]
                          [--github] [--repo owner/name] [--export] [--snapshots]
                          [--snapshot-cli <path>] [--delay <ms>]
-exit code: 0 clean, 1 drift, 2 usage or input error`
+exit code: 0 clean, 1 drift or runner errors, 2 usage or input error, 3 nothing was verified`
 
 export interface Deps {
   env?: Env
@@ -36,7 +36,11 @@ export interface Deps {
   log?: (line: string) => void
 }
 
+/** Bigger than any real summary: a file past this is refused before it is read into memory. */
+const MAX_FILE_BYTES = 5_000_000
+
 async function readJson(file: string): Promise<unknown> {
+  if ((await stat(file)).size > MAX_FILE_BYTES) throw new Error("file too large")
   return JSON.parse(await readFile(file, "utf8"))
 }
 
@@ -72,8 +76,8 @@ export async function run(argv: string[], deps: Deps = {}): Promise<number> {
   let results: ReturnType<typeof summarySchema.parse>
   try {
     results = summarySchema.parse(await readJson(values.summary))
-  } catch (error) {
-    log(`the smoke summary could not be read: ${error instanceof Error ? error.message.slice(0, 300) : "invalid"}`)
+  } catch {
+    log("the smoke summary could not be read: missing, over 5 MB, not json, or a field outside what the schema allows")
     return 2
   }
   const targets = new Map<string, SmokeTarget>()
@@ -132,7 +136,9 @@ export async function run(argv: string[], deps: Deps = {}): Promise<number> {
       log(`tracking issue: ${error instanceof Error ? error.message : "failed"}`)
     }
   }
-  return report.drifted ? 1 : 0
+  // 3 means nothing was checked (smoke uses the same code): never read as clean
+  const outcome = outcomeOf(report)
+  return outcome === "drift" || outcome === "errors" ? 1 : outcome === "unverified" ? 3 : 0
 }
 
 function parse(argv: string[]) {

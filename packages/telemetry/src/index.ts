@@ -1,5 +1,5 @@
-// Temporary: #160 adds @skiffr/observability for the same sinks. When it lands this package goes away and callers switch to it.
-// The env names (GLITCHTIP_DSN, UMAMI_URL, UMAMI_WEBSITE_ID) are the ones #160 reads, so the swap is mechanical.
+// Temporary: @skiffr/observability covers the same sinks. The swap is tracked in #202 (it needs that package to load
+// under node's type stripping first: its imports have no .ts extension). The env names are the ones it reads.
 import { captureException, captureMessage } from "./glitchtip.ts"
 import type { Env, ExporterOptions, SendResult } from "./http.ts"
 import { type Gauge, type OpenObserveRecord, pushMetrics, sendRecords } from "./openobserve.ts"

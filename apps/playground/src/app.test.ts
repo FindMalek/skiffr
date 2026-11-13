@@ -323,12 +323,12 @@ describe("a fake site says so", () => {
     expect(index.headers.get("content-security-policy")).toContain("frame-ancestors 'self'")
   })
 
-  test("the pages that borrow a brand layout keep a disclaimer even when bare, and the embed frame may be framed by its company page only", async () => {
+  test("no page loses its test banner with ?bare=1, the ones that borrow a brand layout keep their disclaimer, and the embed frame may be framed by its company page only", async () => {
     const { handle } = app()
     const linkedin = await (await get(handle, "linkedin.playground.localhost", "/?bare=1")).text()
     expect(linkedin).toContain("This is not LinkedIn")
     expect(linkedin).toContain("Easy Apply (test)")
-    expect(await (await get(handle, "lever.playground.localhost", "/?bare=1")).text()).not.toContain("data-pg-banner")
+    expect(await (await get(handle, "lever.playground.localhost", "/?bare=1")).text()).toContain("data-pg-banner")
     const frame = await get(handle, "embed-frame.playground.localhost", "/embed/job_app")
     expect(frame.headers.get("content-security-policy")).toContain(
       "frame-ancestors 'self' http://www.acme.test:3004 http://embed.playground.localhost:3004",

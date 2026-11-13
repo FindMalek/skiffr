@@ -6,6 +6,7 @@ import { clientIpOf } from "./client-ip.ts"
 
 /** fetch cannot carry TRACE or CONNECT and a playground has no use for PUT or PATCH: everything else is refused before a Request is built. */
 const METHODS = new Set(["GET", "HEAD", "POST", "DELETE"])
+// a trailing dot or an ipv6 literal is refused too: no browser sends either to a name this app serves
 const HOST = /^[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:\d{1,5})?$/i
 
 export interface ServerOptions {
@@ -167,7 +168,14 @@ export async function listen(
     trustedProxies: options.trustedProxies ?? 0,
   })
   // node's defaults wait five minutes for a request: a slow client holds a socket far too long for a test page
-  const limits = { maxHeaderSize: 16_384, requestTimeout: 15_000, headersTimeout: 10_000, keepAliveTimeout: 5_000 }
+  // the timeouts are only checked every connectionsCheckingInterval (30 s by default), so a slow client would outlive them
+  const limits = {
+    maxHeaderSize: 16_384,
+    requestTimeout: 15_000,
+    headersTimeout: 10_000,
+    keepAliveTimeout: 5_000,
+    connectionsCheckingInterval: 5_000,
+  }
   const server = options.tls
     ? createSecureServer({ ...options.tls, ...limits }, listener)
     : createServer(limits, listener)

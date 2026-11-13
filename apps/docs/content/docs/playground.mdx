@@ -101,7 +101,7 @@ The admin actions also need a same origin request (`Sec-Fetch-Site: same-origin`
 ### Limits
 
 - Bodies are counted while they stream and cut at 1 MB (`PLAYGROUND_MAX_BODY`): a declared length over it gets 413 at once, a chunked body gets 413 and its connection is dropped
-- node's own timeouts are tightened (headers 10 s, whole request 15 s, keep alive 5 s, at most 50 headers, 200 connections)
+- node's own timeouts are tightened (headers 10 s, whole request 15 s, keep alive 5 s, checked every 5 s, at most 50 headers, 200 connections). 200 idle sockets are enough to hold the host, so the proxy in front needs its own cap per address. A production start with `TRUSTED_PROXY_COUNT` at 0 prints a warning
 - writes and private reads are limited per address with a token bucket in memory: a burst of 20, then 30 a minute (`PLAYGROUND_RATE_BURST`, `PLAYGROUND_RATE_PER_MINUTE`, 0 for no limit). Behind a proxy set `TRUSTED_PROXY_COUNT` to the number of proxies that append to `x-forwarded-for` (1 behind Traefik), otherwise the proxy's address is the one limited. A shared proxy in front should add its own rate limit as well
 - a run keeps its last 10 submissions and the server the last 100 (`PLAYGROUND_MAX_SUBMISSIONS`), so one noisy run does not push out another. Anyone can still post under any run id, only the per address limit stands in the way: do not rely on a hosted playground to keep a run for long
 - a stray error inside the process is logged as one fixed line and the server keeps serving. More than 20 in a minute exits the process so the platform restarts it clean
@@ -131,12 +131,12 @@ The variants are applied in the browser after the page is drawn, to the form of 
 
 ## Safety
 
-- Every response carries `X-Robots-Tag: noindex, nofollow, noarchive`, `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer`, and `/robots.txt` disallows everything. Pages also carry `<meta name="robots">` and a fixed banner saying this is a skiffr test page with a fake company and that no real data or password should be entered. The pages that borrow the layout of LinkedIn and Workday say they are not those and keep the banner with `?bare=1`. No real logos or brand assets are used, and their page titles end in "(test)"
+- Every response carries `X-Robots-Tag: noindex, nofollow, noarchive`, `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer`, and `/robots.txt` disallows everything. Pages also carry `<meta name="robots">` and a fixed banner saying this is a skiffr test page with a fake company and that no real data or password should be entered. The banner stays on every page, no query removes it, and the pages that borrow the layout of LinkedIn and Workday also say they are not those. No real logos or brand assets are used, and their page titles end in "(test)"
 - Pages carry `Content-Security-Policy: form-action 'self'; base-uri 'self'; frame-ancestors 'self'`, so the browser itself refuses a form that posts anywhere else and a page cannot be framed by another site. The embed frame also allows its company page (`www.acme.test`, `embed.<index host>`) and nothing else. The index, inspect, admin and confirmation pages have `default-src 'none'` and no script of ours
 - The pages answer on real board host names (`jobs.lever.co`, `www.linkedin.com`, ...) when the `Host` header says so. That only happens when a visitor maps those names to this server on their own machine, as the e2e does
 - The job text is neutral and made up (Acme). No third party text is copied: the faithful pages are the repository's own fixtures
 - The index, inspect and admin pages may load Umami when `UMAMI_URL` and `UMAMI_WEBSITE_ID` are set. The board replicas never load a tracker
-- The server keeps nothing on disk. Errors go to GlitchTip when `GLITCHTIP_DSN` is set (the error class and a path, never a message or a stack), and a submission sends an Umami event with only the page name and whether the guard failed, at most 20 a minute. The exporters in `@skiffr/telemetry` are temporary: they are replaced by `@skiffr/observability` once that package lands
+- The server keeps nothing on disk. Errors go to GlitchTip when `GLITCHTIP_DSN` is set (the error class and a path, never a message or a stack), and a submission sends an Umami event with only the page name and whether the guard failed, at most 20 a minute. The exporters in `@skiffr/telemetry` are temporary: the swap to `@skiffr/observability` is tracked in #202
 
 ## Environment
 
