@@ -1,11 +1,33 @@
 ---
 title: Install in 5 minutes
-description: One command runs the whole stack with Docker, then 60 seconds to load the extension.
+description: Use the hosted instance or run your own with one command, then 60 seconds to load the extension.
 ---
 
-You need [Docker](https://docs.docker.com/get-docker/) (Desktop on macOS and Windows, Engine with the compose plugin on Linux) and Chrome, or another Chromium browser of version 142 or newer (Edge, Brave, Arc). Firefox is not supported yet.
+Skiffr has two parts: a server (api, dashboard and database) that keeps your profile and answers, and a Chrome extension that fills the forms. Pick where the server runs, then load the extension.
 
-## 1. Run one command
+## What you need
+
+- Chrome, or another Chromium browser, version 142 or newer (Edge, Brave, Arc). Check it at `chrome://version`. Firefox is not supported yet.
+- An account on a skiffr dashboard: create one on the hosted instance, or use the admin login the installer prints on your own server.
+- An AI key on the server, to fill forms. The key lives in the server's environment, not in your account and not in the extension. Without it the dashboard works but a fill stops with "skiffr had a problem. Try again in a moment." Details in [AI key](#ai-key).
+- Only for your own server: [Docker](https://docs.docker.com/get-docker/) (Desktop on macOS and Windows, Engine with the compose plugin 2.24 or newer on Linux), `curl` and about 3 GB of disk. The first start downloads about 700 MB of images.
+
+## Where the server runs
+
+| | Hosted instance | Your own server |
+| --- | --- | --- |
+| dashboard | https://dashboard.skiffr.findmalek.engineer | `http://localhost:3002` |
+| api url (goes in the extension) | `https://api.skiffr.findmalek.engineer` | `http://localhost:3001` |
+| good for | trying it, and one account on all your machines | data that never leaves your hardware |
+
+### Option A: the hosted instance
+
+It is the maintainer's own instance, not a service with an uptime promise, and what you enter is stored on his server. For real use on data you care about, run your own (option B).
+
+1. Open https://dashboard.skiffr.findmalek.engineer/sign-up, create your account (name, email, a password of at least 10 characters) and sign in. Already have one: use **Sign in**.
+2. Go on with [load the extension](#load-the-extension). The extension zip is not served by the hosted api (its `/downloads` page links to a file the hosted build does not have), take it from the GitHub release as described there.
+
+### Option B: run your own with one command
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/FindMalek/skiffr/main/install.sh | sh
@@ -22,6 +44,8 @@ The script makes a `skiffr/` folder, downloads the compose file of the latest re
   sign in     admin@skiffr.local
   password    <20 random characters>   (shown once, it is also in skiffr/.env)
 ```
+
+The first run pulls about 700 MB of images, so it takes as long as your download does (several minutes on a slow line). Docker shows the progress. When you run the script again, it prints `password  ADMIN_PASSWORD in <folder>/.env` instead of the password.
 
 The admin is created and reset to the `.env` values on every api start, so a password you change in the dashboard is reverted by the next restart or update. Change it in `.env`.
 
@@ -40,7 +64,7 @@ cd skiffr
 
 A build from source has no extension zip at `/downloads`: build the extension yourself with `pnpm install && pnpm --filter extension build` and load `apps/extension/.output/chrome-mv3`.
 
-### Options
+#### Options
 
 Pass them after `sh -s --` when piping: `curl ... | sh -s -- --port 4000`.
 
@@ -54,11 +78,11 @@ Pass them after `sh -s --` when piping: `curl ... | sh -s -- --port 4000`.
 | `--no-start` | write the files and stop |
 | `--dir path` | install folder (default `./skiffr`) |
 
-### On localhost, why it works without a domain
+#### On localhost, why it works without a domain
 
 Every app is published on `127.0.0.1` on its own port, and the dashboard proxies the sign-in to the api, so the session cookie is first-party on `localhost`. The extension calls the api directly at `http://localhost:3001` with its token. Nothing is exposed to your network: the ports are bound to the loopback address, and the database has no published port at all. To reach it from another device use `--domain`, or set `SKIFFR_BIND=0.0.0.0` and the public urls in `.env` yourself.
 
-### Your own domain
+#### Your own domain
 
 Point four DNS records at the server (`skiffr.example.com`, `dashboard.`, `api.` and `docs.` under it), open ports 80 and 443, then:
 
@@ -66,36 +90,82 @@ Point four DNS records at the server (`skiffr.example.com`, `dashboard.`, `api.`
 curl -fsSL https://raw.githubusercontent.com/FindMalek/skiffr/main/install.sh | sh -s -- --domain skiffr.example.com
 ```
 
-A bundled Caddy gets the certificates from Let's Encrypt and proxies each name to its app. The extension then uses `https://api.skiffr.example.com`.
+A bundled Caddy gets the certificates from Let's Encrypt and proxies each name to its app. The extension then uses `https://api.skiffr.example.com`. This is also how you use your own server from several machines.
 
-## 2. Load the extension (60 seconds)
+### AI key
 
-Chrome does not install an extension from a file on its own, so this step is by hand. Your own server serves the extension that matches its version.
+Filling a form needs a model: the extension asks the api which profile key or saved answer belongs to each field, and the api asks the model. There is no fill path without a key today, and a form where any field is not covered by a saved answer needs it. The dashboard, queue, answers, stats and tokens work without one.
 
-1. Download `http://localhost:3001/downloads/skiffr-extension.zip` and **unzip it** into a folder you will keep. Chrome does not install zips, it loads an unzipped folder.
-2. Open `chrome://extensions` (Edge `edge://extensions`, Brave `brave://extensions`, Arc `arc://extensions`) and turn on **Developer mode** at the top right.
-3. Click **Load unpacked** and pick the unzipped folder.
-4. Pin the skiffr icon from the puzzle menu in the toolbar.
+- Your own server: open `skiffr/.env`, put your key after `GROQ_API_KEY=` ([get one](https://console.groq.com/keys), the line is already there and empty), then run `docker compose up -d` in the `skiffr/` folder. Other providers are in [environment](/docs/environment).
+- Hosted instance: the maintainer sets it on his server. If a fill fails with "skiffr had a problem", the key is missing or the provider is down, and you cannot fix it from your side.
 
-Do not delete the folder: Chrome reads the extension from it.
+`OPENAI_API_KEY` is optional and adds similar-question suggestions. What is sent to the provider is in [privacy](/docs/privacy).
 
-## 3. Connect it and apply
+## Load the extension
 
-1. Open the dashboard, sign in with the printed email and password and fill in your profile. A fill without a profile stops with a message.
-2. Open **Extension** in the dashboard and create a token. Copy it.
-3. Right-click the skiffr icon and choose **Options** (or `chrome://extensions`, Details, Extension options). Set the api url to the one the installer printed, paste the token and press **Test connection**.
-4. Open a job application form. A toast asks "Autofill this application?", press **Yes**. `Ctrl+Shift+F` (`Cmd+Shift+F` on macOS) fills the current page without the toast.
+Chrome does not install an extension from a file on its own, so this step is by hand. It is the same for both options.
+
+1. Get the zip `skiffr-extension-vX.Y.Z.zip` from the [latest GitHub release](https://github.com/FindMalek/skiffr/releases/latest) (under Assets), or in a terminal: `gh release download -R FindMalek/skiffr -p 'skiffr-extension-*.zip'`. On your own server `http://localhost:3001/downloads` also serves the zip that matches its version (the file is named `skiffr-extension-vX.Y.Z.zip` when saved).
+2. **Unzip it** into a folder you will keep, for example `~/skiffr-extension`. The zip has no folder inside, so make one first. Chrome does not install zips, it loads an unzipped folder.
+3. Open `chrome://extensions` (Edge `edge://extensions`, Brave `brave://extensions`, Arc `arc://extensions`) and turn on **Developer mode** at the top right.
+4. Click **Load unpacked** and pick the unzipped folder. The card says "Skiffr" with the same version as the zip.
+5. Pin the skiffr icon from the puzzle menu in the toolbar.
+
+Do not delete the folder: Chrome reads the extension from it. Chrome shows skiffr with access to all sites: it looks for application forms on every page, and nothing is sent to your api until you say yes or press the shortcut. What it reads and sends is in [privacy](/docs/privacy).
+
+## Connect it and apply
+
+1. Open the dashboard and sign in.
+2. Save your profile. The profile editor in the dashboard is not built yet (Settings, Profile is a placeholder, tracked in [issue 107](https://github.com/FindMalek/skiffr/issues/107)), so until it is, save it once through the api. Put your data in `profile.json` (every key is in [the profile schema](https://github.com/FindMalek/skiffr/blob/main/packages/common/src/schemas/profile.ts)):
+
+   ```json
+   {
+     "data": {
+       "identity": { "firstName": "Ada", "lastName": "Lovelace", "email": "ada@example.com", "phone": "+441234567890" },
+       "location": { "city": "London", "country": "United Kingdom" },
+       "links": { "linkedin": "https://www.linkedin.com/in/ada" }
+     }
+   }
+   ```
+
+   Then sign in and send it (set `D` to your dashboard url: `http://localhost:3002` on your own server). A password with a quote or a backslash in it needs escaping:
+
+   ```bash
+   D=https://dashboard.skiffr.findmalek.engineer
+   printf 'email: '; read -r E
+   printf 'password: '; read -rs P; echo
+   curl -fsS -c jar -o /dev/null -H 'content-type: application/json' -H "origin: $D" -d "{\"email\":\"$E\",\"password\":\"$P\"}" $D/api/auth/sign-in/email
+   curl -fsS -b jar -o /dev/null -w 'profile saved: http %{http_code}\n' -X PUT -H 'content-type: application/json' -H "origin: $D" -H 'x-csrf-token: orpc' -d @profile.json $D/api/v1/profile
+   rm -f jar
+   ```
+
+   It prints `profile saved: http 200`. The call replaces the whole profile, so send everything each time. Without a profile a fill stops with "No profile saved yet. Fill in your profile in the dashboard first."
+3. In the dashboard sidebar open **Extension**. Type a name for the machine in **Name** (for example "Chrome on my laptop"), pick **Expires** (30 days, 90 days, 1 year or Never) and press **Create token**. The token starts with `skp_` and is shown once: press **Copy** and then **I have copied it**. The page also prints the API url to paste.
+4. Open the extension options: right-click the skiffr icon and choose **Options** (or `chrome://extensions`, Details, Extension options). It opens in a tab. Set **API url** (the field starts with `http://localhost:3001`, replace it: `https://api.skiffr.findmalek.engineer` on the hosted instance, the printed url on your own server), paste the token in **Token** and press **Test connection**. It saves what you typed, then shows **Connected as** and your name. **Save** only saves.
+5. Open a job application form. A toast at the bottom right asks "Autofill this application?" with **Yes**, **No** and **Don't ask on this site**. Press **Yes**. `Ctrl+Shift+F` (`Cmd+Shift+F` on macOS) fills the current page without the toast.
 
 Review what was filled: fields the model is unsure about are outlined in amber. Skiffr never submits a form, never clicks submit, next or apply buttons and never touches password or hidden inputs, you press the button yourself. What it does on a page is in [the extension](/docs/extension).
 
-First run checklist:
+## Check that it works
 
+- [ ] `https://api.skiffr.findmalek.engineer/health` (your own server: `http://localhost:3001/health`) answers `{"ok":true,"db":true,...}`
+- [ ] `/version` on the same host shows the server version
 - [ ] the dashboard loads and you are signed in
-- [ ] your profile is saved
-- [ ] a token is created and **Test connection** says connected
-- [ ] one real application form is filled and submitted by you
+- [ ] the profile call printed `profile saved: http 200`
+- [ ] the extension options say "Connected as" and your name, with no "update" warning
+- [ ] on a form, the toast appears, and after **Yes** it says how many fields were filled and how many are outlined
+- [ ] you pressed submit on one real application yourself
 
-AI keys are optional. Without them the profile, saved answers, the queue and saved-answer fills all work. To let the model map fields your saved answers do not cover, put `GROQ_API_KEY` in `skiffr/.env` ([get one](https://console.groq.com/keys)) and run `docker compose up -d` again. `OPENAI_API_KEY` adds similar-question suggestions. See [environment](/docs/environment) and [privacy](/docs/privacy) for what is sent.
+To try the extension without a real form, run the [playground](/docs/playground) from a clone: it serves fake application pages that send nothing anywhere.
+
+## More than one machine
+
+The server holds your data, the extension only holds a token, so any number of machines share one profile, one answer bank and one queue.
+
+1. On each machine: load the extension as above, sign in with the same account, create a token named after that machine (**Extension**, **Name**), and paste the same API url and that token.
+2. One token per machine, never share one. The **Extension** page lists them with when each was last used.
+3. A machine is lost or sold: open **Extension** on any other machine and press **Revoke** on its token. The extension there stops working at once and says "The token was rejected" on **Test connection**.
+4. Updating: a folder loaded unpacked is not updated by Chrome. Download the new zip, unzip it over the old folder (same folder, replace the files) and press the reload arrow on the skiffr card at `chrome://extensions`. Upgrade the server before the extensions: an older extension keeps working, and one that is too old says "This extension is older than your API supports. Update it to keep filling."
 
 ## Troubleshooting
 
@@ -103,17 +173,27 @@ AI keys are optional. Without them the profile, saved answers, the queue and sav
 | --- | --- |
 | `Cannot connect to the Docker daemon` | start Docker Desktop (Linux: `sudo systemctl start docker`), run the command again |
 | `permission denied` on the docker socket (Linux) | add yourself to the `docker` group (`sudo usermod -aG docker $USER`) and log in again. Do not run the installer with `sudo`: it would make the folder and `.env` root owned |
-| `port 3000 is already in use` | run again with `--port 4000` |
+| `error: port 3001 is already in use` | the installer names the first busy port of the four it needs. Run it again with `--port 4000` (it uses 4000 to 4003) |
 | `pull access denied`, or no release published yet | the images are on `ghcr.io/findmalek/skiffr-<app>`. Use the clone path with `--build`, or ask the maintainer to make the packages public |
 | the api log says `password authentication failed for user "skiffr"` | a data volume from an earlier install with another `.env` is still there (the database password is fixed when the volume is created). If that data is disposable: `docker compose down -v`, then start again |
 | the installer stops with "did not become healthy" | read the log it prints, then `docker compose logs`. A wrong value in `.env` makes the api refuse to start and says which one |
-| the extension cannot connect | the api url must be exactly the printed one, no trailing path. Open it plus `/health` in a browser, it must answer `"ok":true`. Run `docker compose ps` in the `skiffr/` folder |
-| the extension says the token is invalid or expired | create a new token in the dashboard, Extension, paste it again |
-| cannot sign in | the password is `ADMIN_PASSWORD` in `skiffr/.env`. The admin is reset to the `.env` values on every api start, so change the password there |
+| the zip link on the hosted `/downloads` page gives a 404 | the hosted api is not a release image and has no zip. Take `skiffr-extension-vX.Y.Z.zip` from the [GitHub release](https://github.com/FindMalek/skiffr/releases/latest) |
+| Chrome will not load the extension, or says the manifest is wrong | you picked the zip or a folder that has another folder inside. Unzip it and pick the folder that holds `manifest.json`. Check Chrome is 142 or newer at `chrome://version`: the manifest requires it |
+| **Test connection** says "Could not reach the API. Check the API url." | the url is wrong or the server is down. The field starts as `http://localhost:3001`: replace it. Use the exact api url, no trailing path (`https://api.skiffr.findmalek.engineer`), and open it plus `/health` in a browser, it must answer `"ok":true`. Your own server: `docker compose ps` in the `skiffr/` folder. A plain `http` url only works for `localhost` |
+| the options say "Enter an https API url. Plain http only works for localhost." | the extension only accepts `https` urls, or `http` for `localhost`. A bare LAN address will not work. Use `--domain` (or your own tls proxy) |
+| the options say "That is not a Skiffr token, it starts with skp_" | you pasted the wrong thing. Create a token in the dashboard under **Extension** and copy the whole `skp_...` text |
+| **Test connection** says "The token was rejected. It may be revoked or expired" | create a new token in the dashboard under **Extension** and paste it again. Tokens made with an expiry run out, and a revoked token never works again |
+| **Test connection** says "The API had a problem" | the server answered with an error, your token may be fine. Try again in a moment, on your own server read `docker compose logs api` |
+| the toast says "skiffr had a problem. Try again in a moment." with **Retry** | the most likely cause today is that the server has no AI key. On your own server `docker compose logs api` shows `ai.mapFields` with `SERVICE_UNAVAILABLE`: set the key, see [AI key](#ai-key). On the hosted instance tell the maintainer |
+| the toast says "No profile saved yet. Fill in your profile in the dashboard first." | save the profile through the api, step 2 of [connect it](#connect-it-and-apply) |
+| the toast says "The daily AI limit on this server is used up. It resets at midnight UTC." | wait, or on your own server raise the limit, see [environment](/docs/environment) |
+| the toast says "skiffr is not connected yet" or "no longer accepts this connection" | open the extension options and add the api url and a valid token |
+| the toast never appears | reload the page after loading the extension. It only shows on pages it takes for an application form: try `Ctrl+Shift+F`. Check the card at `chrome://extensions` is on and has no errors |
+| cannot sign in on your own server | the password is `ADMIN_PASSWORD` in `skiffr/.env`. The admin is reset to the `.env` values on every api start, so change the password there |
 | the extension is older than the server | download the zip again, replace the files in your folder and press reload on the skiffr card at `chrome://extensions` |
-| you want to use it from another device on your network | the extension only accepts `https` api urls, or plain `http` for `localhost`, so a bare LAN address will not work for it. Use `--domain` (or your own tls proxy) and an https url. The dashboard alone also needs `WEB_URL`, `DASHBOARD_URL` and `API_PUBLIC_URL` in `.env` to be the address you type in the browser |
+| you want to use your own server from another device | the extension only accepts `https` api urls, or plain `http` for `localhost`. Use `--domain` and an https url. The dashboard alone also needs `WEB_URL`, `DASHBOARD_URL` and `API_PUBLIC_URL` in `.env` to be the address you type in the browser |
 
-## Update, back up, remove
+## Update, back up, remove (your own server)
 
 Run these inside the `skiffr/` folder, `cd skiffr` first (from a clone: `./scripts/skiffr`).
 
