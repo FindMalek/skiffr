@@ -5,11 +5,15 @@ import {
   draftAnswerOutputSchema,
   mapFieldsInputSchema,
   mapFieldsOutputSchema,
+  SENSITIVE_GUARD_VERSION,
+  type SensitiveCategory,
 } from "@skiffr/common/schemas"
 import { profile } from "@skiffr/db"
 import { getObservability } from "@skiffr/observability"
 import { eq } from "drizzle-orm"
 import type { Context } from "../context"
+import { logBestEffort } from "../lib/learning"
+import { flaggedKeys, rememberFlagged, verdictKey } from "../lib/sensitive-verdicts"
 import { protectedProcedure } from "../procedures"
 
 /** The profile is read here, not sent by the caller: the payload stays small and a client can't ask about someone else's data. */
@@ -46,7 +50,31 @@ export const aiRouter = {
     .output(mapFieldsOutputSchema)
     .handler(async ({ context, input }) => {
       const ai = await loadAi(context)
-      return { mappings: await guarded("ai.mapFields", () => mapFields({ ...ai, fields: input.fields })) }
+      const now = context.now()
+      // the remembered verdicts only save a model call: without them the guard and the model still decide
+      const flagged = await flaggedKeys(context.db, now, input.fields).catch((error: unknown) => {
+        logBestEffort("ai.mapFields", "verdict read failed", error)
+        return new Map<string, SensitiveCategory>()
+      })
+      const known = new Map(
+        input.fields.flatMap((field) => {
+          const key = verdictKey(field)
+          const category = key ? flagged.get(key) : undefined
+          return category ? [[field.id, category] as const] : []
+        }),
+      )
+      const result = await guarded("ai.mapFields", () => mapFields({ ...ai, fields: input.fields, known }))
+      const byId = new Map(input.fields.map((field) => [field.id, field]))
+      await rememberFlagged(
+        context.db,
+        now,
+        context.user.id,
+        [...result.flagged].flatMap(([id, category]) => {
+          const field = byId.get(id)
+          return field ? [{ field, category }] : []
+        }),
+      ).catch((error: unknown) => logBestEffort("ai.mapFields", "verdict write failed", error))
+      return { mappings: result.mappings, sensitiveGuard: SENSITIVE_GUARD_VERSION }
     }),
 
   draftAnswer: protectedProcedure

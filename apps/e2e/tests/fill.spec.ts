@@ -1,6 +1,6 @@
 import { connect, FIELDS, FILLED, openApplication } from "../fixtures/application.ts"
 import { expect, test } from "../fixtures/extension.ts"
-import { MOCK_TOKEN } from "../mock-api/server.ts"
+import { defaultMapFields, MOCK_TOKEN } from "../mock-api/server.ts"
 
 test.beforeEach(({ mockApi, fixtureServer }) => {
   mockApi.reset()
@@ -33,6 +33,47 @@ test("yes fills the form from the profile, never submits and keeps what was type
   expect(calls).toContain("/rpc/profile/get")
   expect(mockApi.requests.every((request) => request.authorization === `Bearer ${MOCK_TOKEN}`)).toBe(true)
   expect(JSON.stringify(mockApi.requests.map((request) => request.body))).not.toContain("typed by me")
+})
+
+test("a field the server calls sensitive is never filled, even when its mapping says profile", async ({
+  context,
+  serviceWorker,
+  fixtureServer,
+  mockApi,
+}) => {
+  mockApi.onMapFields((fields) =>
+    defaultMapFields(fields).map((mapping) => {
+      const field = fields.find((candidate) => candidate.id === mapping.id)
+      return /phone/i.test(`${field?.label} ${field?.name}`)
+        ? { ...mapping, sensitive: true, category: "other" as const }
+        : mapping
+    }),
+  )
+  await connect(serviceWorker, mockApi)
+  const { page, toast } = await openApplication(context, fixtureServer.origin)
+
+  await toast.click("yes")
+  await toast.waitFor((s) => s.title !== null && FILLED.test(s.title))
+
+  await expect(page.locator(FIELDS.first)).toHaveValue("Ana")
+  await expect(page.locator(FIELDS.phone)).toHaveValue("")
+})
+
+test("an api from before the sensitive verdict still fills what the floor lets through", async ({
+  context,
+  serviceWorker,
+  fixtureServer,
+  mockApi,
+}) => {
+  mockApi.legacyMapFields(true)
+  await connect(serviceWorker, mockApi)
+  const { page, toast } = await openApplication(context, fixtureServer.origin)
+
+  await toast.click("yes")
+  await toast.waitFor((s) => s.title !== null && FILLED.test(s.title))
+
+  await expect(page.locator(FIELDS.first)).toHaveValue("Ana")
+  await expect(page.locator(FIELDS.email)).toHaveValue("ana.silva@example.com")
 })
 
 test("the shortcut path fills the active tab", async ({ context, serviceWorker, fixtureServer, mockApi }) => {

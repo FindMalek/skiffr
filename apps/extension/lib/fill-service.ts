@@ -10,6 +10,8 @@ import {
   LEARNING_REQUEST_CHARS_MAX,
   type LearningField,
   learningFieldSchema,
+  type ModelMapping,
+  SENSITIVE_GUARD_VERSION,
 } from "@skiffr/common"
 import { flattenProfile } from "@skiffr/common/utils"
 import type { AppRouterClient } from "@skiffr/orpc/client"
@@ -103,6 +105,15 @@ function chunk<T>(items: T[], max: number, chars: number, size: (item: T) => num
   return chunks
 }
 
+const withheld = ({ id, category }: ModelMapping): ModelMapping => ({
+  id,
+  action: "skip",
+  confidence: 0,
+  reason: "sensitive question",
+  sensitive: true,
+  category: category ?? "other",
+})
+
 const learningSize = (f: LearningField) =>
   [f.id, f.label, f.type, f.autocomplete, ...f.options].reduce<number>((sum, text) => sum + (text?.length ?? 0), 0)
 
@@ -124,6 +135,8 @@ export function createFillService({
   let inflight: Promise<Record<string, string> | null> | null = null
   /** Bumped when the settings change: whatever an older generation is still fetching belongs to the old token. */
   let generation = 0
+  /** One hint per worker run, never per fill. */
+  let warnedOldApi = false
 
   type Run = { deadline: number; signal?: AbortSignal; generation: number }
 
@@ -229,21 +242,34 @@ export function createFillService({
   async function mapAll(
     ctx: Run,
     fields: FillField[],
-    onBatch: (batch: FieldMapping[]) => void,
-  ): Promise<{ mappings: FieldMapping[]; problem?: unknown }> {
+    onBatch: (batch: ModelMapping[]) => void,
+  ): Promise<{ mappings: ModelMapping[]; problem?: unknown }> {
     const descriptors: FieldDescriptor[] = []
     for (const field of fields) {
       const parsed = fieldDescriptorSchema.safeParse(field)
       if (parsed.success) descriptors.push(parsed.data)
     }
     const known = new Set(descriptors.map((d) => d.id))
-    const mappings: FieldMapping[] = []
+    const mappings: ModelMapping[] = []
     for (const batch of batchDescriptors(descriptors)) {
       try {
         const out = await api(ctx, RETRY_PAID, CALL_TIMEOUT_MS.mapFields, (client, signal) =>
           client.ai.mapFields({ fields: batch.slice(0, AI_FIELDS_MAX) }, { signal }),
         )
-        const kept = out.mappings.filter((mapping) => known.has(mapping.id))
+        // An api that judges every field says so (`sensitiveGuard`): then only an explicit `false` lets a mapping through,
+        // a missing or null verdict is withheld. An older api has no verdicts, so only a `true` it might send counts and
+        // the floor in the content script is all there is. Either way a sensitive entry is only ever a skip.
+        const judged = (out as { sensitiveGuard?: unknown }).sensitiveGuard === SENSITIVE_GUARD_VERSION
+        if (!judged && !warnedOldApi) {
+          warnedOldApi = true
+          console.warn("[skiffr] the api does not judge sensitive fields, update it to match this extension")
+        }
+        const kept = out.mappings
+          .filter((mapping) => known.has(mapping.id))
+          .map(
+            (mapping): ModelMapping =>
+              (judged ? mapping.sensitive !== false : mapping.sensitive === true) ? withheld(mapping) : mapping,
+          )
         mappings.push(...kept)
         onBatch(kept)
       } catch (error) {
@@ -289,7 +315,7 @@ export function createFillService({
     }
 
     const needsModel = fields.filter((field) => typeof learned.get(field.id) !== "object")
-    let mappings: FieldMapping[] = []
+    let mappings: ModelMapping[] = []
     if (needsModel.length > 0) {
       try {
         const done = await mapAll(ctx, needsModel, startProfile)
@@ -340,6 +366,11 @@ export function createFillService({
         continue
       }
       const ai = aiById.get(field.id)
+      if (ai?.sensitive) {
+        // no fill, no suggestion from a similar answer: the person answers it themselves
+        summary.skipped++
+        continue
+      }
       let filled = false
       if (ai && ai.action !== "skip" && ai.confidence >= FILL_CONFIDENCE_MIN) {
         if (ai.action === "generate" && ai.value.trim()) {

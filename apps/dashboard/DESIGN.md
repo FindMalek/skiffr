@@ -462,6 +462,29 @@ Anything that connects (extension, Gmail, Reactive Resume, each source) shows th
 when there is one, the one action to fix it, and the reason in plain words when it is broken. A compact version (dot +
 word) sits in the user menu and on Today.
 
+### 4.11 Auth pages (sign in, sign up, reset password)
+
+Outside the shell, in `app/(auth)`. A `max-w-6xl` column with the `skiffr` wordmark and one line of what it does on top,
+a left aligned `max-w-sm` card, and a footer with Website and Privacy links. One `h1` per page ("Sign in", "Create your
+account"); the card has no other heading.
+
+- Fields: label above, `type`/`inputmode`/`autocomplete` set (`username` and `current-password` or `new-password`),
+  password with a Show password toggle (`aria-pressed`). The password rule ("At least 10 characters.") is visible on
+  sign up and reset before anything fails. `noValidate` and our own messages per field, `method="post"` so a submit
+  before hydration never puts the password in the url.
+- Errors follow 4.4: per field with `aria-describedby`, focus on the first invalid field, a `role="alert"` summary
+  only for several errors or a problem with the form (rate limit, server down). Email and password are never blamed
+  separately: a wrong email and a wrong password read the same. The server's message is never shown, only a mapped one.
+- Pending keeps the button width and its focus; a second submit while pending sends nothing.
+- `next` (a path on this dashboard, `lib/auth-redirect.ts`) is honoured after sign in only. Anything else falls back to
+  `/`: the check runs on the raw value, the decoded one and the normalised result, so dot segments (`/.//host`) and
+  encoded spellings (`/%61pi`) don't get through. Sign up always lands on `/`. Tokens and passwords never go in a url, except the one the reset email link carries,
+  which the reset page removes from the address bar at once.
+- GitHub and "Forgot password?" show only when the server offers them (`public.authProviders`). The `?error=` banner shows
+  only for a known OAuth code and only when GitHub is on. Links are 44px tall on coarse pointers. A `<noscript>` line says
+  the forms need JavaScript. A used or expired reset link ends in a card that offers a new link, or says to ask whoever
+  runs the server.
+
 ## 5. Copy guidelines
 
 - Plain, second person, present tense, short. "skiffr" fills forms; "you" press submit. No exclamation marks, no
