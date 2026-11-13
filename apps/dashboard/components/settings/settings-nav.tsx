@@ -81,9 +81,10 @@ export function SettingsNav() {
                       aria-current={active ? "page" : undefined}
                       className={cn(
                         "flex min-h-9 items-center border-l-2 px-3 text-sm transition-colors coarse:min-h-11",
+                        "forced-colors:forced-color-adjust-none",
                         active
-                          ? "border-foreground bg-muted font-medium text-foreground"
-                          : "border-transparent text-muted-foreground hover:bg-muted hover:text-foreground",
+                          ? "border-foreground bg-muted font-medium text-foreground forced-colors:border-[Highlight] forced-colors:bg-[Highlight] forced-colors:text-[HighlightText]"
+                          : "border-transparent text-muted-foreground hover:bg-muted hover:text-foreground forced-colors:text-[LinkText]",
                       )}
                     >
                       {entry.label}

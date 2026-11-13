@@ -1,7 +1,10 @@
-import { afterEach, beforeEach, expect, test } from "bun:test"
+import { afterEach, beforeEach, expect, mock, test } from "bun:test"
 import { act } from "react"
 import { createRoot, type Root } from "react-dom/client"
-import { AiUsageCard } from "./ai-usage-card"
+
+const router = { refreshed: 0 }
+mock.module("next/navigation", () => ({ useRouter: () => ({ refresh: () => router.refreshed++ }) }))
+const { AiUsageCard } = await import("./ai-usage-card")
 
 let root: Root
 let host: HTMLElement
@@ -44,8 +47,13 @@ test("with no limit there is no meter and no reset time", async () => {
   expect(host.querySelector("time")).toBeNull()
 })
 
-test("when usage could not load the section says so instead of vanishing", async () => {
+test("when usage could not load the section shows the error box with a way to try again", async () => {
   await render(<AiUsageCard usage={null} />)
   expect(host.querySelector("h2")?.textContent).toBe("AI use")
-  expect(host.textContent).toContain("not available right now")
+  const box = host.querySelector('[data-slot="error-state"]')
+  expect(box?.getAttribute("role")).toBe("alert")
+  expect(box?.textContent).toContain("AI use could not load")
+  const retry = [...host.querySelectorAll("button")].find((button) => button.textContent === "Try again")
+  await act(async () => retry?.click())
+  expect(router.refreshed).toBe(1)
 })

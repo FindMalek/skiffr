@@ -72,7 +72,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
         href: "/settings/appearance",
         label: "Appearance",
         title: "Appearance",
-        description: "Theme and keyboard shortcuts for this browser.",
+        description: "Theme and shortcut settings for this browser.",
       },
     ],
   },

@@ -5,26 +5,36 @@ export const SHORTCUTS_STORAGE_KEY = "skiffr.shortcuts"
 
 const CHANGE_EVENT = "skiffr:shortcuts"
 
-/** Used when storage is blocked or full, so the switch still works for the page's lifetime. */
-let fallback: boolean | null = null
+/**
+ * The last write that storage refused (full, blocked). It wins for the page's lifetime, until storage shows a value
+ * other than the one it held at that moment (another tab or devtools changed or cleared the key).
+ * `raw` is undefined when storage could not even be read.
+ */
+let refused: { value: boolean; raw: string | null | undefined } | null = null
+
+function readRaw(): string | null | undefined {
+  try {
+    return window.localStorage.getItem(SHORTCUTS_STORAGE_KEY)
+  } catch {
+    return undefined
+  }
+}
 
 export function readShortcutsEnabled(): boolean {
-  try {
-    const stored = window.localStorage.getItem(SHORTCUTS_STORAGE_KEY)
-    if (stored === "off") return false
-    if (stored === "on") return true
-  } catch {
-    // blocked storage: use what this page was told
+  const raw = readRaw()
+  if (refused) {
+    if (raw === undefined || raw === refused.raw) return refused.value
+    refused = null
   }
-  return fallback ?? true
+  return raw !== "off"
 }
 
 export function writeShortcutsEnabled(enabled: boolean): void {
-  fallback = enabled
   try {
     window.localStorage.setItem(SHORTCUTS_STORAGE_KEY, enabled ? "on" : "off")
+    refused = null
   } catch {
-    // kept in `fallback`
+    refused = { value: enabled, raw: readRaw() }
   }
   window.dispatchEvent(new Event(CHANGE_EVENT))
 }

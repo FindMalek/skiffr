@@ -28,3 +28,11 @@ test("the limit resets at the next midnight UTC, and a bad day gives nothing", (
   expect(resetsAt({ day })?.toISOString()).toBe("2026-11-11T00:00:00.000Z")
   expect(resetsAt({ day: "nope" })).toBeNull()
 })
+
+test("the bar is never full before the limit, never below empty, and a bad count reads as zero", () => {
+  const percents = (calls: number) => usageRows({ day, calls, tokens: 0, limits: { calls: 300, tokens: 0 } })[0]
+  expect(percents(299)).toMatchObject({ percent: 99, left: "1 left" })
+  expect(percents(-5)).toMatchObject({ percent: 0, value: 0, used: "0 of 300 calls" })
+  expect(percents(Number.NaN)).toMatchObject({ percent: 0, value: 0 })
+  expect(percents(320)).toMatchObject({ percent: 100, value: 300 })
+})

@@ -1,7 +1,9 @@
 import type { AiUsage } from "@skiffr/common/schemas"
 import { Card, CardContent } from "@skiffr/ui/components/card"
+import { ErrorState } from "@skiffr/ui/components/error-state"
 import { Section } from "@skiffr/ui/components/section"
 import type { CSSProperties } from "react"
+import { RetryButton } from "@/components/settings/retry-button"
 import { Time } from "@/components/time"
 import { meterText, resetsAt, type UsageRow, usageRows } from "@/lib/ai-usage-copy"
 
@@ -26,10 +28,13 @@ function UsageMeter({ row }: { row: UsageRow }) {
           aria-valuetext={meterText(row)}
           aria-valuemin={0}
           aria-valuemax={row.limit}
-          aria-valuenow={Math.min(row.value, row.limit)}
-          className="h-3 border border-border-strong"
+          aria-valuenow={row.value}
+          className="h-3 border border-border-strong forced-colors:border-[ButtonText]"
         >
-          <div className="h-full w-(--used) bg-foreground" style={{ "--used": `${row.percent}%` } as CSSProperties} />
+          <div
+            className="h-full w-(--used) bg-foreground forced-colors:forced-color-adjust-none forced-colors:bg-[Highlight]"
+            style={{ "--used": `${row.percent}%` } as CSSProperties}
+          />
         </div>
       )}
     </li>
@@ -65,9 +70,11 @@ export function AiUsageCard({ usage }: { usage: AiUsage | null }) {
           </CardContent>
         </Card>
       ) : (
-        <p className="text-muted-foreground text-sm">
-          AI use is not available right now. Reload the page to try again.
-        </p>
+        <ErrorState
+          title="AI use could not load"
+          description="skiffr could not read today's usage. Your usage is not affected."
+          action={<RetryButton />}
+        />
       )}
     </Section>
   )

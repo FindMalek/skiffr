@@ -49,7 +49,7 @@ const NAV: { href: Route; label: string; icon: typeof LayoutDashboardIcon; admin
   { href: "/users", label: "Users", icon: UsersIcon, admin: true },
   { href: "/settings/gmail", label: "Gmail", icon: MailIcon },
   { href: "/settings/sources", label: "Sources", icon: RadarIcon },
-  { href: "/settings/cv", label: "CV", icon: FileUserIcon },
+  { href: "/settings/cv", label: "Resume", icon: FileUserIcon },
   { href: "/settings", label: "Settings", icon: SettingsIcon },
 ]
 

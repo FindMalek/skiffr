@@ -57,5 +57,24 @@ test("the shortcuts switch starts on and writes the browser setting", async () =
   await act(async () => toggle?.click())
   expect(window.localStorage.getItem(SHORTCUTS_STORAGE_KEY)).toBe("off")
   expect(host.querySelector('[role="switch"]')?.getAttribute("aria-checked")).toBe("false")
-  expect(host.textContent).toContain("Off.")
+  expect(host.textContent).toContain("Off in this browser.")
+})
+
+test("the switch follows a change made in another tab", async () => {
+  await render()
+  window.localStorage.setItem(SHORTCUTS_STORAGE_KEY, "off")
+  await act(async () => {
+    window.dispatchEvent(new StorageEvent("storage", { key: SHORTCUTS_STORAGE_KEY }))
+  })
+  expect(host.querySelector('[role="switch"]')?.getAttribute("aria-checked")).toBe("false")
+})
+
+test("the switch has one stable name and the state is only its description", async () => {
+  await render()
+  const toggle = host.querySelector('[role="switch"]')
+  const label = host.querySelector("label")
+  expect(label?.textContent).toBe("Single key shortcuts")
+  expect(document.getElementById(toggle?.getAttribute("aria-describedby") ?? "")?.textContent).toBe(
+    "On in this browser.",
+  )
 })
