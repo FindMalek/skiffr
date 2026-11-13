@@ -9,6 +9,9 @@ const schema = z.object({
   DASHBOARD_URL: z.url().default("http://localhost:3002"),
   /** The docs site, for links from the dashboard. */
   DOCS_URL: z.url().optional(),
+  /** Umami page analytics, read at request time (never baked into the build). Off until both are set; a bad value turns it off and never breaks a page. */
+  UMAMI_URL: z.string().optional(),
+  UMAMI_WEBSITE_ID: z.string().optional(),
 })
 
 export const nextEnv = () => parseEnv(schema)

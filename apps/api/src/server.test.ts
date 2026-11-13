@@ -6,6 +6,8 @@ import type { Db } from "@skiffr/db"
 import { user } from "@skiffr/db"
 import * as schema from "@skiffr/db/schema"
 import { strictDateSerializers } from "@skiffr/db/test-db"
+import { createObservability, noopObservability, setObservability } from "@skiffr/observability"
+import { mockCollector } from "@skiffr/observability/testing"
 import { drizzle } from "drizzle-orm/pglite"
 import { migrate } from "drizzle-orm/pglite/migrator"
 import { createServer } from "./server"
@@ -91,13 +93,13 @@ test("the preflight from an extension allows its headers and never credentials",
       headers: {
         origin: EXTENSION,
         "access-control-request-method": "POST",
-        "access-control-request-headers": "authorization,content-type",
+        "access-control-request-headers": "authorization,content-type,x-skiffr-client",
       },
     }),
   )
   expect(res.status).toBe(204)
   expect(res.headers.get("access-control-allow-origin")).toBe(EXTENSION)
-  expect(res.headers.get("access-control-allow-headers")).toBe("authorization, content-type")
+  expect(res.headers.get("access-control-allow-headers")).toBe("authorization, content-type, x-skiffr-client")
   expect(res.headers.has("access-control-allow-credentials")).toBe(false)
 })
 
@@ -134,4 +136,68 @@ test("numeric query parameters of GET routes arrive as strings and are still num
     expect(res.status, path).toBe(200)
   }
   expect((await get("/v1/learning/sites?limit=0")).status).toBe(400)
+})
+
+test("a request is logged and counted by method, route and status, never by its query, body or cookie", async () => {
+  const collector = mockCollector()
+  const observability = createObservability({
+    service: "skiffr-api",
+    environment: "test",
+    otlpEndpoint: `${collector.url}/api/default`,
+    flushMs: 0,
+  })
+  setObservability(observability)
+  try {
+    await server(
+      new Request("http://api.test/rpc/answers/list?email=jane@example.com", {
+        method: "POST",
+        headers: { cookie: "session=SECRET-COOKIE" },
+        body: JSON.stringify({ value: "Jane Doe" }),
+      }),
+    )
+    await server(new Request("http://api.test/files/resume-of-jane.pdf"))
+    await server(new Request("http://api.test/some/junk/jane-doe"))
+    await observability.flush()
+    const sent = collector.everything()
+    expect(sent).toContain("http.request")
+    expect(sent).toContain("/files/:key")
+    expect(sent).toContain('"stringValue":"other"')
+    for (const leak of ["jane", "Jane", "SECRET-COOKIE", "email="]) expect(sent).not.toContain(leak)
+  } finally {
+    setObservability(noopObservability)
+    collector.stop()
+  }
+})
+
+test("a flood of urls with a typed segment can't add labels or hide the health gauge", async () => {
+  const collector = mockCollector()
+  const observability = createObservability({
+    service: "skiffr-api",
+    environment: "test",
+    otlpEndpoint: `${collector.url}/api/default`,
+    flushMs: 0,
+  })
+  setObservability(observability)
+  try {
+    for (let i = 0; i < 1500; i++)
+      await server(new Request(`http://api.test/v1/answers/jane${i}`, { method: "PATCH", body: "{}" }))
+    await server(new Request("http://api.test/v1/answers/3f2c9a10-1b2c-4d3e-8f90-123456789abc/use", { method: "POST" }))
+    await server(new Request("http://api.test/rpc/answers/jane"))
+    await server(new Request("http://api.test/health"))
+    await observability.flush()
+    const sent = collector.everything()
+    expect(sent).not.toContain("jane")
+    expect(sent).not.toContain("3f2c9a10")
+    expect(sent).toContain("/v1/answers/:id")
+    expect(sent).toContain("/v1/answers/:id/use")
+    expect(sent).toContain("skiffr.db.up")
+    const metrics = collector.requests.find((request) => request.path.endsWith("/metrics"))?.body ?? ""
+    const series = JSON.parse(metrics).resourceMetrics[0].scopeMetrics[0].metrics.flatMap(
+      (metric: { sum?: { dataPoints: unknown[] } }) => metric.sum?.dataPoints ?? [],
+    )
+    expect(series.length).toBeLessThan(20)
+  } finally {
+    setObservability(noopObservability)
+    collector.stop()
+  }
 })

@@ -2,7 +2,12 @@ import { type ExtensionSettings, extensionSettingsSchema } from "@skiffr/common"
 import { TOKEN_PREFIX } from "@skiffr/common/constants"
 import { type FormEvent, useEffect, useState } from "react"
 import { browser } from "wxt/browser"
-import { CONNECTION_TEXT, type ConnectionResult, type TestConnectionMessage } from "../../lib/connection"
+import {
+  CONNECTION_TEXT,
+  type ConnectionResult,
+  type TestConnectionMessage,
+  UPDATE_NEEDED_TEXT,
+} from "../../lib/connection"
 import { DEFAULT_SETTINGS, getSettings, setSettings } from "../../lib/storage"
 
 type Status = "idle" | "saved" | "invalid" | "bad-token" | "error"
@@ -106,6 +111,9 @@ export function App() {
         )}
         {connection === "testing" && <p role="status">Testing</p>}
         {typeof connection === "object" && connection?.ok && <p role="status">Connected as {connection.name}</p>}
+        {typeof connection === "object" && connection?.ok && connection.updateNeeded && (
+          <p role="alert">{UPDATE_NEEDED_TEXT}</p>
+        )}
         {typeof connection === "object" && connection && !connection.ok && (
           <p role="alert">{CONNECTION_TEXT[connection.reason]}</p>
         )}
