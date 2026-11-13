@@ -21,6 +21,7 @@ export function normalizeUrl(url: string): string {
 }
 
 export * from "./canonical-job"
+export * from "./client"
 export * from "./safe-text"
 
 /** Profile as flat `section.key` entries. Extra fields live under `fields.<normalized label>`. */
