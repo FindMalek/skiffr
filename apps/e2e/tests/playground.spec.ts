@@ -37,6 +37,8 @@ const NAME: Expected[] = [
 ]
 const EMAIL: Expected = [/^email/i, "ana.silva@example.com"]
 const PHONE: Expected = [/^phone( number)?\b/i, "+351 912 345 678"]
+// the workable phone widget moves the dial code into its country picker, so the input shows the national number
+const WORKABLE_PHONE: Expected = [/^phone( number)?\b/i, "912 345 678"]
 const SUBMIT = "button[type=submit], input[type=submit]"
 
 const PAGES: PageCase[] = [
@@ -59,7 +61,7 @@ const PAGES: PageCase[] = [
     submit: SUBMIT,
   },
   { site: "ashby", real: true, expect: [[/^name$/i, "Ana Silva"], EMAIL], submit: SUBMIT },
-  { site: "workable", real: true, expect: [...NAME, EMAIL, PHONE], submit: SUBMIT },
+  { site: "workable", real: true, expect: [...NAME, EMAIL, WORKABLE_PHONE], submit: SUBMIT },
   {
     site: "smartrecruiters",
     real: true,
