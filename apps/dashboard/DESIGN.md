@@ -39,7 +39,7 @@ components. The base is the shadcn "neutral" preset with `--radius: 0`; keep tha
 
 Contrast ratios are WCAG 2.x, computed from the OKLCH values (oklch to linear sRGB, relative luminance). The
 numbers are on `--background` unless a surface is named. Re-check them in both themes whenever a value changes
-(`packages/ui/src/styles/tokens.test.ts` is the guard).
+(`packages/ui/src/styles/tokens.test.ts` is the guard; it lands with #150).
 
 | token | light | dark | use |
 | --- | --- | --- | --- |
@@ -115,6 +115,7 @@ checkbox heights. Nothing else.
   - `sm` `h-8` (32px) for dense toolbars, 44px on coarse;
   - `xs` `h-6` (24px), **fine pointers only**, 32px on coarse; for dense toolbars and table cells, never the only
     way to do an action;
+  - `lg` `h-11` (44px) for the primary action of a mobile or onboarding screen;
   - icon buttons `size-9`, `size-11` on coarse, `icon-xs` 24px / 32px on coarse with the same restriction.
 - Checkbox and switch: the visible control is 20px (switch 20 to 24px tall). Its hit area is 36px (`after:-inset-2`)
   and it always sits inside a `label` or row whose clickable height is at least 44px on coarse pointers. This is the
@@ -143,7 +144,8 @@ checkbox heights. Nothing else.
 
 Two densities, chosen per component, not per user:
 
-- **Comfortable** (default): forms, settings, cards, dialogs. Field min height 40px.
+- **Comfortable** (default): forms, settings, cards, dialogs. Controls are 36px (44px coarse); a form field row
+  (label, control, helper) is at least 40px.
 - **Compact list**: queue, answers, tables. Row sizes as in 2.3. Compactness comes from fewer columns, not smaller type.
 
 ### 2.6 Motion
@@ -151,7 +153,8 @@ Two densities, chosen per component, not per user:
 - Durations: `100ms` (hover, press), `150ms` (popover, tooltip, toast in), `200ms` (dialog, sheet, accordion). Nothing
   longer except chart draw-in: **300ms max, once**, never on update.
 - Easing: one token, `--ease-out: cubic-bezier(0.2, 0, 0, 1)`, defined in `globals.css`. Every enter/exit and
-  state transition uses it (popover, tooltip, dialog, sheet, accordion, toast, sidebar width, chart draw-in).
+  state transition uses it (popover, tooltip, dialog, sheet, accordion, toast, chart draw-in). The sidebar collapse
+  is not animated (it changes width at once).
   `linear` is only for spinners. Components that still use `ease-in-out`, `ease-linear` or the Tailwind default move
   to the token.
 - Properties: `opacity`, `transform`, `background-color` only. Do not animate `height` or `width`, with one
@@ -178,7 +181,11 @@ One scale, no ad hoc values:
 | toast region | 100 |
 | skip link while focused | 110 |
 
-Toasts sit above everything except the skip link, so an error is never hidden by a dialog.
+Toasts sit above everything except the skip link, so an error is never hidden by a dialog. A toast with an action
+cannot be reached while a dialog traps focus, so: actions that offer Undo never open a modal (focus stays on the
+page); a toast raised by a dialog's own action appears after the dialog closes and focus has returned to the page;
+errors raised inside a dialog render in the dialog; and the reverse action is always also in the row menu (Restore,
+Mark as queued, Start filling), so Undo never exists only in a toast.
 
 ## 3. Information architecture
 
@@ -221,7 +228,7 @@ template "Overview" page. Home is called "Today" so the label says what the page
   - Bottom tab bar 56px plus the safe-area inset: Today, Queue, Answers, Stats, More. More opens one bottom sheet
     with Settings (and its sub pages), Admin and Appearance. This is the only trigger for that sheet.
   - Stacking from the bottom edge: tab bar, then a sticky page action if the page has one (queue "Open next", 56px),
-    then toasts above both (`bottom: calc(tab bar + action bar + 16px)`). Page content gets matching bottom padding
+    then toasts above both (`bottom: calc(tab bar + action bar + safe-area inset + 16px)`). Page content gets matching bottom padding
     so nothing is hidden.
 - Global search / command palette (`⌘K` / `Ctrl K`): jump to pages, search jobs by company or role, search answers
   by question, run actions ("Add job", "Open next job", "Create extension token", "Sync Gmail now", "Switch theme").
@@ -242,7 +249,8 @@ Single-character shortcuts must not fire from anywhere. Rules:
 2. **Off switch**: Settings > Appearance > "Keyboard shortcuts" (on by default). When off, no single-key shortcut is
    registered. The modified shortcuts below keep working.
 3. **Never the only way**: every shortcut action also exists as a visible control and in the command palette.
-4. **Modified shortcuts** are exempt from 2.1.4 and may be global: `⌘K` / `Ctrl K` (palette), `Esc` (close).
+4. **Modified shortcuts** (`⌘K` / `Ctrl K`, the palette) are exempt from 2.1.4 and may be global. `Esc` is not a
+   character key, so it is exempt too (close, clear selection).
 
 Map (one list, all pages use it; the `?` dialog is generated from it):
 
@@ -286,8 +294,8 @@ forms use the two-column pattern: left label and description (max 240px), right 
 ### 4.3 Lists and tables
 
 - One list pattern for jobs, answers, tokens, sources, imports: a bordered container, rows separated by `border-b`.
-  Desktop: a table. Mobile (<md): each row becomes a stacked block, same data, same order, same actions (no hidden
-  actions).
+  Desktop: a table. Mobile (<md): a list (`ul` / `li`) of stacked blocks with real buttons, same data, same order,
+  same actions (no hidden actions), and no grid semantics (the keyboard model below applies from `md`).
 - Max 5 columns visible; secondary data moves to a detail pane. Primary cell is two lines (title, then muted meta).
   Numeric columns right aligned, `tabular-nums`.
 - **Row actions**: one primary action as a text button, the rest in a `⋯` menu (`DropdownMenu`) and, on
@@ -300,7 +308,8 @@ forms use the two-column pattern: left label and description (max 240px), right 
   move the active row; left/right arrows move between the row's cells and its action buttons (so every row action is
   reachable without a letter key); `Enter` opens the detail; `Space` and `x` select; the `⋯` menu opens with `Enter`
   on its button. Letter shortcuts (3.2) are accelerators, never the only way. Read-only tables (stats breakdowns,
-  imports) stay plain tables. A one-line hint bar under the toolbar shows the keys for the page.
+  imports) stay plain tables. A virtualised grid sets `aria-rowcount` (total rows) and `aria-rowindex` on each
+  rendered row. A one-line hint bar under the toolbar shows the keys for the page.
 - Filters live in the URL (`?status=queued&source=greenhouse&q=...`) so a view can be bookmarked and survives
   reload. Filter bar: search input, segmented status control, source `Select`. A "Clear filters" link when any
   filter is active. The result count is a `role="status"` live region.
@@ -377,7 +386,8 @@ always means "done and kept"). Source and ATS labels are **not** badges: they ar
 Rules, inline (no external guidance needed):
 
 1. Encode with **position and length first**, then fill, then pattern. Never hue.
-2. Every mark is at least 3:1 against the surface it sits on (WCAG 1.4.11), and series are told apart by position,
+2. Every mark is at least 3:1 against the surface it sits on (WCAG 1.4.11). Charts sit on `--background` or
+   `--card`, never on `--muted` (series 3 is 2.85:1 light and 2.99:1 dark there). Series are told apart by position,
    a direct label, a 1px `--background` gap between adjacent marks and a hatch on the second series, not by
    luminance alone.
 3. Label the data directly (end of line, inside or beside the bar); a legend only when there are more than 3 series.
@@ -416,7 +426,8 @@ flip-flopping, "New" used fewer than 3 times), **last used** (relative), **times
 line, and actions (Edit inline, Confirm, Stop filling, Delete). Conflicts (same question answered two ways) are
 surfaced at the top of the page as a review queue, with side-by-side values and "Keep this one". Bulk: select rows,
 "Confirm", "Stop filling", "Delete". Sensitive questions are marked and explained ("never filled automatically").
-Sites and last used need the answer provenance api; until it exists the row shows what the answer record has.
+Origin, top sites, last used and the conflict summary come from `answers.provenance` (one call per page of rows,
+joined to `answers.list` by id).
 
 ### 4.10 Connection health pattern
 
