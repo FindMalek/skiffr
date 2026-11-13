@@ -1,5 +1,6 @@
 "use client"
 
+import { isSensitiveQuestion } from "@skiffr/ai/learnable"
 import type { Answer } from "@skiffr/common/schemas"
 import { errorMessage } from "@skiffr/orpc/errors"
 import { Alert, AlertDescription, AlertTitle } from "@skiffr/ui/components/alert"
@@ -16,6 +17,7 @@ import {
   BanIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
+  EyeOffIcon,
   PencilIcon,
   RotateCcwIcon,
   SearchIcon,
@@ -127,6 +129,12 @@ function QuestionCell({ answer }: { answer: Answer }) {
     <div className="flex min-w-0 flex-col gap-0.5">
       <SafeText text={answer.rawLabel} lines={2} className="font-medium text-sm" />
       <span className="text-muted-foreground">{SOURCE_TEXT[answer.source]}</span>
+      {isSensitiveQuestion({ label: answer.rawLabel }) && (
+        <span className="flex items-center gap-1 text-muted-foreground italic">
+          <EyeOffIcon className="size-3 shrink-0" aria-hidden="true" />
+          Not filled any more: sensitive question
+        </span>
+      )}
     </div>
   )
 }

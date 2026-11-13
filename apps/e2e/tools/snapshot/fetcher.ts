@@ -22,6 +22,8 @@ export interface Fetched {
   status: number
   headers: Record<string, string>
   body: Buffer
+  /** Where the redirects ended. */
+  url: string
 }
 
 export interface Fetcher {
@@ -124,7 +126,7 @@ export function createFetcher(options: { guard: RequestGuard; allowName: string 
       for (const [name, value] of Object.entries(res.headers)) {
         if (value !== undefined && !HOP_BY_HOP.has(name)) out[name] = Array.isArray(value) ? value.join(", ") : value
       }
-      return { status: res.status, headers: out, body: method === "HEAD" ? Buffer.alloc(0) : res.body }
+      return { status: res.status, headers: out, body: method === "HEAD" ? Buffer.alloc(0) : res.body, url: url.href }
     }
     throw new Error("too many redirects")
   }

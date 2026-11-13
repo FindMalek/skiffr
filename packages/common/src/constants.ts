@@ -147,3 +147,7 @@ export const ACCOUNT_EXPORT_ROWS_MAX = 100_000
 export const ACCOUNT_EXPORT_BYTES_MAX = 25 * 1024 * 1024
 /** A session older than this can't delete an account that has no password to type. */
 export const ACCOUNT_FRESH_SESSION_MINUTES = 10
+/** The activity feed looks back this many days at most, so one request never scans a whole history. */
+export const ACTIVITY_WINDOW_DAYS = 30
+export const ACTIVITY_LIMIT_DEFAULT = 30
+export const ACTIVITY_LIMIT_MAX = 100
