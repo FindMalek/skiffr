@@ -427,3 +427,10 @@ test("labels the lists blocked before the new rules stay blocked", () => {
     expect(blocked(label), label).toBe(true)
   }
 })
+
+test("a long prefix cannot push a bare label out of the scanned window", () => {
+  const pad = "x".repeat(2100)
+  for (const bare of ["Code", "Firma", "Genere", "Ccv", "Expiry date"]) {
+    expect(isLearnableField({ label: `${pad}: ${bare}`, type: "text" })).toBe(false)
+  }
+})

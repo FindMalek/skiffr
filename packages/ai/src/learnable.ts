@@ -427,7 +427,7 @@ const OWN_LABEL_MAX = 2000
 
 /** The label and each tail of it after a section prefix (`Payment details: Code` also reads `Code`), normalized. */
 function ownLabels(label: string): string[] {
-  const parts = label.slice(0, OWN_LABEL_MAX).split(/:\s+/)
+  const parts = label.slice(-OWN_LABEL_MAX).split(/:\s+/)
   return parts.map((_, index) => clean(parts.slice(index).join(" ")))
 }
 
