@@ -5,6 +5,8 @@ description: Optional error reports, analytics, logs and model call traces, and 
 
 Everything here is off until its variable is set. An instance without any of it behaves as before, makes no request to a third party and has no extra dependency on the hot path. Web, docs and dashboard still load `/analytics.js` from their own origin, which is an empty comment while Umami is unset. Privacy is the promise of the product, so each sink sends from an allowlist: a field label, a form value, resume or job text, an email or a token has no key to travel under.
 
+Where to look when something breaks, the OpenObserve dashboards and saved views, copy paste queries and the GlitchTip workflow are in the [observability tour](/docs/observability-tour).
+
 ## What to use
 
 | Tool | Decision | Why |
@@ -31,7 +33,7 @@ Everything here is off until its variable is set. An instance without any of it 
 
 ## Metrics
 
-`skiffr.http.requests`, `skiffr.http.duration_ms`, `skiffr.db.up`, `skiffr.scheduler.runs`, `skiffr.scheduler.duration_ms`, `skiffr.scheduler.items`, `skiffr.scheduler.last_success_seconds` (per job: `gmail`, `watch`), `skiffr.sync.failures`, `skiffr.rate_limit.rejected`, `skiffr.ai.calls`, `skiffr.ai.tokens`, `skiffr.ai.duration_ms`. `skiffr.db.up` is set each time `/health` is called, so it needs a poller (the container healthcheck is one). Every request except `/health` is also a log record, queued 500 at a time per 15 second flush with the oldest dropped first, so above about 30 requests per second some lines are lost, never the metrics. Alert on `last_success_seconds` going stale and on `skiffr.db.up` of 0.
+`skiffr.http.requests`, `skiffr.http.duration_ms`, `skiffr.db.up`, `skiffr.scheduler.runs`, `skiffr.scheduler.duration_ms`, `skiffr.scheduler.items`, `skiffr.scheduler.last_success_seconds` (per job: `gmail`, `watch`), `skiffr.sync.failures`, `skiffr.rate_limit.rejected`, `skiffr.ai.calls`, `skiffr.ai.tokens`, `skiffr.ai.duration_ms`. `skiffr.db.up` is set each time `/health` is called, so it needs a poller (the container healthcheck is one). Every request is also a log record (a passing `/health` is skipped, a failing one is logged), queued 500 at a time per 15 second flush with the oldest dropped first, so above about 30 requests per second some lines are lost, never the metrics. Alert on `last_success_seconds` going stale and on `skiffr.db.up` of 0.
 
 ## Setting it up
 
@@ -62,6 +64,10 @@ At the time of writing the production instance was wired to the self hosted stac
 - OpenObserve: the api reaches it over the swarm network at `http://openobserve:5080/api/default`. The open source build only has admin and root roles, so an ingest only user cannot be made. The skiffr user is an admin on the `default` org, so treat the header as a secret. Passwords need upper and lower case, a digit and a special character. `OTEL_EXPORTER_OTLP_HEADERS` contains a space, keep the whole value on one env line.
 - A test record named `skiffr_ops_check` sits in the `skiffr` logs stream from the first ingest check. It is harmless.
 - `scripts/dokploy-bootstrap.mjs` only fills keys that are not set yet, so it cannot rotate a value that is already there.
+
+## Looking at it
+
+The dashboards, saved log views, stream settings and alerts for OpenObserve are json files in `ops/openobserve/`, imported with `sh ops/openobserve/import.sh`. GlitchTip has data scrubbing on and a new issue rule per project. All of it is described in the [observability tour](/docs/observability-tour).
 
 ## Not done
 

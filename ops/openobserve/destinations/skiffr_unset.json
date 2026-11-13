@@ -1,0 +1,9 @@
+{
+  "name": "skiffr_unset",
+  "type": "http",
+  "method": "post",
+  "url": "https://example.com/skiffr-alert-placeholder",
+  "template": "o2_default_content",
+  "skip_tls_verify": false,
+  "headers": {}
+}

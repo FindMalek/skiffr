@@ -1,0 +1,32 @@
+{
+  "name": "skiffr_5xx_burst",
+  "description": "5 or more 5xx responses in 5 minutes. checked every 5 minutes",
+  "stream_type": "logs",
+  "stream_name": "skiffr",
+  "is_real_time": false,
+  "query_condition": {
+    "type": "sql",
+    "sql": "select count(*) as cnt from \"skiffr\" where http_status_code >= 500 having count(*) >= 5",
+    "conditions": null,
+    "aggregation": null,
+    "promql": null,
+    "promql_condition": null,
+    "vrl_function": null,
+    "multi_time_range": [],
+    "search_event_type": null
+  },
+  "trigger_condition": {
+    "period": 5,
+    "operator": ">=",
+    "threshold": 1,
+    "frequency": 5,
+    "frequency_type": "minutes",
+    "silence": 30
+  },
+  "destinations": ["skiffr_unset"],
+  "context_attributes": {},
+  "enabled": false,
+  "row_template": "",
+  "row_template_type": "String",
+  "tz_offset": 0
+}
