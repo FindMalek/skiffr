@@ -440,4 +440,60 @@ describe("learning session", () => {
     expect(byLabel(sent[0], "Password")).toBeUndefined()
     expect(byLabel(sent[0], "Reference")).toMatchObject({ filledValue: "", finalValue: "" })
   })
+
+  describe("a phone the page shows without its dial code", () => {
+    const PHONE = `<form id="app"><label for="phone">Phone</label><input id="phone" type="tel"></form>`
+
+    async function phone() {
+      const { document, window, $ } = mount(PHONE)
+      $<HTMLInputElement>("#phone").addEventListener("input", (event) => {
+        const input = event.target as HTMLInputElement
+        input.value = input.value.replace(/^\+351\s*/, "")
+      })
+      const fields = collectFields(document)
+      const mapping = [
+        { id: fields[0]?.id as string, action: "profile" as const, key: "phone", confidence: 1, reason: "" },
+      ]
+      const summary = await fillPage({ root: document, fields, mapping, values: { phone: "+351 912 345 678" } })
+      const sent: LearningRecordMessage[] = []
+      const session = createLearningSession({
+        send: async (message) => {
+          sent.push(message)
+          return { ok: true }
+        },
+        doc: document,
+        win: window as unknown as Window,
+        url: () => "https://jobs.example.com/apply",
+        idleMs: 60_000,
+        activated: () => true,
+      })
+      session.begin({ root: document, fields, mapping, summary })
+      const submit = () =>
+        $("#app").dispatchEvent(
+          trusted(new (window as never as { Event: typeof Event }).Event("submit", { bubbles: true })),
+        )
+      return { sent, submit, $, window }
+    }
+
+    test("is not recorded while it stays as the fill left it: the field matches, the national number teaches nothing", async () => {
+      const { sent, submit, $ } = await phone()
+      expect($<HTMLInputElement>("#phone").value).toBe("912 345 678")
+      submit()
+      expect(byLabel(sent[0], "Phone")).toMatchObject({ type: "tel", filledValue: "", finalValue: "" })
+      expect(JSON.stringify(sent)).not.toContain("912")
+    })
+
+    test("is recorded as typed when the person changes it", async () => {
+      const { sent, submit, $, window } = await phone()
+      const input = $<HTMLInputElement>("#phone")
+      const fire = (type: string) =>
+        input.dispatchEvent(trusted(new (window as never as { Event: typeof Event }).Event(type, { bubbles: true })))
+      fire("keydown")
+      input.value = "912 000 111"
+      fire("input")
+      fire("change")
+      submit()
+      expect(byLabel(sent[0], "Phone")).toMatchObject({ filledValue: "912 345 678", finalValue: "912 000 111" })
+    })
+  })
 })

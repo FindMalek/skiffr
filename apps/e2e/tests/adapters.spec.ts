@@ -148,6 +148,22 @@ const isOn = (locator: Locator): Promise<boolean> =>
 
 type Asked = { label: string; type?: string; options: string[] }
 
+/** What every answerable control of the form holds, so a fill is counted by what it changed and not by what was there. */
+const holds = (page: Page): Promise<Record<string, string>> =>
+  page.evaluate(() => {
+    const out: Record<string, string> = {}
+    const controls = document.querySelectorAll<HTMLInputElement>(
+      "form input:not([type=hidden],[type=file],[aria-hidden]), form textarea, form [role=radio]",
+    )
+    controls.forEach((control, index) => {
+      const checkable = control.type === "checkbox" || control.hasAttribute("aria-checked")
+      out[`${index}:${control.id || control.name}`] = checkable
+        ? String(control.checked ?? control.getAttribute("aria-checked"))
+        : control.value
+    })
+    return out
+  })
+
 const lookupFields = (requests: { path: string; body: unknown }[]): Asked[] =>
   requests
     .filter((request) => request.path === "/rpc/learning/lookup")
@@ -205,7 +221,7 @@ for (const board of BOARDS) {
         mockApi,
       }) => {
         await connect(serviceWorker, mockApi)
-        const { page, toast } = await openAdapterPage(context, fixtureServer, board.name, generic)
+        const { page, toast } = await openAdapterPage(context, fixtureServer, board.name, { generic })
         await toast.click("yes")
         await toast.waitFor((s) => s.title !== null && FILLED.test(s.title), 30_000)
         await page.evaluate(() => document.addEventListener("submit", (event) => event.preventDefault()))
@@ -235,7 +251,7 @@ test("workable: the first screen is filled while the cookie dialog still dims it
   mockApi,
 }) => {
   await connect(serviceWorker, mockApi)
-  const { page, toast } = await openAdapterPage(context, fixtureServer, "workable", false, true)
+  const { page, toast } = await openAdapterPage(context, fixtureServer, "workable", { keepConsent: true })
   await expect(page.locator("[data-ui=backdrop]")).toBeVisible()
   const hit = await page.locator("#firstname").evaluate((el) => {
     const box = el.getBoundingClientRect()
@@ -243,6 +259,7 @@ test("workable: the first screen is filled while the cookie dialog still dims it
   })
   expect(hit).toBe("backdrop")
 
+  const before = await holds(page)
   await toast.click("yes")
   const done = await toast.waitFor((s) => s.title !== null && FILLED.test(s.title), 30_000)
 
@@ -264,13 +281,7 @@ test("workable: the first screen is filled while the cookie dialog still dims it
     phone: "912 345 678",
   })
 
-  const kept = await page.evaluate(() => {
-    const texts = document.querySelectorAll<HTMLInputElement>(
-      "form input:not([type=hidden],[type=file],[type=checkbox],[type=radio],[aria-hidden]), form textarea",
-    )
-    const answered = [...texts].filter((control) => control.value !== "").length
-    return answered + document.querySelectorAll("form [role=radio][aria-checked=true]").length
-  })
+  const kept = Object.entries(await holds(page)).filter(([key, value]) => before[key] !== value).length
   expect(Number(/^Filled (\d+)/.exec(done.title ?? "")?.[1])).toBe(kept)
 
   const labels = lookupLabels(mockApi.requests)
@@ -288,7 +299,7 @@ test("a board page on a host no adapter knows is still filled by the generic pat
   mockApi,
 }) => {
   await connect(serviceWorker, mockApi)
-  const { page, toast } = await openAdapterPage(context, fixtureServer, "greenhouse", true)
+  const { page, toast } = await openAdapterPage(context, fixtureServer, "greenhouse", { generic: true })
 
   await toast.click("yes")
   await toast.waitFor((s) => s.title !== null && FILLED.test(s.title), 30_000)

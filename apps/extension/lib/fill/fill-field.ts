@@ -107,7 +107,8 @@ async function fillText(field: CollectedField, text: string, options: FillFieldO
     commit()
     return failed(field, "the page did not keep the value")
   }
-  return filled(field, adapted.cut ? "cut to the field's max length" : undefined)
+  const moved = !sameValue(el.value, wanted)
+  return { ...filled(field, adapted.cut ? "cut to the field's max length" : undefined), ...(moved && { moved }) }
 }
 
 async function fillSelect(field: CollectedField, text: string): Promise<FillResult> {

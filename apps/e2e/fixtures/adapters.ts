@@ -31,8 +31,7 @@ export async function openAdapterPage(
   context: BrowserContext,
   server: Pick<FixtureServer, "origin" | "secureOrigin">,
   name: AdapterName,
-  generic = false,
-  keepConsent = false,
+  { generic = false, keepConsent = false }: { generic?: boolean; keepConsent?: boolean } = {},
 ): Promise<{ page: Page; toast: ToastDriver }> {
   const page = await context.newPage()
   await page.goto(adapterUrl(server, name, generic))

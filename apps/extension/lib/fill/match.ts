@@ -135,13 +135,32 @@ export function sameValue(shown: string, wanted: string): boolean {
   return a !== "" && a === loose(wanted)
 }
 
-/** A phone widget with a country picker keeps the dial code out of the input: "+351 912 345 678" shows as "912 345 678". */
+const TWO_DIGIT_DIAL = new Set(
+  "20 27 30 31 32 33 34 36 39 40 41 43 44 45 46 47 48 49 51 52 53 54 55 56 57 58 60 61 62 63 64 65 66 81 82 84 86 90 91 92 93 94 95 98".split(
+    " ",
+  ),
+)
+
+/** Country calling codes are prefix free: 1 and 7 are one digit, the codes in the table two, every other code three. */
+function dialLength(digits: string): number {
+  if (digits.startsWith("1") || digits.startsWith("7")) return 1
+  return TWO_DIGIT_DIAL.has(digits.slice(0, 2)) ? 2 : 3
+}
+
+const SHOWN_DIGITS_MIN = 5
+
+/**
+ * A phone widget with a country picker keeps the dial code out of the input: "+351 912 345 678" shows as "912 345 678",
+ * or "07911 123456" for "+44 7911 123456" when it adds the trunk prefix. What is left must be exactly the number without
+ * its dial code, so a number the page cut short is not kept.
+ */
 export function movedDialCode(shown: string, wanted: string): boolean {
+  if (!wanted.trim().startsWith("+")) return false
   const digits = (text: string) => text.replace(/\D/g, "")
-  const [a, w] = [digits(shown), digits(wanted)]
-  return (
-    wanted.trim().startsWith("+") && a.length >= 5 && w.length > a.length && w.length - a.length <= 3 && w.endsWith(a)
-  )
+  const all = digits(wanted)
+  const rest = all.slice(dialLength(all))
+  const local = digits(shown)
+  return rest.length >= SHOWN_DIGITS_MIN && (local === rest || local === `0${rest}`)
 }
 
 export function splitList(value: string | string[]): string[] {

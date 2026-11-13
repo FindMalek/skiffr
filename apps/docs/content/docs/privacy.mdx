@@ -46,7 +46,7 @@ The provider keeps what its own terms say. Leave the keys unset to send nothing:
 - it never touches password or hidden inputs
 - it sets a file only on a resume or CV upload slot, and only when the caller hands it a file
 - it opens custom dropdowns (including `button[role=combobox]` widgets) and clicks their own options, and clicks the checkboxes and radios it fills, nothing else
-- fields a person cannot see or reach (honeypots) are skipped
+- fields a person cannot see or reach (honeypots) are skipped, except fields under a cookie or consent dialog: those are filled while the dialog is still up. The dialog is matched by name, has to be fixed with a button, and has to sit next to a fixed box that dims the page
 
 ### What the api stores about learning
 
