@@ -9,7 +9,6 @@ import { gmailRouter } from "./gmail"
 import { jobSourcesRouter } from "./job-sources"
 import { jobsRouter } from "./jobs"
 import { learningRouter } from "./learning"
-import { notesRouter } from "./notes"
 import { profileRouter } from "./profile"
 import { publicRouter } from "./public"
 import { statsRouter } from "./stats"
@@ -25,7 +24,6 @@ export const appRouter = {
   me: meRouter,
   account: accountRouter,
   activity: activityRouter,
-  notes: notesRouter,
   profile: profileRouter,
   answers: answersRouter,
   ai: aiRouter,

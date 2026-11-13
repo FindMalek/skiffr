@@ -371,35 +371,3 @@ export const SHORT_FORM_LABELS = [
   "LinkedIn profile URL",
   "Are you legally authorized to work in the United States?",
 ] as const
-
-export const NOTES: { title: string; body: string }[] = [
-  {
-    title: "Interview prep: system design",
-    body: "Practice: rate limiter, job queue, feed ranking. Draw the data model first, then the failure modes.",
-  },
-  {
-    title: "Questions to ask the hiring manager",
-    body: "How is on-call split? What did the last person in this role ship in the first 90 days? How are priorities set?",
-  },
-  {
-    title: "Salary range research",
-    body: "Senior backend, remote US: 150k to 185k at series B and C. Ask for the band before giving a number.",
-  },
-  {
-    title: "Brightmere: follow up",
-    body: "Recruiter said the loop is two coding rounds and one design. Send availability by Friday.",
-  },
-  {
-    title: "Weekly review",
-    body: "12 applications sent, 2 replies, 1 screen booked. Spend less time on cold applications, more on referrals.",
-  },
-  {
-    title: "Reference list",
-    body: "Former manager at Brightpath, tech lead at Harborline, one peer. Ask before sharing their email.",
-  },
-]
-
-export const SECOND_NOTES = [
-  { title: "Move to Berlin timeline", body: "Notice period three months, so start applying in January." },
-  { title: "Python vs Go for data tooling", body: "Stay with Python for the pipelines, learn Go for the services." },
-]

@@ -8,7 +8,6 @@ description: Fill a preview or a local database with a realistic account to clic
 | `SEED` | What you get |
 | --- | --- |
 | `none` | nothing |
-| `demo` | the template's sample notes and users, in an empty database only |
 | `preview` | the whole product filled in, described below. Refused in production |
 
 ## The preview dataset
@@ -35,7 +34,6 @@ What the demo account holds:
 - **Gmail**: a mailbox in the `needs_reconnect` state with a placeholder in place of a token (nothing ever calls Google) and the mails it "read", linked to the jobs they added.
 - **CV**: a connected Reactive Resume with a base resume, when `CV_ENCRYPTION_KEY` is set. The stored key only works against the mock Reactive Resume (`@skiffr/orpc/cv-test`); point `SEED_CV_URL` at wherever that mock runs, it defaults to `https://rr.test`.
 - **Extension tokens**: one active (its secret is in the links json, so the extension can connect), one active that was used long ago, one revoked and one expired.
-- **Notes**.
 
 Without an `OPENAI_API_KEY` the api uses a deterministic stand-in for embeddings when `SEED=preview`: questions that share their meaningful words (after stopwords, plurals and a few synonyms like salary and compensation) are near each other, so similar-question suggestions can be clicked through. It is not a model and says nothing about how real embeddings would behave. With a real `OPENAI_API_KEY` the api uses real embeddings, but the seeded answers still hold the stand-in vectors, so suggestions between seeded and new answers compare unrelated spaces.
 

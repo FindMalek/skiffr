@@ -85,7 +85,6 @@ export const CLASS_OVERRIDES: Readonly<Record<string, LimitClass>> = {
   "ai.mapFields": "ai",
   "ai.draftAnswer": "ai",
   "cv.preview": "ai",
-  "notes.summarize": "ai",
   "learning.lookup": "embed",
   "learning.record": "embed",
   "answers.create": "embed",

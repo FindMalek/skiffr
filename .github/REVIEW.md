@@ -8,7 +8,7 @@ The owner is the maintainer who asked for the review. The author is whoever wrot
 
 A review is a check of these promises. A change that weakens one is blocking, whatever else it does well.
 
-1. **Privacy first, self hosted.** Profile, answers, queue, notes and tokens live in the user's own Postgres. The extension has no analytics and talks only to the api the user configured. Only what a feature needs goes to a model provider (a CV import sends the CV text), only when a key is set and the user asked for it, and the list is in `apps/docs/content/docs/privacy.mdx`.
+1. **Privacy first, self hosted.** Profile, answers, queue and tokens live in the user's own Postgres. The extension has no analytics and talks only to the api the user configured. Only what a feature needs goes to a model provider (a CV import sends the CV text), only when a key is set and the user asked for it, and the list is in `apps/docs/content/docs/privacy.mdx`.
 2. **Never submits for the user.** No submit, next, apply, add or save click, ever. The extension only sets fields, and clicks checkboxes, radios and dropdown options.
 3. **Never invents facts.** No made up employer, number, date, skill or authorization. A value comes from the profile, a saved answer, a learned answer or a model mapping the user can see. CV tailoring and drafts are extractive: whole clauses of the user's own text.
 4. **Never fills or learns sensitive fields.** Secrets, card and bank data, government ids, birth dates, equal opportunity and protected categories, consent and signatures, pronouns (never filled, see #97). Password, hidden and one time code inputs are never touched. The guard is central (`packages/ai/src/learnable.ts`, `apps/extension/lib/fill/sensitive.ts`) and must not get a second copy.
