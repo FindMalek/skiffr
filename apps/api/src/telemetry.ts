@@ -58,7 +58,8 @@ const METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIO
  */
 export function recordRequest(request: Request, response: Response, startedAt: number): void {
   const obs = getObservability()
-  const duration = Math.round(performance.now() - startedAt)
+  const elapsed = Math.round(performance.now() - startedAt)
+  const duration = Number.isFinite(elapsed) && elapsed > 0 ? elapsed : 0
   const method = METHODS.has(request.method) ? request.method : "GET"
   const route = routeOf(new URL(request.url).pathname)
   const attrs = {
@@ -69,7 +70,8 @@ export function recordRequest(request: Request, response: Response, startedAt: n
     duration_ms: duration,
     request_id: response.headers.get("x-request-id") ?? undefined,
   }
-  if (!UNLOGGED_ROUTES.has(route))
+  // health probes are counted but not logged, unless one fails: a failing probe is worth a line
+  if (!(UNLOGGED_ROUTES.has(route) && response.status < 400))
     obs.logEvent(
       severityOf(response.status),
       "http.request",

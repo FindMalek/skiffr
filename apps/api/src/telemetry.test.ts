@@ -74,10 +74,10 @@ test("5xx is ERROR, 4xx is WARN, the rest is INFO", async () => {
   expect(sent.map((line) => line.severity)).toEqual(["ERROR", "WARN", "INFO", "INFO"])
 })
 
-test("health checks are counted in the metrics but not shipped as log lines", async () => {
+test("passing health checks are counted in the metrics but not shipped as log lines", async () => {
   const { lines: sent, metrics } = await lines([
     ["/health", 200],
-    ["/health?probe=1", 503],
+    ["/health?probe=1", 204],
     ["/version", 200],
   ])
   expect(sent.map((line) => line.body.split(" ")[1])).toEqual(["other"])
@@ -104,4 +104,44 @@ test("a typed segment, a query or a hostile url never reaches the line, only the
   for (const line of sent)
     for (const leak of ["jane", "Jane", "SECRET", "3f2c9a10", "@", "?", "%", "Cookie"])
       expect(line.body).not.toContain(leak)
+})
+
+test("a custom method is logged as GET, never as the method string", async () => {
+  const token = `X${"a1B2c3D4e5".repeat(6)}`
+  const { lines: sent } = await lines([
+    ["/v1/answers/abc", 200, "PROPFIND"],
+    ["/v1/answers/abc", 200, token],
+  ])
+  expect(sent.map((line) => line.body.split(" ")[0])).toEqual(["GET", "GET"])
+  expect(JSON.stringify(sent)).not.toContain(token)
+  expect(sent.every((line) => line.attrs["http.method"] === "GET")).toBe(true)
+})
+
+test("a failing health check is logged, a passing one is not", async () => {
+  const ok = await lines([["/health", 200]])
+  expect(ok.lines).toEqual([])
+  const down = await lines([["/health", 503]])
+  expect(down.lines[0]?.body).toMatch(/^GET \/health 503 \d+ms$/)
+  expect(down.lines[0]?.severity).toBe("ERROR")
+})
+
+test("the duration is never negative or not a number", async () => {
+  collector.requests.length = 0
+  setObservability(
+    createObservability({
+      service: "skiffr-api",
+      environment: "test",
+      otlpEndpoint: `${collector.url}/api/default`,
+      flushMs: 0,
+    }),
+  )
+  recordRequest(
+    new Request("http://api.test/v1/answers/abc"),
+    new Response(null, { status: 200 }),
+    performance.now() + 5000,
+  )
+  recordRequest(new Request("http://api.test/v1/answers/abc"), new Response(null, { status: 200 }), Number.NaN)
+  await (await import("@skiffr/observability")).getObservability().flush()
+  const body = collector.requests.find((request) => request.path.endsWith("/logs"))?.body ?? ""
+  expect(body).not.toMatch(/-\d+ms|NaNms|Infinityms/)
 })
