@@ -1,6 +1,7 @@
 import { ORPCError } from "@orpc/server"
 import {
   answerInputSchema,
+  answerProvenanceSchema,
   answerSchema,
   answerUpdateSchema,
   answerUsageSchema,
@@ -11,6 +12,7 @@ import { normalizeLabel } from "@skiffr/common/utils"
 import { answer, answerColumns } from "@skiffr/db"
 import { asc, eq, sql } from "drizzle-orm"
 import { z } from "zod"
+import { answerProvenance } from "../lib/answer-provenance"
 import { assertAnswerRoom, embedMissing } from "../lib/learning"
 import { mine, orNotFound } from "../lib/owned"
 import { protectedProcedure } from "../procedures"
@@ -29,6 +31,18 @@ export const answersRouter = {
         .limit(input.limit)
         .offset(input.offset),
     ),
+
+  provenance: protectedProcedure
+    .route({
+      method: "GET",
+      path: "/answers/provenance",
+      summary:
+        "Where each answer of one page of the bank came from: origin, sites and forms, last used, counts and conflicts. Same page and order as the answer list, never a value",
+      tags: ["answers"],
+    })
+    .input(pageInputSchema)
+    .output(z.array(answerProvenanceSchema))
+    .handler(({ context, input }) => answerProvenance(context.db, context.user.id, input)),
 
   create: protectedProcedure
     .route({
