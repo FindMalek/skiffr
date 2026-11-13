@@ -1,6 +1,6 @@
 import { describe, expect, spyOn, test } from "bun:test"
 import { ORPCError } from "@orpc/client"
-import { AI_BUDGET_EXHAUSTED, type FieldMapping, type ModelMapping } from "@skiffr/common"
+import { AI_BUDGET_EXHAUSTED, AI_NOT_CONFIGURED, type FieldMapping, type ModelMapping } from "@skiffr/common"
 import { NotConfiguredError } from "./api"
 import { FILL_CONFIDENCE_MIN, FILL_CONFIDENCE_REVIEW, PROFILE_TTL_MS } from "./fill-config"
 import { createFillService } from "./fill-service"
@@ -402,6 +402,12 @@ describe("failures", () => {
       (await setup({ mapFields }).service.run(request([field("a", "Name")]))) as { ok: false; code: string }
     expect(await code(spent)).toEqual({ ok: false, code: "budget" })
     expect(await code(limited)).toEqual({ ok: false, code: "busy" })
+  })
+
+  test("a server without an AI key is told apart from a plain outage", async () => {
+    const noKey = () => Promise.reject(new ORPCError(AI_NOT_CONFIGURED, { status: 503 }))
+    const { service } = setup({ mapFields: noKey })
+    expect(await service.run(request([field("a", "Name")]))).toEqual({ ok: false, code: "no-ai-key" })
   })
 
   test("a token revoked after the lookup still fills the saved answer and points at the settings", async () => {

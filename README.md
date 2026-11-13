@@ -74,7 +74,7 @@ Everything works without these except the parts that name them. All are optional
 
 | Key | Needed for | Without it |
 | --- | --- | --- |
-| `GROQ_API_KEY` ([Groq](https://console.groq.com/keys)) | mapping fields the saved answers do not cover, which can also return a short generated value such as a yes or no or an option pick, shown outlined for you to check (default model `openai/gpt-oss-120b`). The api can also draft answers, but the extension does not call that yet | the ai endpoints say no provider key is configured, and a fill in the extension fails with "skiffr had a problem". The dashboard, answers and queue keep working |
+| `GROQ_API_KEY` ([Groq](https://console.groq.com/keys)) | mapping fields the saved answers do not cover, which can also return a short generated value such as a yes or no or an option pick, shown outlined for you to check (default model `openai/gpt-oss-120b`). The api can also draft answers, but the extension does not call that yet | the ai endpoints say no provider key is configured, and a fill in the extension fails with "The skiffr server has no AI key yet". The dashboard, answers and queue keep working |
 | `OPENAI_API_KEY` ([OpenAI](https://platform.openai.com/api-keys)) | embedding similarity for learned answers | similar-question suggestions are skipped, exact and label matches still work |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GMAIL_ENCRYPTION_KEY` ([Google Cloud](https://console.cloud.google.com/)) | the Gmail connector | the Gmail page says it is not set up. Setup is in the [Gmail docs](apps/docs/content/docs/gmail.mdx), and it has only been tested against a local stand-in for Google's api |
 
@@ -175,7 +175,7 @@ First run checklist: profile saved, token created and tested, one real applicati
 | `port 3000 is already in use` | run the installer again with `--port 4000` (it uses 4000 to 4003) |
 | `pull access denied` or `no release is published yet` | use the clone path with `--build`, or ask the host to make the packages public |
 | the api log says `password authentication failed` | a data volume from an earlier install is still there. If that data is disposable run `docker compose down -v` and start again |
-| the toast says "skiffr had a problem. Try again in a moment." | the server has no AI key: set `GROQ_API_KEY` in `skiffr/.env` and run `docker compose up -d` |
+| the toast says "The skiffr server has no AI key yet" | the server has no AI key: set `GROQ_API_KEY` in `skiffr/.env` and run `docker compose up -d` |
 | extension says it cannot connect | the api url must be exactly what the installer printed, no trailing path. Open it plus `/health` in the browser: it must say `"ok":true`. Check `docker compose ps` in the `skiffr/` folder |
 | extension says the token is invalid or expired | dashboard, Extension, create a new token and paste it again |
 | cannot sign in | the password is `ADMIN_PASSWORD` in `skiffr/.env`. The admin is reset to that value on every api start (also after an update), so change the password there, not in the dashboard |

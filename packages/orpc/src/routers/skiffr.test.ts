@@ -543,7 +543,8 @@ test("ai calls need a session, a saved profile and a configured model", async ()
     code: "PRECONDITION_FAILED",
   })
   await expect(call(appRouter.ai.mapFields, input, withModel("ben", null))).rejects.toMatchObject({
-    code: "SERVICE_UNAVAILABLE",
+    code: "AI_NOT_CONFIGURED",
+    status: 503,
   })
 })
 
