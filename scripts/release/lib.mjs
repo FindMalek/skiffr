@@ -6,9 +6,6 @@ const SECTIONS = [
   ["breaking", "Breaking changes"],
   ["feat", "Features"],
   ["fix", "Fixes"],
-  ["perf", "Performance"],
-  ["refactor", "Refactors"],
-  ["deps", "Dependencies"],
   ["other", "Other changes"],
   ["maintenance", "Maintenance"],
 ]
@@ -103,10 +100,10 @@ export function plan({ lastTag, commits, forced = "auto" }) {
 
 function group(commit) {
   if (commit.breaking) return "breaking"
-  if (commit.type === null) return "other"
-  if (commit.type in BUMPS && commit.type !== "revert") return commit.type
-  if (commit.type === "revert") return "other"
-  return commit.scope === "deps" ? "deps" : "maintenance"
+  if (commit.type === "feat" || commit.type === "fix") return commit.type
+  // perf, refactor, revert, dependency bumps and titles without a type are user visible but neither a feature nor a fix
+  if (commit.type === null || commit.type in BUMPS || commit.scope === "deps") return "other"
+  return "maintenance"
 }
 
 /** `@user` and `@everyone` in a title would notify people from the release body: put them in code spans. */
@@ -122,11 +119,11 @@ const line = (commit, repo) => {
   return `- ${scope}${neutralizeMentions(commit.description)} (${ref})`
 }
 
-/** Markdown notes: commits grouped by type, each with its PR link, then how to upgrade. */
+/** Markdown notes: a line naming the previous release, commits grouped by type (features, fixes, other) each with its PR link, then how to upgrade. */
 export function renderNotes({ version, previous, commits, repo }) {
   const groups = new Map(SECTIONS.map(([key]) => [key, []]))
   for (const commit of commits) groups.get(group(commit)).push(commit)
-  const out = []
+  const out = [previous ? `Changes since ${previous}.` : "First release.", ""]
   for (const [key, title] of SECTIONS) {
     const items = groups.get(key)
     if (items.length === 0) continue
@@ -163,6 +160,17 @@ export function parseLog(raw) {
       const [sha, subject, body] = entry.split("\x1f")
       return parseCommit({ sha, subject, body })
     })
+}
+
+/**
+ * `gh run list --workflow ci.yml --commit <sha> --json event,headBranch,conclusion,createdAt` output to a yes or no: the newest ci run
+ * of a push to main for that commit finished green. Pull request runs, other branches and runs still going do not count.
+ */
+export function hasGreenCi(runs) {
+  const pushes = runs.filter((run) => run.event === "push" && run.headBranch === "main")
+  if (pushes.length === 0) return false
+  const newest = pushes.reduce((a, b) => ((b.createdAt ?? "") > (a.createdAt ?? "") ? b : a))
+  return newest.conclusion === "success"
 }
 
 /** `gh release list --json tagName,isDraft` output to the state of one tag: only a published release counts as done. */

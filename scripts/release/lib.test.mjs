@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import {
+  hasGreenCi,
   latestTag,
   neutralizeMentions,
   parseCommit,
@@ -75,6 +76,44 @@ test("notes group by type with PR links and say how to upgrade", () => {
   assert.match(notes, /## Maintenance\n\n- \*\*repo:\*\* readme/)
   assert.match(notes, /compare\/v0\.2\.0\.\.\.v0\.3\.0/)
   assert.match(notes, /SKIFFR_VERSION=v0\.3\.0/)
+})
+
+test("notes name the previous release and fold perf, refactor, deps and untyped titles into one other section", () => {
+  const commits = [
+    c("feat(a): one (#1)"),
+    c("perf(b): two (#2)"),
+    c("refactor(c): three (#3)"),
+    c("chore(deps): bump next (#4)"),
+    c("Fix typo (#5)"),
+    c("fix(d): four (#6)"),
+  ]
+  const notes = renderNotes({ version: "0.6.0", previous: "v0.5.0", commits, repo: "FindMalek/skiffr" })
+  assert.ok(notes.startsWith("Changes since v0.5.0.\n"))
+  assert.deepEqual(
+    [...notes.matchAll(/^## (.+)$/gm)].map((m) => m[1]),
+    ["Features", "Fixes", "Other changes", "Upgrade"],
+  )
+  const other = notes.split("## Other changes")[1].split("## Upgrade")[0]
+  for (const n of [2, 3, 4, 5]) assert.match(other, new RegExp(`/pull/${n}\\)`))
+  assert.ok(renderNotes({ version: "0.1.0", previous: null, commits, repo: "o/r" }).startsWith("First release."))
+})
+
+test("a release needs the newest ci run of a push to main to be green", () => {
+  const run = (event, headBranch, conclusion, createdAt) => ({ event, headBranch, conclusion, createdAt })
+  assert.equal(hasGreenCi([]), false)
+  assert.equal(hasGreenCi([run("push", "main", "success", "2026-01-01T10:00:00Z")]), true)
+  assert.equal(hasGreenCi([run("push", "main", "failure", "2026-01-01T10:00:00Z")]), false)
+  assert.equal(hasGreenCi([run("push", "main", "", "2026-01-01T10:00:00Z")]), false)
+  assert.equal(hasGreenCi([run("pull_request", "main", "success", "2026-01-01T10:00:00Z")]), false)
+  assert.equal(hasGreenCi([run("push", "feature", "success", "2026-01-01T10:00:00Z")]), false)
+  // a green run followed by a red rerun on the same commit does not count
+  assert.equal(
+    hasGreenCi([
+      run("push", "main", "failure", "2026-01-01T11:00:00Z"),
+      run("push", "main", "success", "2026-01-01T10:00:00Z"),
+    ]),
+    false,
+  )
 })
 
 test("git log output is split into commits", () => {
