@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, test } from "bun:test"
+import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test"
 import { mkdtemp, readFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -33,6 +33,9 @@ import { DEMO_USER, SECOND_USER } from "./fixtures"
 import { assertPreviewSeedAllowed, SeedRefusedError } from "./guard"
 import { type PreviewSeedResult, SeedConflictError, seedPreview, tokenSecret } from "./preview"
 import { runPreviewSeed } from "./run"
+
+// every test here migrates and seeds a pglite db: the 5s default fails on a loaded ci runner
+setDefaultTimeout(30_000)
 
 const NOW = new Date("2026-11-12T15:00:00Z")
 const PASSWORD = "skiffr-preview-demo"
