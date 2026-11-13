@@ -3,7 +3,7 @@ title: Setup
 description: From a fresh clone to every app running locally.
 ---
 
-You need node 24, pnpm, bun and docker.
+This page is for working on skiffr. To just run it, use the one command in [install](/docs/install). You need node 24, pnpm, bun and docker.
 
 ```bash
 pnpm install
@@ -16,7 +16,7 @@ Edit `.env` before the first start. `BETTER_AUTH_SECRET` must be at least 32 cha
 
 `pnpm dev` runs `turbo dev`, which starts every workspace with a `dev` script: web, api, dashboard, docs and the extension (`wxt`, which opens a development browser). `pnpm dev --filter='!extension'` starts only the four apps. Run the extension on its own with `pnpm --filter extension dev`.
 
-`pnpm db:up` starts a local postgres (`pgvector/pgvector:pg17`) from `docker/docker-compose.yml`. The api applies migrations on start and, when `SEED=demo`, fills an empty database with sample data.
+`pnpm db:up` starts a local postgres (`pgvector/pgvector:pg17`) from `docker/docker-compose.yml`. The root `docker-compose.yml` is the self-hosting stack, not this one: do not run `docker compose up` in the repo root while developing, or it starts the released images next to your dev servers. The api applies migrations on start and, when `SEED=demo`, fills an empty database with sample data.
 
 The pgvector image is debian based, the old alpine based postgres image used a different libc, so the compose file mounts a new volume, `skiffr-pgvector-data`, and never reuses the old one. Never point the new image at an old alpine data directory, text indexes break silently. Remove the old dev volume (it holds the old data) with `docker volume rm docker_skiffr-pg`.
 
@@ -31,7 +31,7 @@ Sign in to the dashboard with `ADMIN_EMAIL` and `ADMIN_PASSWORD` from `.env`. Th
 
 ## Load the extension
 
-Build it, load it unpacked, create a token on the dashboard's Extension page and paste it in the extension options. The steps, the CI build option and what the extension does on a page are in [the extension](/docs/extension).
+Build it, load it unpacked, create a token on the dashboard's Extension page and paste it in the extension options. The steps and what the extension does on a page are in [the extension](/docs/extension). A running stack also serves its own matching zip at `http://localhost:3001/downloads` when it was built from a release.
 
 ## Working on one app
 
@@ -39,6 +39,10 @@ Build it, load it unpacked, create a token on the dashboard's Extension page and
 pnpm dev:web        # web and api
 pnpm dev:dashboard  # dashboard and api
 ```
+
+## Self-hosting stack from source
+
+`./scripts/setup.sh --build` writes `.env` once (secrets generated) and builds and starts the whole stack from your checkout with `docker-compose.build.yml`. Use a different `--port` when the dev servers are running. Tear it down with `docker compose down -v`.
 
 ## Before you push
 

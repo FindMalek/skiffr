@@ -15,7 +15,7 @@ pnpm dev --filter='!extension'
 
 `pnpm dev` also starts the extension's `wxt` dev server, which opens a development browser. Leave it out with `--filter='!extension'`, or run it alone with `pnpm --filter extension dev`.
 
-The full walkthrough, ports and extension loading are in the [README](README.md#quick-start).
+The full walkthrough, ports and extension loading are in the [README](README.md#quick-start). To run the released stack instead of developing, that page starts with one command.
 
 ## Branches, commits, pull requests
 
@@ -60,6 +60,10 @@ One focused test per behavior or bug, one that fails before the fix. Test throug
 | `ci` | the one required check, it passes only when all of the above did |
 
 `pr hygiene` checks the commit format, the issue link and attribution separately.
+
+## Releases
+
+Releases are cut by `.github/workflows/release.yml` after a green push to `main`, nobody tags by hand. The next version comes from the squash titles: `feat` is a minor, `fix`, `perf`, `refactor` and `deps` changes are patches, `!` or a `BREAKING CHANGE:` line is a minor while the version is `0.x`, and docs, ci, test and chore alone release nothing. So the PR title decides what users see in the release notes: write it for them. How to rehearse, force or roll back a release is in the [releasing docs](apps/docs/content/docs/releasing.mdx). The release scripts have tests: `pnpm test:release`.
 
 ## Areas that get extra review
 

@@ -3,11 +3,13 @@ title: The extension
 description: Install it, connect it to your api, and what it does on a page.
 ---
 
-The extension is a Manifest V3 Chrome extension. There is no Chrome Web Store listing and no release yet, so you build it or take a CI build, and load it unpacked. It needs Chrome 142 or a Chromium browser of the same age.
+The extension is a Manifest V3 Chrome extension. There is no Chrome Web Store listing yet (it is tracked in [issue 26](https://github.com/FindMalek/skiffr/issues/26)), so you load it unpacked. It needs Chrome 142 or a Chromium browser of the same age.
 
 ## Install
 
-Build it from the repo:
+The easy way, step by step with pictures of the clicks in words, is in [install](/docs/install): download the zip from your own server at `<api>/downloads` (the version matches your server), unzip it, and load the folder at `chrome://extensions` with Developer mode on. The zip is also attached to every [GitHub release](https://github.com/FindMalek/skiffr/releases) as `skiffr-extension-vX.Y.Z.zip`. An unpacked extension is not updated by Chrome: after a server update download it again, replace the files and press reload on its card.
+
+Or build it from the repo:
 
 ```bash
 pnpm --filter extension build

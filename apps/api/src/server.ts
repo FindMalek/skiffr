@@ -12,6 +12,7 @@ import { type Handler, withExtensionCors } from "./cors"
 import { GMAIL_ROUTES, handleGmail } from "./gmail"
 import { withSecurityHeaders } from "./headers"
 import { recordRequest } from "./telemetry"
+import { VERSION } from "./version"
 
 export type { Handler } from "./cors"
 
@@ -50,10 +51,19 @@ type Interceptors = NonNullable<NonNullable<ConstructorParameters<typeof RPCHand
  *   /gmail/connect, /gmail/callback  the Google consent for the Gmail job import (cookie session only, reached through the dashboard proxy)
  *   /telegram/webhook  Telegram bot updates (secret header checked)
  *   /health       for Dokploy and uptime checks
+ *   /version      release version and commit of this build, plus an update hint when UPDATE_CHECK is on
+ *   /downloads    the extension zip that matches this build
  */
 export function createServer(
   services: Services & { auth: Auth },
-  opts: { publicUrl: string; dashboardUrl?: string; extensionOrigins?: string[]; clientIp?: ClientIpConfig },
+  opts: {
+    publicUrl: string
+    dashboardUrl?: string
+    extensionOrigins?: string[]
+    clientIp?: ClientIpConfig
+    version?: () => Promise<Record<string, unknown>>
+    downloads?: (pathname: string) => Promise<Response | null>
+  },
 ) {
   const clientIp = opts.clientIp ?? DEFAULT_CLIENT_IP
   const peers = new WeakMap<Request, string>()
@@ -71,7 +81,7 @@ export function createServer(
         docsTitle: "Skiffr API",
         schemaConverters: [new ZodToJsonSchemaConverter()],
         specGenerateOptions: {
-          info: { title: "Skiffr API", version: "0.1.0" },
+          info: { title: "Skiffr API", version: VERSION },
           servers: [{ url: `${opts.publicUrl}/v1` }],
         },
       }),
@@ -106,6 +116,11 @@ export function createServer(
       getObservability().gauge("skiffr.db.up", db ? 1 : 0)
       return Response.json({ ok: db, db, env: services.config.deployEnv }, { status: db ? 200 : 503 })
     }
+    if (pathname === "/version" && opts.version) {
+      return Response.json(await opts.version(), { headers: { "cache-control": "no-store" } })
+    }
+    const download = await opts.downloads?.(pathname)
+    if (download) return download
     if (pathname.startsWith("/files/")) {
       if (!services.storage) return Response.json({ message: "Storage is not configured." }, { status: 404 })
       const location = services.storage.url(decodeURIComponent(pathname.slice("/files/".length)))

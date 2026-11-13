@@ -1,0 +1,124 @@
+---
+title: Install in 5 minutes
+description: One command runs the whole stack with Docker, then 60 seconds to load the extension.
+---
+
+You need [Docker](https://docs.docker.com/get-docker/) (Desktop on macOS and Windows, Engine with the compose plugin on Linux) and Chrome, or another Chromium browser of version 142 or newer (Edge, Brave, Arc). Firefox is not supported yet.
+
+## 1. Run one command
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/FindMalek/skiffr/main/install.sh | sh
+```
+
+The script makes a `skiffr/` folder, downloads the compose file of the latest release (checked against that release's `SHA256SUMS`), generates every secret into `skiffr/.env` (permissions `600`), pulls the images, starts everything, waits until it is healthy and prints:
+
+```text
+  dashboard   http://localhost:3002
+  api         http://localhost:3001   (the url to paste in the extension)
+  site        http://localhost:3000
+  docs        http://localhost:3003
+
+  sign in     admin@skiffr.local
+  password    <20 random characters>   (shown once, it is also in skiffr/.env)
+```
+
+It asks nothing. Run it again at any time: `.env` and the data are never overwritten, only missing keys are added.
+
+No curl, or you want the source? Clone and run the same thing:
+
+```bash
+git clone https://github.com/FindMalek/skiffr
+cd skiffr
+./scripts/setup.sh           # pulls the released images
+./scripts/setup.sh --build   # builds them from this checkout instead (several minutes)
+```
+
+### Options
+
+Pass them after `sh -s --` when piping: `curl ... | sh -s -- --port 4000`.
+
+| Option | What it does |
+| --- | --- |
+| `--port 4000` | site on 4000, api 4001, dashboard 4002, docs 4003 (default 3000 to 3003) |
+| `--domain skiffr.example.com` | serve on your own domain with automatic https, see below |
+| `--version v0.1.0` | pin a release (default `latest`, which `./skiffr update` follows) |
+| `--email you@example.com` | login of the first admin (default `admin@skiffr.local`) |
+| `--autoupdate` | also run the daily image updater, see [deploy](/docs/deploy#updates) |
+| `--no-start` | write the files and stop |
+| `--dir path` | install folder (default `./skiffr`) |
+
+### On localhost, why it works without a domain
+
+Every app is published on `127.0.0.1` on its own port, and the dashboard proxies the sign-in to the api, so the session cookie is first-party on `localhost`. The extension calls the api directly at `http://localhost:3001` with its token. Nothing is exposed to your network: the ports are bound to the loopback address, and the database has no published port at all. To reach it from another device use `--domain`, or set `SKIFFR_BIND=0.0.0.0` and the public urls in `.env` yourself.
+
+### Your own domain
+
+Point four DNS records at the server (`skiffr.example.com`, `dashboard.`, `api.` and `docs.` under it), open ports 80 and 443, then:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/FindMalek/skiffr/main/install.sh | sh -s -- --domain skiffr.example.com
+```
+
+A bundled Caddy gets the certificates from Let's Encrypt and proxies each name to its app. The extension then uses `https://api.skiffr.example.com`.
+
+## 2. Load the extension (60 seconds)
+
+Chrome does not install an extension from a file on its own, so this step is by hand. Your own server serves the extension that matches its version.
+
+1. Download `http://localhost:3001/downloads/skiffr-extension.zip` and **unzip it** into a folder you will keep. Chrome does not install zips, it loads an unzipped folder.
+2. Open `chrome://extensions` (Edge `edge://extensions`, Brave `brave://extensions`, Arc `arc://extensions`) and turn on **Developer mode** at the top right.
+3. Click **Load unpacked** and pick the unzipped folder.
+4. Pin the skiffr icon from the puzzle menu in the toolbar.
+
+Do not delete the folder: Chrome reads the extension from it.
+
+## 3. Connect it and apply
+
+1. Open the dashboard, sign in with the printed email and password and fill in your profile. A fill without a profile stops with a message.
+2. Open **Extension** in the dashboard and create a token. Copy it.
+3. Right-click the skiffr icon and choose **Options** (or `chrome://extensions`, Details, Extension options). Set the api url to the one the installer printed, paste the token and press **Test connection**.
+4. Open a job application form. A toast asks "Autofill this application?", press **Yes**. `Ctrl+Shift+F` (`Cmd+Shift+F` on macOS) fills the current page without the toast.
+
+Review what was filled: fields the model is unsure about are outlined in amber. Skiffr never submits a form, never clicks submit, next or apply buttons and never touches password or hidden inputs, you press the button yourself. What it does on a page is in [the extension](/docs/extension).
+
+First run checklist:
+
+- [ ] the dashboard loads and you are signed in
+- [ ] your profile is saved
+- [ ] a token is created and **Test connection** says connected
+- [ ] one real application form is filled and submitted by you
+
+AI keys are optional. Without them the profile, saved answers, the queue and saved-answer fills all work. To let the model map fields your saved answers do not cover, put `GROQ_API_KEY` in `skiffr/.env` ([get one](https://console.groq.com/keys)) and run `docker compose up -d` again. `OPENAI_API_KEY` adds similar-question suggestions. See [environment](/docs/environment) and [privacy](/docs/privacy) for what is sent.
+
+## Troubleshooting
+
+| Problem | Fix |
+| --- | --- |
+| `Cannot connect to the Docker daemon` | start Docker Desktop (Linux: `sudo systemctl start docker`), run the command again |
+| `permission denied` on the docker socket (Linux) | add yourself to the `docker` group and log in again, or run the installer with `sudo` |
+| `port 3000 is already in use` | run again with `--port 4000` |
+| `pull access denied`, or no release published yet | the images are on `ghcr.io/findmalek/skiffr-<app>`. Use the clone path with `--build`, or ask the maintainer to make the packages public |
+| the installer stops with "did not become healthy" | read the log it prints, then `docker compose logs`. A wrong value in `.env` makes the api refuse to start and says which one |
+| the extension cannot connect | the api url must be exactly the printed one, no trailing path. Open it plus `/health` in a browser, it must answer `"ok":true`. Run `docker compose ps` in the `skiffr/` folder |
+| the extension says the token is invalid or expired | create a new token in the dashboard, Extension, paste it again |
+| cannot sign in | the password is `ADMIN_PASSWORD` in `skiffr/.env`. The admin is reset to the `.env` values on every api start, so change the password there |
+| the extension is older than the server | download the zip again, replace the files in your folder and press reload on the skiffr card at `chrome://extensions` |
+| sign-in fails on a LAN address | the dashboard url must be the address you type in the browser. Use `localhost`, a domain, or set `WEB_URL`, `DASHBOARD_URL` and `API_PUBLIC_URL` in `.env` to it |
+
+## Update, back up, remove
+
+Run these inside the `skiffr/` folder (from a clone: `./scripts/skiffr`).
+
+| Command | What it does |
+| --- | --- |
+| `./skiffr update` | fetches the latest release's compose file (checksum verified) and images, restarts. The api migrates the database on start |
+| `./skiffr update --version v0.1.0` | the same for one release: how to roll back |
+| `./skiffr status` | what runs, the running version, whether a newer release exists |
+| `./skiffr logs api` | follow the logs of a service |
+| `./skiffr backup` | database dump to `./backups/skiffr-<time>.sql.gz`. Keep `.env` with it |
+| `./skiffr version` | the running version |
+| `docker compose down` | stop, data stays |
+| `docker compose down -v` | stop and delete all data, a full reset |
+
+To remove skiffr completely: `docker compose down -v`, then delete the folder. Restoring a backup, automatic updates and the rules for rollbacks are in [deploy](/docs/deploy#updates). Releases, versions and the extension zip come from [releasing](/docs/releasing). A Chrome Web Store listing, which would update the extension by itself, is tracked in [issue 26](https://github.com/FindMalek/skiffr/issues/26) and is not available yet.

@@ -1,0 +1,53 @@
+---
+title: Releasing
+description: How a release is cut, how versions are chosen and how to roll back.
+---
+
+Releases are automatic. Every push to `main` whose `ci` run is green goes through `.github/workflows/release.yml`. Nobody tags by hand and nothing red is ever released.
+
+## What a release contains
+
+| Asset | Where |
+| --- | --- |
+| docker images `ghcr.io/findmalek/skiffr-api`, `-web`, `-dashboard`, `-docs` | tags `vX.Y.Z`, `X.Y` and `latest`, for `linux/amd64` and `linux/arm64` |
+| `skiffr-extension-vX.Y.Z.zip` | the GitHub release, and baked into the api image at `/downloads` |
+| `docker-compose.yml`, `install.sh`, `skiffr` (the helper) | the GitHub release |
+| `SHA256SUMS` | the GitHub release. `install.sh` and `./skiffr update` verify the compose file and the helper against it |
+| release notes | the squash titles since the last release, grouped by type, each with its pull request link |
+
+The version is written into the `package.json` of every app at build time from the tag, which is the single source: the extension manifest, `GET /version` on the api and the image labels all carry it. `vX.Y.Z` image tags are published once and never moved.
+
+## How the next version is chosen
+
+From the commit titles on `main` since the last `vX.Y.Z` tag. While the major version is `0`:
+
+| Title | Bump |
+| --- | --- |
+| `feat(scope): ...` | minor, `0.2.1` to `0.3.0` |
+| `fix`, `perf`, `refactor`, `revert` | patch, `0.2.1` to `0.2.2` |
+| a `!` after the type (`feat(api)!: ...`) or a `BREAKING CHANGE:` line in the body | minor (major once the project is at `1.0`) |
+| anything with the scope `deps` (`chore(deps): ...`) | patch, dependencies change the images |
+| a title that does not follow `type(scope): subject` | patch, listed under Other changes |
+| `docs`, `ci`, `test`, `chore`, `build`, `style` | nothing |
+
+When only the last group landed there is no release, so a docs fix does not make everyone update. The first release is `v0.1.0`. A push to `main` that is not the newest commit by the time the workflow runs is skipped, the newer commit carries its changes.
+
+## Forcing, rehearsing, rolling back
+
+- **Rehearse:** Actions, release, Run workflow. `dry_run` is on by default: it plans the version, builds the extension and all eight images and pushes nothing. The plan and the notes are in the run summary.
+- **Force a release** (for example after a docs-only history): run the workflow with `dry_run` off and a `bump` of `patch`, `minor` or `major`. It still needs commits since the last tag.
+- **Rerun** is safe. A version that already has a GitHub release is skipped, an interrupted run is finished by running it again (the release is created last and updated in place).
+- **Roll a self-hosted server back:** `SKIFFR_VERSION=v0.1.2` in `.env`, then `docker compose up -d`, or `./skiffr update --version v0.1.2`. Migrations only add, so the older code runs on the newer schema.
+- **Undo a bad release:** fix forward with a `fix` commit, that releases a new patch. Do not delete tags or move image tags.
+
+## Checks before the first run in a fork or a new repo
+
+- the workflow only runs on `FindMalek/skiffr`, change the repository check in `release.yml` and the `IMAGE_PREFIX` for a fork
+- ghcr packages are private after their first push: open each of the four packages, Package settings, and make them public so self hosters can pull. The workflow warns when one is not public
+- it needs no secret beyond the automatic `GITHUB_TOKEN`, with `contents: write` only in the publish job and `packages: write` only in the image jobs
+
+The Chrome Web Store listing, which would also update the extension itself, is a separate piece of work ([issue 26](https://github.com/FindMalek/skiffr/issues/26)).
+
+## Testing the logic
+
+The version and notes logic is a plain module, `scripts/release/lib.mjs`, with tests in `scripts/release/lib.test.mjs`: `pnpm test:release`. See what the next release would be from your checkout without changing anything: `node scripts/release/plan.mjs`.

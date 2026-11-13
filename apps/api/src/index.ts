@@ -11,9 +11,11 @@ import { advisoryLeader, createScheduler, LOCKS } from "@skiffr/orpc/gmail"
 import { createWatchRuntime, createWatchScheduler } from "@skiffr/orpc/watch"
 import { createStorage } from "@skiffr/storage"
 import { ensureAdmin } from "./admin"
+import { createDownloads } from "./downloads"
 import { gmailFromEnv } from "./gmail-runtime"
 import { pruneRateLimits } from "./prune"
 import { createServer } from "./server"
+import { createUpdateCheck, VERSION } from "./version"
 
 const WATCH_TICK_MS = 5 * 60_000
 
@@ -42,7 +44,8 @@ const auth = createAuth({
     env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET
       ? { clientId: env.GITHUB_CLIENT_ID, clientSecret: env.GITHUB_CLIENT_SECRET }
       : undefined,
-  secureCookies: env.NODE_ENV === "production",
+  // Secure cookies need https: on a plain http self-host (localhost, a lan address) the browser would drop them.
+  secureCookies: env.NODE_ENV === "production" && env.DASHBOARD_URL.startsWith("https://"),
 })
 
 const adminId = await ensureAdmin(db, auth, env.ADMIN_EMAIL, env.ADMIN_PASSWORD)
@@ -58,6 +61,8 @@ if (env.NODE_ENV === "production" && !extensionOrigins?.length) {
 const gmail = gmailFromEnv(env)
 const watch = createWatchRuntime({ refreshMinutes: env.WATCH_REFRESH_MINUTES })
 const cv = env.CV_ENCRYPTION_KEY ? createCvRuntime({ encryptionKey: env.CV_ENCRYPTION_KEY }) : null
+
+const latestRelease = createUpdateCheck({ repo: env.GITHUB_REPO ?? "FindMalek/skiffr" })
 
 const fetch = createServer(
   {
@@ -92,6 +97,17 @@ const fetch = createServer(
   },
   {
     publicUrl: env.API_PUBLIC_URL,
+    downloads: createDownloads({
+      dir: env.DOWNLOADS_DIR ?? "downloads",
+      version: VERSION,
+      publicUrl: env.API_PUBLIC_URL,
+    }),
+    version: async () => ({
+      version: VERSION,
+      commit: env.SKIFFR_COMMIT ?? null,
+      updateCheck: env.UPDATE_CHECK === "true",
+      ...(env.UPDATE_CHECK === "true" ? await latestRelease(VERSION) : {}),
+    }),
     dashboardUrl: env.DASHBOARD_URL,
     extensionOrigins,
     clientIp: { header: env.CLIENT_IP_HEADER.toLowerCase(), trustedProxies: env.TRUSTED_PROXY_COUNT },
