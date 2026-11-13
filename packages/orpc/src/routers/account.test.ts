@@ -138,7 +138,7 @@ const EXPORT_KEYS: Record<string, string[]> = {
   gmailMessages: ["googleMessageId", "id", "jobsFound", "jobsNew", "modifiedAt", "outcome", "processedAt", "provider"],
   notes: ["body", "createdAt", "id", "pinned", "title", "updatedAt"],
   tokens: ["createdAt", "expiresAt", "id", "lastUsedAt", "name", "revokedAt"],
-  aiUsage: ["calls", "day", "inputTokens", "outputTokens"],
+  aiUsage: ["calls", "day", "inputTokens", "outputTokens", "verdicts"],
 }
 const SECRETS = ["token-hash-sentinel", "enc-sentinel", "verifier-sentinel", "etag-sentinel", "api-key-sentinel"]
 

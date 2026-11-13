@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { isDemographicOptions, isLearnableField, isSensitiveQuestion, isSensitiveSection } from "./learnable"
+import { isDemographicOptions, isLearnableField, isSensitiveQuestion, isSensitiveSection } from "./learnable-extended"
 
 const blocked = (label: string) => isSensitiveQuestion({ label }) && !isLearnableField({ label, type: "text" })
 const readable = (label: string) => !isSensitiveQuestion({ label }) && isLearnableField({ label, type: "text" })

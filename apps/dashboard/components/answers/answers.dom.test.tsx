@@ -119,6 +119,7 @@ test("a saved answer whose question is now private stays listed with a note and 
     rawLabel: "Do you consent to us keeping your data?",
     normalizedLabel: "do you consent to us keeping your data",
     value: "Yes",
+    sensitive: true,
   })
   const ordinary = answer({ id: "00000000-0000-4000-8000-000000000003", rawLabel: "Notice period" })
   await mount(<AnswerBank />, (client) => client.setQueryData(bankKey(orpc.answers.key()), [sensitive, ordinary]))
