@@ -63,7 +63,12 @@ export const EXPORTED: Spec[] = [
     single: true,
   },
   { section: "notes", table: notes, omit: ["userId"], order: ["createdAt", "id"] },
-  { section: "tokens", table: apiToken, omit: ["userId", "tokenHash", "prefix", "last4"], order: ["createdAt", "id"] },
+  {
+    section: "tokens",
+    table: apiToken,
+    omit: ["userId", "tokenHash", "prefix", "last4", "client", "clientVersion"],
+    order: ["createdAt", "id"],
+  },
   { section: "aiUsage", table: aiUsage, omit: ["userId"], order: ["day"] },
 ]
 
