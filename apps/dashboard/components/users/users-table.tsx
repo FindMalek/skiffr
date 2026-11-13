@@ -7,10 +7,12 @@ import { Input } from "@skiffr/ui/components/input"
 import { StatusBadge } from "@skiffr/ui/components/status-badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@skiffr/ui/components/table"
 import { ChevronLeftIcon, ChevronRightIcon, SearchIcon } from "lucide-react"
-import { useState } from "react"
+import { useId, useRef, useState } from "react"
 import { RelativeTime } from "@/components/time"
 import { paginate } from "@/lib/answers"
 import { filterUsers, limitSentence, USERS_PAGE_SIZE, userMarkers, usersSentence } from "@/lib/users"
+
+const PAGER_BUTTON = "aria-disabled:pointer-events-none aria-disabled:opacity-50"
 
 const roleText = (role: string | null): string => {
   const word = role ?? "user"
@@ -20,10 +22,10 @@ const roleText = (role: string | null): string => {
 function Identity({ row }: { row: AdminUser }) {
   return (
     <div className="flex min-w-0 flex-col gap-0.5">
-      <span dir="auto" className="truncate font-medium text-sm">
+      <span dir="auto" title={row.name} className="truncate font-medium text-sm">
         {row.name}
       </span>
-      <span dir="auto" className="truncate text-muted-foreground">
+      <span dir="auto" title={row.email} className="truncate text-muted-foreground">
         {row.email}
       </span>
     </div>
@@ -105,10 +107,18 @@ function UsersList({ rows }: { rows: AdminUser[] }) {
 export function UsersTable({ users, total }: { users: AdminUser[]; total: number }) {
   const [query, setQuery] = useState("")
   const [page, setPage] = useState(1)
+  const search = useRef<HTMLInputElement>(null)
+  const noteId = useId()
   const filtered = filterUsers(users, query)
   const view = paginate(filtered, page, USERS_PAGE_SIZE)
   const first = (view.page - 1) * USERS_PAGE_SIZE + 1
+  const last = first + view.rows.length - 1
   const limit = limitSentence(users.length, total)
+  // A pager button that has nothing to do stays focusable (aria-disabled, not disabled), so the key that was pressed
+  // never lands on an element that stops existing for the keyboard.
+  const go = (target: number) => {
+    if (target >= 1 && target <= view.pages) setPage(target)
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -118,8 +128,10 @@ export function UsersTable({ users, total }: { users: AdminUser[]; total: number
           aria-hidden="true"
         />
         <Input
+          ref={search}
           type="search"
           aria-label="Search users"
+          aria-describedby={limit ? noteId : undefined}
           className="pl-7"
           placeholder="Search name or email"
           value={query}
@@ -129,9 +141,17 @@ export function UsersTable({ users, total }: { users: AdminUser[]; total: number
           }}
         />
       </search>
+      {limit && (
+        <p id={noteId} className="text-muted-foreground">
+          {limit}
+        </p>
+      )}
 
       <p role="status" className="sr-only">
-        {usersSentence(filtered.length, users.length)}
+        {usersSentence(
+          { filtered: filtered.length, loaded: users.length, page: view.page, pages: view.pages, first, last },
+          limit !== null,
+        )}
       </p>
 
       {users.length === 0 ? (
@@ -145,14 +165,14 @@ export function UsersTable({ users, total }: { users: AdminUser[]; total: number
         <Empty className="border">
           <EmptyHeader>
             <EmptyTitle>No users match</EmptyTitle>
-            <EmptyDescription>Try another name or email.</EmptyDescription>
+            <EmptyDescription>Try another name or email.{limit ? ` ${limit}` : ""}</EmptyDescription>
           </EmptyHeader>
           <Button
             variant="outline"
             size="sm"
             onClick={() => {
               setQuery("")
-              setPage(1)
+              search.current?.focus()
             }}
           >
             Clear search
@@ -164,10 +184,16 @@ export function UsersTable({ users, total }: { users: AdminUser[]; total: number
           <UsersList rows={view.rows} />
           <nav aria-label="User pages" className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-muted-foreground tabular-nums">
-              {first}-{first + view.rows.length - 1} of {filtered.length}
+              {first}-{last} of {filtered.length}
             </p>
             <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" disabled={view.page <= 1} onClick={() => setPage(view.page - 1)}>
+              <Button
+                variant="outline"
+                size="sm"
+                className={PAGER_BUTTON}
+                aria-disabled={view.page <= 1 || undefined}
+                onClick={() => go(view.page - 1)}
+              >
                 <ChevronLeftIcon data-icon="inline-start" />
                 Previous
               </Button>
@@ -177,8 +203,9 @@ export function UsersTable({ users, total }: { users: AdminUser[]; total: number
               <Button
                 variant="outline"
                 size="sm"
-                disabled={view.page >= view.pages}
-                onClick={() => setPage(view.page + 1)}
+                className={PAGER_BUTTON}
+                aria-disabled={view.page >= view.pages || undefined}
+                onClick={() => go(view.page + 1)}
               >
                 Next
                 <ChevronRightIcon data-icon="inline-end" />
@@ -187,7 +214,6 @@ export function UsersTable({ users, total }: { users: AdminUser[]; total: number
           </nav>
         </>
       )}
-      {limit && <p className="text-muted-foreground">{limit}</p>}
     </div>
   )
 }

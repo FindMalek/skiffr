@@ -18,11 +18,13 @@ export function userMarkers(row: AdminUser): ("banned" | "unverified")[] {
   return markers
 }
 
-/** Announced to screen readers after the search changes. */
-export function usersSentence(shown: number, loaded: number): string {
-  if (loaded === 0) return "No users."
-  if (shown === 0) return "No users match."
-  return `${shown} of ${loaded} users.`
+export type UsersView = { filtered: number; loaded: number; page: number; pages: number; first: number; last: number }
+
+/** The one live region: what a screen reader hears after the search changes or a page button is pressed. */
+export function usersSentence(view: UsersView, limited: boolean): string {
+  if (view.loaded === 0) return "No users."
+  if (view.filtered === 0) return `No users match.${limited ? " Only the newest accounts are searched." : ""}`
+  return `Page ${view.page} of ${view.pages}, showing ${view.first}-${view.last} of ${view.filtered} users.`
 }
 
 /** The api returns the newest accounts only; say so instead of presenting them as everyone. */

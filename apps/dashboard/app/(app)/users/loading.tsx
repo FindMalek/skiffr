@@ -6,7 +6,7 @@ export default function Loading() {
     <>
       <PageHeader
         title="Users"
-        description="Every account on this server, newest first. Admins only."
+        description="The newest accounts on this server, newest first. Admins only."
         breadcrumb={[{ label: "Admin" }, { label: "Users" }]}
       />
       <div aria-busy="true" className="flex flex-col gap-4 p-4 md:p-6">

@@ -75,7 +75,70 @@ test("a search with no result says so and clearing it brings the table back", as
   expect(rows()).toHaveLength(10)
 })
 
-test("more accounts than the api returned is said, not hidden", async () => {
+test("more accounts than the api returned is said above the table and next to an empty search", async () => {
   await mount(twelve, 140)
-  expect(host.textContent).toContain("12 newest of 140")
+  const noteId = host.querySelector("input")?.getAttribute("aria-describedby") ?? ""
+  const note = host.querySelector(`[id="${noteId}"]`)
+  expect(note?.textContent).toContain("12 newest of 140")
+  await type("nobody here")
+  expect(host.querySelector("[data-slot=empty]")?.textContent).toContain("12 newest of 140")
+  expect(host.querySelector("[role=status]")?.textContent).toBe(
+    "No users match. Only the newest accounts are searched.",
+  )
+})
+
+test("a new search goes back to page 1 even when the old page still exists", async () => {
+  await mount(twelve)
+  await press("Next")
+  expect(rows()).toHaveLength(2)
+  await type("person") // all 12 match, so page 2 would still exist: only the reset shows the first 10
+  expect(rows()).toHaveLength(10)
+  expect(host.textContent).toContain("Page 1 of 2")
+})
+
+test("paging is announced with the page and the range", async () => {
+  await mount(twelve)
+  const status = () => host.querySelector("[role=status]")?.textContent
+  expect(status()).toBe("Page 1 of 2, showing 1-10 of 12 users.")
+  await press("Next")
+  expect(status()).toBe("Page 2 of 2, showing 11-12 of 12 users.")
+})
+
+const button = (label: string) =>
+  Array.from(host.querySelectorAll("button")).find((b) => b.textContent?.includes(label)) as HTMLButtonElement
+
+test("a pager button that has nothing left to do keeps the keyboard focus", async () => {
+  await mount(twelve)
+  const next = button("Next")
+  const previous = button("Previous")
+  expect(previous.getAttribute("aria-disabled")).toBe("true")
+  expect(previous.disabled).toBe(false) // a disabled button drops focus to the body
+  act(() => next.focus())
+  await press("Next")
+  expect(next.getAttribute("aria-disabled")).toBe("true")
+  expect(next.disabled).toBe(false)
+  expect(document.activeElement).toBe(next)
+  await press("Next") // already last: nothing happens
+  expect(host.textContent).toContain("Page 2 of 2")
+  act(() => previous.focus())
+  await press("Previous")
+  expect(host.textContent).toContain("Page 1 of 2")
+  expect(document.activeElement).toBe(previous)
+  await press("Previous")
+  expect(host.textContent).toContain("Page 1 of 2")
+})
+
+test("clear search puts the keyboard in the search field, not on a button that is gone", async () => {
+  await mount(twelve)
+  await type("nobody here")
+  act(() => button("Clear search").focus())
+  await press("Clear search")
+  expect(document.activeElement).toBe(host.querySelector("input"))
+  expect(rows()).toHaveLength(10)
+})
+
+test("a long name or email can be read in full from its title", async () => {
+  const email = `${"x".repeat(120)}@test.dev`
+  await mount([person(1, { email })])
+  expect(host.querySelector(`tbody [title="${email}"]`)).not.toBeNull()
 })
