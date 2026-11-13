@@ -7,12 +7,14 @@
     "dev": "bun --watch --env-file=../../.env src/index.ts",
     "start": "bun src/index.ts",
     "gmail:sync": "bun src/gmail-sync-cli.ts",
+    "seed:preview": "bun --env-file=../../.env src/seed-preview-cli.ts",
     "check-types": "tsc --noEmit",
     "test": "bun test"
   },
   "dependencies": {
     "@skiffr/ai": "workspace:*",
     "@skiffr/auth": "workspace:*",
+    "@skiffr/common": "workspace:*",
     "@skiffr/db": "workspace:*",
     "@skiffr/env": "workspace:*",
     "@skiffr/observability": "workspace:*",

@@ -190,6 +190,9 @@ importers:
       '@skiffr/auth':
         specifier: workspace:*
         version: link:../../packages/auth
+      '@skiffr/common':
+        specifier: workspace:*
+        version: link:../../packages/common
       '@skiffr/db':
         specifier: workspace:*
         version: link:../../packages/db

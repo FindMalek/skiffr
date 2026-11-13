@@ -15,11 +15,13 @@ description: Every command in the root package.json.
 | `pnpm test` | tests in every package |
 | `pnpm e2e` | build the extension and run the playwright suite in `apps/e2e` |
 | `pnpm snapshot <url>` | turn a public application page into a sanitized fixture, see [form snapshots](/docs/snapshots) |
+| `pnpm --filter e2e smoke` | read only run of the extension against real public application pages, see [smoke tests](/docs/smoke) |
 | `pnpm zip` | zip the extension |
 | `pnpm db:up` / `db:down` | local postgres |
 | `pnpm db:generate` | write a migration from the schema |
 | `pnpm db:migrate` | apply migrations |
 | `pnpm db:seed` | seed the demo data |
+| `pnpm --filter api seed:preview` | seed the full preview dataset, see [seeding](/docs/seeding) |
 | `pnpm db:studio` | browse the database |
 | `pnpm ui:add <component>` | add a shadcn component to `packages/ui` |
 

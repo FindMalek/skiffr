@@ -6,10 +6,12 @@
     "snapshots",
     "playground",
     "drift",
+    "smoke",
     "dashboard",
     "environment",
     "structure",
     "scripts",
+    "seeding",
     "deploy",
     "previews",
     "learning",
@@ -17,6 +19,7 @@
     "sources",
     "cv-tailoring",
     "observability",
-    "privacy"
+    "privacy",
+    "roadmap"
   ]
 }
