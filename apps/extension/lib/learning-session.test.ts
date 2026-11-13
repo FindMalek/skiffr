@@ -472,7 +472,7 @@ describe("learning session", () => {
         $("#app").dispatchEvent(
           trusted(new (window as never as { Event: typeof Event }).Event("submit", { bubbles: true })),
         )
-      return { sent, submit, $, window }
+      return { sent, submit, $, window, session, document, fields, mapping, summary }
     }
 
     test("is not recorded while it stays as the fill left it: the field matches, the national number teaches nothing", async () => {
@@ -481,6 +481,14 @@ describe("learning session", () => {
       submit()
       expect(byLabel(sent[0], "Phone")).toMatchObject({ type: "tel", filledValue: "", finalValue: "" })
       expect(JSON.stringify(sent)).not.toContain("912")
+    })
+
+    test("is recorded again once a later fill leaves it as the page shows it", async () => {
+      const { sent, submit, session, document, fields, mapping, summary } = await phone()
+      const plain = { ...summary, fields: summary.fields.map(({ moved: _moved, ...field }) => field) }
+      session.begin({ root: document, fields, mapping, summary: plain })
+      submit()
+      expect(byLabel(sent[0], "Phone")).toMatchObject({ filledValue: "912 345 678", finalValue: "912 345 678" })
     })
 
     test("is recorded as typed when the person changes it", async () => {

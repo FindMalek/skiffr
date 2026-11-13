@@ -149,18 +149,25 @@ function dialLength(digits: string): number {
 
 const SHOWN_DIGITS_MIN = 5
 
+/** Calling codes of countries that write the national number with a leading 0 (the trunk prefix), which a picker may show. */
+const TRUNK_ZERO_DIAL = new Set(
+  "20 27 31 32 33 36 40 41 43 44 46 49 61 64 81 82 90 91 92 212 213 353 358 380 971 972".split(" "),
+)
+
 /**
  * A phone widget with a country picker keeps the dial code out of the input: "+351 912 345 678" shows as "912 345 678",
- * or "07911 123456" for "+44 7911 123456" when it adds the trunk prefix. What is left must be exactly the number without
- * its dial code, so a number the page cut short is not kept.
+ * or "07911 123456" for "+44 7911 123456" when the country writes its numbers with a trunk 0. What is left must be
+ * exactly the number without its dial code, so a number the page cut short is not kept.
  */
 export function movedDialCode(shown: string, wanted: string): boolean {
   if (!wanted.trim().startsWith("+")) return false
   const digits = (text: string) => text.replace(/\D/g, "")
   const all = digits(wanted)
-  const rest = all.slice(dialLength(all))
+  const length = dialLength(all)
+  const rest = all.slice(length)
   const local = digits(shown)
-  return rest.length >= SHOWN_DIGITS_MIN && (local === rest || local === `0${rest}`)
+  if (rest.length < SHOWN_DIGITS_MIN) return false
+  return local === rest || (TRUNK_ZERO_DIAL.has(all.slice(0, length)) && local === `0${rest}`)
 }
 
 export function splitList(value: string | string[]): string[] {

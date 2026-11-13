@@ -154,12 +154,25 @@ function isConsentCover(hit: Element, ctx: VisibilityCtx): boolean {
   return known
 }
 
-function accepts(hit: Element | null, el: HTMLElement, ctx: VisibilityCtx): boolean {
-  if (!hit) return false
-  if (hit === el || el.contains(hit)) return true
+/** What a box in front of the field means for the person: it is the field or its label, a cookie layer to look through, or in the way. */
+function verdict(hit: Element, el: HTMLElement, ctx: VisibilityCtx): "field" | "consent" | "blocks" {
+  if (hit === el || el.contains(hit)) return "field"
   const label = hit.closest("label")
-  if (label && (label.contains(el) || (el.id !== "" && label.getAttribute("for") === el.id))) return true
-  return isConsentCover(hit, ctx)
+  if (label && (label.contains(el) || (el.id !== "" && label.getAttribute("for") === el.id))) return "field"
+  return isConsentCover(hit, ctx) ? "consent" : "blocks"
+}
+
+/** The top box decides, unless it is a cookie layer: then everything under the point is read, so a plain cover below it still counts. */
+function reaches(root: Document | ShadowRoot, x: number, y: number, el: HTMLElement, ctx: VisibilityCtx): boolean {
+  const top = root.elementFromPoint(x, y)
+  if (!top) return false
+  const first = verdict(top, el, ctx)
+  if (first !== "consent") return first === "field"
+  for (const hit of root.elementsFromPoint?.(x, y) ?? []) {
+    const seen = verdict(hit, el, ctx)
+    if (seen !== "consent") return seen === "field"
+  }
+  return false
 }
 
 function covered(el: HTMLElement, rect: DOMRect, ctx: VisibilityCtx): boolean {
@@ -170,7 +183,7 @@ function covered(el: HTMLElement, rect: DOMRect, ctx: VisibilityCtx): boolean {
   const seen = reachable(el, rect, ctx, true)
   if (!seen) return false
   for (const [fx, fy] of SAMPLES) {
-    if (accepts(root.elementFromPoint(seen.left + seen.width * fx, seen.top + seen.height * fy), el, ctx)) return false
+    if (reaches(root, seen.left + seen.width * fx, seen.top + seen.height * fy, el, ctx)) return false
   }
   return true
 }

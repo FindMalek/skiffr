@@ -10,6 +10,8 @@
   #banner { position: fixed; top: 0; left: 0; right: 0; height: 12px; background: #eee; opacity: 0.9; z-index: 50; }
 </style>
 <div id="banner"></div>
+<!-- a real cookie layer over the whole page: it is looked through, so every cover below it still hides its field -->
+<div><div id="cc-back" style="position:fixed;inset:0;z-index:100;background:#000;opacity:.5"></div><div role="dialog" aria-label="Cookie consent" style="position:fixed;left:0;right:0;bottom:0;z-index:101;height:30px;background:#fff"><button type="button">Decline all</button></div></div>
 <form id="app" onsubmit="event.preventDefault(); window.__submitted = true"></form>
 <script>
   const trap = (n, css) => `<input aria-label="TRAP ${n}" name="trap${n}" data-trap="${n}" ${css}>`
