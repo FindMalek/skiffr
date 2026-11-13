@@ -35,3 +35,9 @@ Paste a job link, with an optional title and company, or let [Gmail](/docs/gmail
 ## Stats
 
 Applications per day and week, the queue funnel, replies by the furthest stage reached, breakdowns by source, ATS, match score and role, time to apply, and an autofill section: fields skiffr filled and whether you left, corrected or cleared them. Pick a range at the top. Percentages only show from 5 applications or filled fields, before that they would be noise. The autofill section counts the fields recorded after a skiffr fill, so it fills up as you use the extension. Fields skiffr did not touch are not counted.
+
+## Activity feed
+
+`GET /v1/activity` (`activity.list`, session only, the extension token can't call it) lists what happened in your account, newest first, in pages: jobs queued per source and hour, applications and the stage they reached, answers learned or corrected, fields filled per site and hour, and failed Gmail syncs and source runs, and tokens that expired. Pass `since` to see only what happened at or after it, and `cursor` from the last page to get the next one. Keep `since` the same while paging: a cursor is not tied to it. Jobs queued and fields filled are counted per UTC hour and shown at the start of that hour, or at `since` when `since` falls inside the hour (only the rows from `since` on are counted then).
+
+It is built from rows skiffr already keeps, so there is nothing extra stored and nothing to purge. It shows counts and short labels: never an answer or field value, a job link, an email address or a token. Text from pages and emails has hidden and direction-changing characters shown as code points and is cut to 120 characters. It looks back 30 days at most. A successful Gmail sync or source run is not an event of its own: the jobs it queued are.
