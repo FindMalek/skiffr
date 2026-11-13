@@ -2,6 +2,7 @@ import { ORPCError } from "@orpc/client"
 import {
   AI_BUDGET_EXHAUSTED,
   AI_FIELDS_MAX,
+  AI_NOT_CONFIGURED,
   type FieldDescriptor,
   type FieldMapping,
   fieldDescriptorSchema,
@@ -71,6 +72,7 @@ export function classify(error: unknown): FillErrorCode {
     if (error.status === 412) return "no-profile"
     if (error.status === 429) return error.code === AI_BUDGET_EXHAUSTED ? "budget" : "busy"
     if (error.status === 400) return "invalid"
+    if (error.code === AI_NOT_CONFIGURED) return "no-ai-key"
     if (error.status >= 500) return "unavailable"
     return "failed"
   }
