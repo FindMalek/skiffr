@@ -15,10 +15,23 @@ const count = (fallback: number, max = 2_147_483_647) =>
 const schema = z.object({
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
   PORT: z.coerce.number().default(3001),
-  /** "production", "pr-<n>" for previews, or "local". */
+  /** "production", "pr-<n>" for previews, or "local". The preview seed only runs for exactly `local` or `pr-<n>`. */
   DEPLOY_ENV: z.string().default("local"),
   DATABASE_URL: z.string().min(1),
-  SEED: z.enum(["none", "demo"]).default("demo"),
+  /** `demo` seeds the notes example into an empty database, `preview` the full demo dataset (previews and local dev only, see the seeding docs). */
+  SEED: z.enum(["none", "demo", "preview"]).default("demo"),
+  /** The password of the seeded preview users. Only read for `SEED=preview`; the default is documented and public, so it only works where the seed itself is allowed. */
+  SEED_DEMO_PASSWORD: z.string().min(10).max(128).optional(),
+  /** `on` wipes the preview users and their data before seeding them again, so the dates move to now. */
+  SEED_RESET: z.enum(["on", "off"]).default("off"),
+  /** Where the seed writes its links json (credentials and test urls) for the preview tooling. Unset writes no file. */
+  SEED_LINKS_PATH: optional,
+  /** The Reactive Resume the seeded cv connection points at: a mock or a real instance. */
+  SEED_CV_URL: z.url().optional(),
+  /** Base url of the playground app: queued seeded jobs and their site profiles point at it. Unset uses example.invalid hosts. */
+  PLAYGROUND_URL: z.url().optional(),
+  /** Lets `SEED=preview` run on a production build (NODE_ENV=production) when `DEPLOY_ENV` is `local`. Any other `DEPLOY_ENV` than `local` or `pr-<n>` is refused regardless. */
+  SEED_ALLOW_PRODUCTION_BUILD: z.enum(["yes"]).optional(),
 
   /** Public origins: the api's own, and the two apps that proxy to it. */
   API_PUBLIC_URL: z.url().default("http://localhost:3001"),
@@ -75,6 +88,18 @@ const schema = z.object({
   AI_DAILY_TOKENS: count(1_000_000),
   /** Model calls the whole server may make per UTC day, all users together: the guard against many free accounts. 0 means no limit. */
   AI_GLOBAL_DAILY_CALLS: count(0),
+
+  /** Optional, all off until set. GlitchTip (Sentry compatible) error reports: the project's dsn. */
+  GLITCHTIP_DSN: z.url().optional(),
+  /** OTLP/HTTP base up to the org, e.g. `http://openobserve:5080/api/default`. Request logs, metrics and model call spans go here. */
+  OTEL_EXPORTER_OTLP_ENDPOINT: z.url().optional(),
+  /** `key=value,key=value`, e.g. `authorization=Basic <base64>,stream-name=skiffr`. A secret. */
+  OTEL_EXPORTER_OTLP_HEADERS: optional,
+  /** Umami base url and website id for the api's own product events (counts only, no ids). */
+  UMAMI_URL: z.url().optional(),
+  UMAMI_WEBSITE_ID: z.uuid().optional(),
+  /** `true` adds prompts and answers to model call spans. They hold personal data: leave it off unless the collector is yours and you need it. */
+  AI_TRACE_CAPTURE_CONTENT: z.enum(["true", "false"]).default("false"),
 
   /** Where the api finds the client address: the header the proxy in front sets, and how many proxies append to it. 0 ignores the header and uses the connection's own address. */
   CLIENT_IP_HEADER: z

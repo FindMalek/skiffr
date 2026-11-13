@@ -6,6 +6,7 @@ import { siteKey } from "@/lib/detect/ats"
 import { createFrameTracker, type FrameTracker } from "@/lib/detect/frames"
 import { createFillRequestHandler } from "@/lib/fill-request"
 import { createFillService } from "@/lib/fill-service"
+import { createHeartbeat } from "@/lib/heartbeat"
 import { createLearningRecordHandler } from "@/lib/learning-record"
 import {
   type FillMessage,
@@ -20,7 +21,7 @@ import {
   type SiteDisabledResponse,
 } from "@/lib/messages"
 import { createNextJobHandler } from "@/lib/next-job"
-import { disableNextJobOffers, disableSite, getDisabledSites, getNoNextJobSites } from "@/lib/storage"
+import { disableNextJobOffers, disableSite, getDisabledSites, getNoNextJobSites, getSettings } from "@/lib/storage"
 
 const BADGE_MS = 3000
 const NO_RECEIVER = "Receiving end does not exist"
@@ -227,4 +228,6 @@ export default defineBackground(() => {
   })
   void setBadge("")
   void hideStorageFromContentScripts()
+  // The worker wakes for every fill and message, so a beat here is a timer without the alarms permission.
+  void createHeartbeat({ settings: getSettings, call: (run) => apiFetch(run), area: browser.storage.session })()
 })

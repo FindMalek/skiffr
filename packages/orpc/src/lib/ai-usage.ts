@@ -3,6 +3,7 @@ import { AiModelError, ModelBudgetError } from "@skiffr/ai"
 import { AI_BUDGET_EXHAUSTED } from "@skiffr/common/constants"
 import type { AiUsage } from "@skiffr/common/schemas"
 import { aiUsage, aiUsageGlobal, type Db } from "@skiffr/db"
+import { getObservability } from "@skiffr/observability"
 import { type EmbeddingModel, type LanguageModel, wrapEmbeddingModel, wrapLanguageModel } from "ai"
 import { and, eq, sql } from "drizzle-orm"
 import { safeErrorFields } from "./errors"
@@ -127,6 +128,16 @@ function meter(context: AiUsageContext) {
   }
 }
 
+/** The model and provider ids only: the span never sees more of the model object. */
+function traceInfo(operation: "chat" | "embed", model: unknown) {
+  const { modelId, provider } = (model ?? {}) as { modelId?: unknown; provider?: unknown }
+  return {
+    operation,
+    model: typeof modelId === "string" ? modelId : "unknown",
+    provider: typeof provider === "string" ? provider : undefined,
+  }
+}
+
 /**
  * The only way a procedure gets a model: every request to the provider (chat and embeddings alike) first takes a slot of
  * the user's daily budget, nothing is sent once it is spent, and afterwards the tokens the provider reports (or a guess
@@ -144,15 +155,22 @@ export function budgetedModels(context: AiUsageContext, models: AiModels): AiMod
       ? wrapLanguageModel({
           model,
           middleware: {
-            wrapGenerate: async ({ doGenerate, params }) => {
-              const record = await slot()
-              const result = await doGenerate()
-              await record(
-                tokenCount(result.usage.inputTokens.total, params.prompt),
-                tokenCount(result.usage.outputTokens.total, result.content),
-              )
-              return result
-            },
+            wrapGenerate: ({ doGenerate, params }) =>
+              getObservability().traceAi(traceInfo("chat", model), async (span) => {
+                const record = await slot()
+                const result = await doGenerate()
+                const input = tokenCount(result.usage.inputTokens.total, params.prompt)
+                const output = tokenCount(result.usage.outputTokens.total, result.content)
+                span.record({
+                  inputTokens: input,
+                  outputTokens: output,
+                  finishReason: result.finishReason?.unified,
+                  prompt: params.prompt,
+                  completion: result.content,
+                })
+                await record(input, output)
+                return result
+              }),
             wrapStream: async () => {
               throw new Error("Streaming is not metered.")
             },
@@ -163,12 +181,15 @@ export function budgetedModels(context: AiUsageContext, models: AiModels): AiMod
       ? wrapEmbeddingModel({
           model: embeddingModel as Parameters<typeof wrapEmbeddingModel>[0]["model"],
           middleware: {
-            wrapEmbed: async ({ doEmbed, params }) => {
-              const record = await slot()
-              const result = await doEmbed()
-              await record(tokenCount(result.usage?.tokens, params.values), 0)
-              return result
-            },
+            wrapEmbed: ({ doEmbed, params }) =>
+              getObservability().traceAi(traceInfo("embed", embeddingModel), async (span) => {
+                const record = await slot()
+                const result = await doEmbed()
+                const tokens = tokenCount(result.usage?.tokens, params.values)
+                span.record({ inputTokens: tokens, prompt: params.values })
+                await record(tokens, 0)
+                return result
+              }),
           },
         })
       : null,

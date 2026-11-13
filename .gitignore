@@ -20,3 +20,5 @@ next-env.d.ts
 .wxt/
 playwright-report/
 test-results/
+
+seed-links.json
