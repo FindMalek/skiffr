@@ -5,6 +5,8 @@ description: Optional error reports, analytics, logs and model call traces, and 
 
 Everything here is off until its variable is set. An instance without any of it behaves as before, makes no request to a third party and has no extra dependency on the hot path. Web, docs and dashboard still load `/analytics.js` from their own origin, which is an empty comment while Umami is unset. Privacy is the promise of the product, so each sink sends from an allowlist: a field label, a form value, resume or job text, an email or a token has no key to travel under.
 
+Where to look when something breaks, the OpenObserve dashboards and saved views, copy paste queries and the GlitchTip workflow are in the [observability tour](/docs/observability-tour).
+
 ## What to use
 
 | Tool | Decision | Why |
@@ -62,6 +64,10 @@ At the time of writing the production instance was wired to the self hosted stac
 - OpenObserve: the api reaches it over the swarm network at `http://openobserve:5080/api/default`. The open source build only has admin and root roles, so an ingest only user cannot be made. The skiffr user is an admin on the `default` org, so treat the header as a secret. Passwords need upper and lower case, a digit and a special character. `OTEL_EXPORTER_OTLP_HEADERS` contains a space, keep the whole value on one env line.
 - A test record named `skiffr_ops_check` sits in the `skiffr` logs stream from the first ingest check. It is harmless.
 - `scripts/dokploy-bootstrap.mjs` only fills keys that are not set yet, so it cannot rotate a value that is already there.
+
+## Looking at it
+
+The dashboards, saved log views, stream settings and alerts for OpenObserve are json files in `ops/openobserve/`, imported with `sh ops/openobserve/import.sh`. GlitchTip has data scrubbing on and a new issue rule per project. All of it is described in the [observability tour](/docs/observability-tour).
 
 ## Not done
 

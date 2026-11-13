@@ -1,0 +1,101 @@
+{
+  "view_name": "skiffr auth and rate limits",
+  "view_type": "logs",
+  "data": {
+    "organizationIdentifier": "default",
+    "runQuery": false,
+    "loading": false,
+    "loadingHistogram": false,
+    "loadingCounter": false,
+    "loadingStream": false,
+    "loadingSavedView": false,
+    "communicationMethod": "streaming",
+    "meta": {
+      "logsVisualizeToggle": "logs",
+      "refreshInterval": 0,
+      "refreshIntervalLabel": "Off",
+      "showFields": true,
+      "showQuery": true,
+      "showHistogram": true,
+      "showPatterns": false,
+      "showDetailTab": false,
+      "showTransformEditor": false,
+      "searchApplied": false,
+      "toggleSourceWrap": false,
+      "sqlMode": false,
+      "quickMode": false,
+      "isFtsDefaultColumn": false,
+      "queryEditorPlaceholderFlag": true,
+      "functionEditorPlaceholderFlag": true,
+      "resultGrid": {
+        "rowsPerPage": 50,
+        "wrapCells": true,
+        "manualRemoveFields": false,
+        "chartInterval": "1 second",
+        "chartKeyFormat": "HH:mm:ss",
+        "navigation": {
+          "currentRowIndex": 0
+        },
+        "showPagination": true
+      },
+      "jobId": "",
+      "jobRecords": "100",
+      "pageType": "logs",
+      "regions": [],
+      "clusters": [],
+      "useUserDefinedSchemas": "user_defined_schema",
+      "hasUserDefinedSchemas": false,
+      "toggleFunction": false
+    },
+    "data": {
+      "query": "http_status_code in (401, 403, 429)",
+      "histogramQuery": "",
+      "parsedQuery": {},
+      "errorMsg": "",
+      "errorDetail": "",
+      "errorCode": 0,
+      "stream": {
+        "loading": false,
+        "selectedStream": ["skiffr"],
+        "selectedStreamFields": [],
+        "selectedFields": [
+          "severity",
+          "http_status_code",
+          "http_method",
+          "http_route",
+          "duration_ms",
+          "request_id",
+          "body"
+        ],
+        "filterField": "",
+        "addToFilter": "",
+        "addToFilterMode": "replace",
+        "removeFilterField": "",
+        "streamType": "logs",
+        "interestingFieldList": [],
+        "userDefinedSchema": []
+      },
+      "resultGrid": {
+        "currentPage": 1,
+        "columns": [],
+        "colOrder": {
+          "skiffr": ["severity", "http_status_code", "http_method", "http_route", "duration_ms", "request_id", "body"]
+        },
+        "colSizes": {}
+      },
+      "histogramInterval": 0,
+      "transformType": "function",
+      "selectedTransform": null,
+      "editorValue": "",
+      "datetime": {
+        "startTime": 0,
+        "endTime": 0,
+        "relativeTimePeriod": "1h",
+        "type": "relative"
+      },
+      "tempFunctionName": "",
+      "tempFunctionContent": "",
+      "timezone": "UTC"
+    }
+  }
+}

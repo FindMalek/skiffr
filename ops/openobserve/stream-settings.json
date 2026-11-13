@@ -1,0 +1,26 @@
+{
+  "full_text_search_keys": {
+    "add": ["body"],
+    "remove": []
+  },
+  "index_fields": {
+    "add": [
+      "severity",
+      "http_route",
+      "http_method",
+      "http_status_code",
+      "http_status_class",
+      "request_id",
+      "service_name"
+    ],
+    "remove": []
+  },
+  "bloom_filter_fields": {
+    "add": ["request_id"],
+    "remove": []
+  },
+  "distinct_value_fields": {
+    "add": ["severity", "http_route", "http_method", "http_status_code", "http_status_class"],
+    "remove": []
+  }
+}

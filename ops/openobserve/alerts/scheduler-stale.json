@@ -1,0 +1,36 @@
+{
+  "name": "skiffr_scheduler_stale",
+  "description": "a scheduler job (gmail or watch) has not finished ok for 30 minutes. watch ticks every 5 minutes, gmail every 15",
+  "stream_type": "metrics",
+  "stream_name": "skiffr_scheduler_last_success_seconds",
+  "is_real_time": false,
+  "query_condition": {
+    "type": "promql",
+    "sql": null,
+    "conditions": null,
+    "aggregation": null,
+    "promql": "max(min by (job) (time() - skiffr_scheduler_last_success_seconds))",
+    "promql_condition": {
+      "column": "value",
+      "operator": ">",
+      "value": 1800
+    },
+    "vrl_function": null,
+    "multi_time_range": [],
+    "search_event_type": null
+  },
+  "trigger_condition": {
+    "period": 5,
+    "operator": ">=",
+    "threshold": 1,
+    "frequency": 5,
+    "frequency_type": "minutes",
+    "silence": 60
+  },
+  "destinations": ["skiffr_unset"],
+  "context_attributes": {},
+  "enabled": false,
+  "row_template": "",
+  "row_template_type": "String",
+  "tz_offset": 0
+}

@@ -1,0 +1,36 @@
+{
+  "name": "skiffr_db_down",
+  "description": "skiffr_db_up reported 0 in the last 5 minutes. needs /health to be polled, the container healthcheck does it",
+  "stream_type": "metrics",
+  "stream_name": "skiffr_db_up",
+  "is_real_time": false,
+  "query_condition": {
+    "type": "promql",
+    "sql": null,
+    "conditions": null,
+    "aggregation": null,
+    "promql": "min(skiffr_db_up)",
+    "promql_condition": {
+      "column": "value",
+      "operator": "<",
+      "value": 1
+    },
+    "vrl_function": null,
+    "multi_time_range": [],
+    "search_event_type": null
+  },
+  "trigger_condition": {
+    "period": 5,
+    "operator": ">=",
+    "threshold": 1,
+    "frequency": 2,
+    "frequency_type": "minutes",
+    "silence": 30
+  },
+  "destinations": ["skiffr_unset"],
+  "context_attributes": {},
+  "enabled": false,
+  "row_template": "",
+  "row_template_type": "String",
+  "tz_offset": 0
+}
