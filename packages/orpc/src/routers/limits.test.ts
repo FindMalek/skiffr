@@ -73,6 +73,7 @@ const RULES: RateRules = {
   upload: { burst: 1, perMinute: 60 },
   ai: { burst: 1, perMinute: 60 },
   expensive: { burst: 1, perMinute: 60 },
+  sensitive: { burst: 1, perMinute: 60 },
 }
 
 function clocked(rules: RateRules = RULES) {

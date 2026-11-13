@@ -1,5 +1,6 @@
 {
   "pages": [
+    "install",
     "index",
     "setup",
     "extension",
@@ -13,6 +14,7 @@
     "scripts",
     "seeding",
     "deploy",
+    "releasing",
     "previews",
     "learning",
     "gmail",

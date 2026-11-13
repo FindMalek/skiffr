@@ -14,6 +14,9 @@ export interface Storage {
   put(key: string, data: Blob | ArrayBuffer, type: string): Promise<void>
   /** A short-lived url to read a private object. */
   url(key: string): string
+  /** Every key that starts with `prefix`. */
+  list(prefix: string): Promise<string[]>
+  delete(key: string): Promise<void>
 }
 
 /** Any S3 API (Garage, R2, AWS, MinIO) through Bun's built-in client; null when no bucket is configured. */
@@ -29,6 +32,19 @@ export function createStorage(config: StorageConfig): Storage | null {
     },
     url(key) {
       return client.presign(key, { expiresIn: 3600 })
+    },
+    async list(prefix) {
+      const keys: string[] = []
+      let continuationToken: string | undefined
+      do {
+        const page = await client.list({ prefix, continuationToken })
+        keys.push(...(page.contents ?? []).map((object) => object.key))
+        continuationToken = page.isTruncated ? page.nextContinuationToken : undefined
+      } while (continuationToken)
+      return keys
+    },
+    async delete(key) {
+      await client.delete(key)
     },
   }
 }

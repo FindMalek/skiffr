@@ -20,7 +20,7 @@
 
 skiffr is an open-source Chrome extension for job applications. It spots an application form, asks, fills it from your own profile and answer bank, and never submits anything for you. A dashboard keeps your profile, answers and a queue of jobs to apply to. You host the api and the database yourself: your profile, answers, queue and tokens live in your own Postgres, and only a small listed slice goes to a model provider, and only if you set a key.
 
-> **Early development.** There is no release and no Chrome Web Store listing yet: you build the extension or load a CI build by hand (see [quick start](#quick-start)). The extension learns from your edits, with the limits listed under [how it works](#how-it-works).
+> **Early development.** Releases are published automatically from `main`, but there is no Chrome Web Store listing yet: you load the extension by hand (see [quick start](#quick-start)). The extension learns from your edits, with the limits listed under [how it works](#how-it-works).
 
 <p align="center">
   <img alt="The toast asking to autofill an application" width="49%" src="https://raw.githubusercontent.com/FindMalek/skiffr/pr-screenshots/59/57-toast-ask.png" />
@@ -130,6 +130,73 @@ skiffr/
 
 ## Quick start
 
+Three steps, nothing to build. You need Docker and Chrome (or Edge, Brave, Arc: any Chromium 142 or newer).
+
+### 1. Run one command
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/FindMalek/skiffr/main/install.sh | sh
+```
+
+It makes a `skiffr/` folder, generates every secret into `skiffr/.env`, starts Postgres, the api, the dashboard, the site and the docs, waits until they are healthy and prints your urls and admin login. It asks nothing and is safe to run again (it never overwrites `.env` or your data). The commands further down (`./skiffr update`, `docker compose ...`) run inside that folder, so `cd skiffr` first. No curl: `git clone https://github.com/FindMalek/skiffr && cd skiffr && ./scripts/setup.sh` does the same from a clone (add `--build` to build the images from the source, which does not include the extension zip: build the extension yourself, see below).
+
+| What | Url |
+| --- | --- |
+| dashboard (sign in here) | http://localhost:3002 |
+| api (what the extension talks to) | http://localhost:3001 |
+| site and docs | http://localhost:3000, http://localhost:3003 |
+
+Options: `--port 4000` for other ports, `--domain skiffr.example.com` for your own domain with automatic https, `--version v0.1.0` to pin a release, `--autoupdate` for daily automatic updates. All of them are in the [install guide](apps/docs/content/docs/install.mdx).
+
+### 2. Load the extension (60 seconds)
+
+Chrome cannot install an extension from a file or a script on its own, so this one takes a minute by hand. Your own server serves the extension that matches its version.
+
+1. Download http://localhost:3001/downloads/skiffr-extension.zip and unzip it into a folder you will keep (Chrome does not install zips directly, it loads the unzipped folder).
+2. Open `chrome://extensions` (`edge://extensions`, `brave://extensions` and `arc://extensions` work the same) and turn on **Developer mode** (top right).
+3. Click **Load unpacked** and pick the unzipped folder. Pin the skiffr icon from the puzzle menu.
+
+Firefox is not supported yet.
+
+### 3. Connect it and apply
+
+1. Open http://localhost:3002, sign in with the email and password the installer printed (they are in `skiffr/.env` too, `ADMIN_EMAIL` and `ADMIN_PASSWORD`) and fill in your profile.
+2. In the dashboard open **Extension** and create a token. Copy it.
+3. Right-click the skiffr icon, **Options**. Set the api url to `http://localhost:3001`, paste the token and press **Test connection**.
+4. Open a job application form. A toast asks "Autofill this application?". Press **Yes**, check the fields (amber outlines are guesses), fix what is wrong and press submit yourself: skiffr never submits anything for you.
+
+First run checklist: profile saved, token created and tested, one real application form filled. Corrections you make are remembered for the next form.
+
+### When something does not work
+
+| Problem | Fix |
+| --- | --- |
+| `Cannot connect to the Docker daemon` | start Docker Desktop (Linux: `sudo systemctl start docker`) and run the command again |
+| `port 3000 is already in use` | run the installer again with `--port 4000` (it uses 4000 to 4003) |
+| `pull access denied` or `no release is published yet` | use the clone path with `--build`, or ask the host to make the packages public |
+| the api log says `password authentication failed` | a data volume from an earlier install is still there. If that data is disposable run `docker compose down -v` and start again |
+| extension says it cannot connect | the api url must be exactly what the installer printed, no trailing path. Open it plus `/health` in the browser: it must say `"ok":true`. Check `docker compose ps` in the `skiffr/` folder |
+| extension says the token is invalid or expired | dashboard, Extension, create a new token and paste it again |
+| cannot sign in | the password is `ADMIN_PASSWORD` in `skiffr/.env`. The admin is reset to that value on every api start (also after an update), so change the password there, not in the dashboard |
+| the extension is older than the server after an update | download the zip again from `/downloads`, replace the files in your folder, press reload on the skiffr card in `chrome://extensions` |
+
+### Update, back up, remove
+
+Run these inside the `skiffr/` folder, `cd skiffr` first (in a clone use `./scripts/skiffr`).
+
+```bash
+./skiffr update          # backs up the database, then latest release: new compose file, new images, restart (migrations run on start)
+./skiffr status          # what runs, which version, is a newer one out
+./skiffr backup          # database dump in ./backups (keep .env with it)
+./skiffr logs api        # follow a service
+docker compose down      # stop, data stays
+docker compose down -v   # stop and delete all data
+```
+
+Every merge to `main` that changes behavior publishes a new release, with the docker images and the extension zip. `--autoupdate` pulls new images by itself once a day, and a pinned version (`SKIFFR_VERSION=v0.1.0` in `.env`) rolls you back. See [updates](apps/docs/content/docs/deploy.mdx) and [how releases work](apps/docs/content/docs/releasing.mdx). A Chrome Web Store listing, which would update the extension by itself, is tracked in [#26](https://github.com/FindMalek/skiffr/issues/26).
+
+### Develop from source
+
 You need node 24, pnpm, bun and docker.
 
 ```bash
@@ -139,29 +206,17 @@ pnpm db:up               # Postgres with pgvector on :5432
 pnpm dev --filter='!extension'
 ```
 
-`BETTER_AUTH_SECRET` must be at least 32 characters (`openssl rand -base64 32`) or the api refuses to start. `ADMIN_PASSWORD` must be at least 10 characters. `DATABASE_URL` already matches the local Postgres from `pnpm db:up`.
+`BETTER_AUTH_SECRET` must be at least 32 characters (`openssl rand -base64 32`) or the api refuses to start. `ADMIN_PASSWORD` must be at least 10 characters. `DATABASE_URL` already matches the local Postgres from `pnpm db:up`. `pnpm db:up` uses `docker/docker-compose.yml`, the root `docker-compose.yml` is the self-hosting stack.
 
-| App | Url |
-| --- | --- |
-| `apps/web` | http://localhost:3000 |
-| `apps/api` | http://localhost:3001 |
-| `apps/dashboard` | http://localhost:3002 |
-| `apps/docs` | http://localhost:3003 |
-| `apps/playground` | http://playground.localhost:3004 |
+The apps run on the same ports as above (site 3000, api 3001, dashboard 3002, docs 3003, and the test page playground at http://playground.localhost:3004). Sign in to the dashboard with `ADMIN_EMAIL` and `ADMIN_PASSWORD`, save your profile, and create a token on the Extension page. `pnpm dev` without the filter also starts the extension dev server (`wxt`), which opens a development browser with hot reload.
 
-Sign in to the dashboard with `ADMIN_EMAIL` and `ADMIN_PASSWORD`, save your profile, and create a token on the Extension page. `pnpm dev` without the filter also starts the extension dev server (`wxt`), which opens a development browser with hot reload.
-
-### Install the extension
-
-It needs Chrome 142 or newer (the token isolation below is the reason), or a Chromium browser of the same age.
+To build the extension yourself:
 
 ```bash
 pnpm --filter extension build
 ```
 
-Open `chrome://extensions`, turn on developer mode, choose "Load unpacked" and pick `apps/extension/.output/chrome-mv3`. In the extension options set the api url (`http://localhost:3001`), paste your token and press test connection. Then open an application form and answer the toast.
-
-Or take a CI build: every pull request uploads `extension-chrome-pr-<number>` and every push to `main` uploads `extension-chrome-latest` on the [CI runs](https://github.com/FindMalek/skiffr/actions/workflows/ci.yml) (GitHub login required, artifacts expire). Unzip the download, extract the inner `extension-<version>-chrome.zip` into an empty folder and load that folder unpacked. More in the [setup docs](apps/docs/content/docs/setup.mdx).
+Then load `apps/extension/.output/chrome-mv3` unpacked. More in the [setup docs](apps/docs/content/docs/setup.mdx).
 
 ### Commands
 
@@ -182,7 +237,7 @@ Router tests run on pglite. To use real Postgres set `TEST_DATABASE_URL` to a se
 
 ## Self-hosting
 
-skiffr runs on your own server: the api, the Next apps and a Postgres with the `vector` extension, one Dockerfile per app. The [deploy guide](apps/docs/content/docs/deploy.mdx) covers Docker, Vercel and Dokploy, including the pgvector image and why you must not swap an existing database image in place. The `deploy` workflow builds the images on every green push to `main` and redeploys Dokploy, and `scripts/dokploy-bootstrap.mjs` sets a Dokploy project up in one go. Nothing deploys until the repo variable `DEPLOY_ENABLED` is `true`.
+skiffr runs on your own machine or server with one command, see the [quick start](#quick-start): a root `docker-compose.yml` runs Postgres with pgvector, the api (it migrates the database on start), the dashboard, the site and the docs from images published to `ghcr.io/findmalek/skiffr-<app>` on every release. `--domain` adds automatic https through Caddy and `--autoupdate` adds a daily image updater (it needs the docker socket, so it is opt-in). The [deploy guide](apps/docs/content/docs/deploy.mdx) covers updates, backups, rollback, Vercel and Dokploy, including the pgvector image and why you must not swap an existing database image in place. The `deploy` workflow still builds `main` and redeploys the project's own Dokploy, `scripts/dokploy-bootstrap.mjs` sets a Dokploy project up in one go.
 
 ## Security and privacy
 

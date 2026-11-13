@@ -241,10 +241,27 @@ jobs:
           node-version: 24
       - run: node --test '.github/scripts/*.test.mjs'
 
+  # the release version logic, the install scripts and the compose files: none of them needs node_modules
+  release-scripts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # cone mode: the files at the repo root (install.sh, the compose files) always come along
+          sparse-checkout: scripts
+      - run: node --test "scripts/release/*.test.mjs"
+      - run: shellcheck -s sh -S style install.sh scripts/skiffr scripts/setup.sh scripts/install.test.sh
+      - run: sh scripts/install.test.sh
+      - run: |
+          POSTGRES_PASSWORD=ci docker compose config -q
+          POSTGRES_PASSWORD=ci docker compose -f docker-compose.yml -f docker-compose.build.yml config -q
+          POSTGRES_PASSWORD=ci COMPOSE_PROFILES=domain,autoupdate docker compose config -q
+
   ci:
     name: ci
     if: always()
-    needs: [changes, lint, check-types, test, build, extension, e2e, db-postgres, aggregator-test, scripts-test]
+    needs: [changes, lint, check-types, test, build, extension, e2e, db-postgres, aggregator-test, scripts-test, release-scripts]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

@@ -49,6 +49,7 @@ const build = (clientIp?: ClientIpConfig): Server =>
         upload: { burst: 1, perMinute: 60 },
         ai: { burst: 1, perMinute: 60 },
         expensive: { burst: 1, perMinute: 60 },
+        sensitive: { burst: 1, perMinute: 60 },
       }),
     },
     { publicUrl: "http://api.test", dashboardUrl: DASHBOARD, clientIp },
