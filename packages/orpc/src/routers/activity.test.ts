@@ -434,6 +434,17 @@ test("a cursor with a NUL, an unknown kind or a bad key is a 400, never a databa
   }
 })
 
+test("a cursor at the largest allowed time is an empty page for every kind, one past it is a 400", async () => {
+  const max = await newUser()
+  const forge = (cursor: object) => Buffer.from(JSON.stringify(cursor)).toString("base64url")
+  const top = 253_402_300_799_000 - 3_600_000
+  for (const kind of ["jobs_queued", "job_applied", "application_stage", "answer_learned", "answer_corrected", "fields_filled", "gmail_failed", "source_failed", "token_expired"]) {
+    const page = await list(max, { cursor: forge({ at: top, kind, key: "abc" }) })
+    expect(page.items, kind).toEqual([])
+    await expect(list(max, { cursor: forge({ at: top + 1, kind, key: "abc" }) }), kind).rejects.toMatchObject({ code: "BAD_REQUEST" })
+  }
+})
+
 test("events in the same hour bucket page through one by one, for jobs and for fields", async () => {
   const ned = await newUser()
   await addJob(ned, 1, at("2026-11-12T10:15:00Z"), { source: "aaa" })

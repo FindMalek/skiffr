@@ -13,8 +13,8 @@ const TEXT_MAX = 120
 
 export type Cursor = { at: number; kind: string; key: string }
 
-/** 9999-12-31: the last moment a JS Date and a Postgres timestamp both take. */
-const MAX_CURSOR_AT = 253_402_300_799_000
+/** 9999-12-31 minus the 1 hour bucket slack: the last cursor whose bucket bound a JS Date and a Postgres timestamp both take. */
+const MAX_CURSOR_AT = 253_402_300_799_000 - HOUR_S * 1000
 
 const cursorSchema = z.object({
   at: z.number().int().nonnegative().max(MAX_CURSOR_AT),
