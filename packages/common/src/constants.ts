@@ -139,3 +139,15 @@ export const CV_REJECTIONS = [
   "invented_fact",
   "invented_skill",
 ] as const
+/** Shape version of the `account.export` document: bump it when a section or a field is renamed or removed. */
+export const ACCOUNT_EXPORT_VERSION = 1
+/** Rows in one export across all sections. */
+export const ACCOUNT_EXPORT_ROWS_MAX = 100_000
+/** Size of one export in bytes (the text of the exported columns). It is built in memory and about six times that is held while it is validated and sent, so this is the real bound. */
+export const ACCOUNT_EXPORT_BYTES_MAX = 25 * 1024 * 1024
+/** A session older than this can't delete an account that has no password to type. */
+export const ACCOUNT_FRESH_SESSION_MINUTES = 10
+/** The activity feed looks back this many days at most, so one request never scans a whole history. */
+export const ACTIVITY_WINDOW_DAYS = 30
+export const ACTIVITY_LIMIT_DEFAULT = 30
+export const ACTIVITY_LIMIT_MAX = 100

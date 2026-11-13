@@ -1,4 +1,5 @@
 export * from "./account"
+export * from "./activity"
 export * from "./ai"
 export * from "./answers"
 export * from "./cv"

@@ -1,0 +1,157 @@
+# skiffr, self-hosted. Everything runs with: docker compose up -d
+# Settings and secrets live in .env, written once by install.sh (or scripts/setup.sh in a clone). Nothing secret is in this file.
+# Guide: https://github.com/FindMalek/skiffr#quick-start  (docs: install page)
+name: skiffr
+
+x-app: &app
+  restart: unless-stopped
+  # Only containers with this label are touched by the optional autoupdate profile
+  labels:
+    com.centurylinklabs.watchtower.enable: "true"
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "3" }
+
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    # The database is never updated automatically: a major version needs a dump and restore (see the docs). Never published to the host.
+    labels:
+      com.centurylinklabs.watchtower.enable: "false"
+    environment:
+      POSTGRES_USER: skiffr
+      POSTGRES_DB: skiffr
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?run ./install.sh or ./scripts/setup.sh first, POSTGRES_PASSWORD is not set}"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U skiffr -d skiffr"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  # Applies migrations when it starts, so a new image brings its schema. Migrations must stay backwards safe (add, never drop in the same release).
+  api:
+    <<: *app
+    image: ghcr.io/findmalek/skiffr-api:${SKIFFR_VERSION:-latest}
+    depends_on:
+      db:
+        condition: service_healthy
+    # Every optional key (AI, Gmail, S3, observability) is read from .env here and nowhere else
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      NODE_ENV: production
+      PORT: "3001"
+      DEPLOY_ENV: selfhost
+      DATABASE_URL: postgres://skiffr:${POSTGRES_PASSWORD:?}@db:5432/skiffr
+      API_PUBLIC_URL: ${API_PUBLIC_URL:-http://localhost:3001}
+      WEB_URL: ${WEB_URL:-http://localhost:3000}
+      DASHBOARD_URL: ${DASHBOARD_URL:-http://localhost:3002}
+      DOCS_URL: ${DOCS_URL:-http://localhost:3003}
+      # a real instance starts empty: the demo data is only for development
+      SEED: ${SEED:-none}
+      # 0: no proxy in front (localhost), 1: the bundled Caddy of the domain profile
+      TRUSTED_PROXY_COUNT: ${TRUSTED_PROXY_COUNT:-0}
+    ports:
+      - "${SKIFFR_BIND:-127.0.0.1}:${SKIFFR_API_PORT:-3001}:3001"
+
+  dashboard:
+    <<: *app
+    image: ghcr.io/findmalek/skiffr-dashboard:${SKIFFR_VERSION:-latest}
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      API_URL: http://api:3001
+      API_PUBLIC_URL: ${API_PUBLIC_URL:-http://localhost:3001}
+      WEB_URL: ${WEB_URL:-http://localhost:3000}
+      DASHBOARD_URL: ${DASHBOARD_URL:-http://localhost:3002}
+      DOCS_URL: ${DOCS_URL:-http://localhost:3003}
+    ports:
+      - "${SKIFFR_BIND:-127.0.0.1}:${SKIFFR_DASHBOARD_PORT:-3002}:3002"
+
+  web:
+    <<: *app
+    image: ghcr.io/findmalek/skiffr-web:${SKIFFR_VERSION:-latest}
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      API_URL: http://api:3001
+      API_PUBLIC_URL: ${API_PUBLIC_URL:-http://localhost:3001}
+      WEB_URL: ${WEB_URL:-http://localhost:3000}
+      DASHBOARD_URL: ${DASHBOARD_URL:-http://localhost:3002}
+      DOCS_URL: ${DOCS_URL:-http://localhost:3003}
+    ports:
+      - "${SKIFFR_BIND:-127.0.0.1}:${SKIFFR_WEB_PORT:-3000}:3000"
+
+  docs:
+    <<: *app
+    image: ghcr.io/findmalek/skiffr-docs:${SKIFFR_VERSION:-latest}
+    environment:
+      DOCS_URL: ${DOCS_URL:-http://localhost:3003}
+    ports:
+      - "${SKIFFR_BIND:-127.0.0.1}:${SKIFFR_DOCS_PORT:-3003}:3003"
+
+  # Profile `domain` (COMPOSE_PROFILES=domain in .env, set by install.sh --domain): one Caddy with automatic https in front of the apps.
+  # Needs four DNS records pointing here: <domain>, dashboard.<domain>, api.<domain>, docs.<domain>, and ports 80 and 443 open.
+  caddy:
+    profiles: [domain]
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    depends_on: [web, dashboard, api, docs]
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+    configs:
+      - source: caddyfile
+        target: /etc/caddy/Caddyfile
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  # Profile `autoupdate` (COMPOSE_PROFILES=autoupdate in .env, or install.sh --autoupdate): pulls new images of the labelled skiffr
+  # containers once a day and restarts them one at a time. It needs the docker socket, which is root on this host: opt in knowingly.
+  watchtower:
+    profiles: [autoupdate]
+    image: nickfedor/watchtower:1.24.0
+    restart: unless-stopped
+    environment:
+      WATCHTOWER_LABEL_ENABLE: "true"
+      WATCHTOWER_CLEANUP: "true"
+      WATCHTOWER_ROLLING_RESTART: "true"
+      # six field cron (seconds first), local time of the container (UTC)
+      WATCHTOWER_SCHEDULE: ${SKIFFR_UPDATE_SCHEDULE:-0 0 4 * * *}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+configs:
+  caddyfile:
+    content: |
+      ${SKIFFR_DOMAIN:-localhost} {
+        reverse_proxy web:3000
+      }
+      dashboard.${SKIFFR_DOMAIN:-localhost} {
+        reverse_proxy dashboard:3002
+      }
+      api.${SKIFFR_DOMAIN:-localhost} {
+        reverse_proxy api:3001
+      }
+      docs.${SKIFFR_DOMAIN:-localhost} {
+        reverse_proxy docs:3003
+      }
+
+volumes:
+  db-data:
+  caddy-data:
+  caddy-config:

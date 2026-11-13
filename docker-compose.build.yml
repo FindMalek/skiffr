@@ -1,0 +1,28 @@
+# Build the images from this checkout instead of pulling the released ones:
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+# (./scripts/setup.sh --build writes COMPOSE_FILE for you, then a plain `docker compose up -d --build` works)
+services:
+  api:
+    image: skiffr-api:local
+    pull_policy: never
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+  dashboard:
+    image: skiffr-dashboard:local
+    pull_policy: never
+    build:
+      context: .
+      dockerfile: apps/dashboard/Dockerfile
+  web:
+    image: skiffr-web:local
+    pull_policy: never
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+  docs:
+    image: skiffr-docs:local
+    pull_policy: never
+    build:
+      context: .
+      dockerfile: apps/docs/Dockerfile

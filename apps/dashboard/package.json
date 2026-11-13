@@ -11,6 +11,7 @@
     "test": "bun test --isolate"
   },
   "dependencies": {
+    "@skiffr/ai": "workspace:*",
     "@skiffr/common": "workspace:*",
     "@skiffr/env": "workspace:*",
     "@skiffr/orpc": "workspace:*",
