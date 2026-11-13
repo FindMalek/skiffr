@@ -1,7 +1,7 @@
 "use client"
 
 import { SidebarProvider } from "@skiffr/ui/components/sidebar"
-import { useState, useSyncExternalStore } from "react"
+import { createContext, useContext, useState, useSyncExternalStore } from "react"
 
 const XL = "(min-width: 1280px)"
 
@@ -11,7 +11,7 @@ function subscribeXl(onChange: () => void): () => void {
   return () => query.removeEventListener("change", onChange)
 }
 
-/** True from `xl`. The server and the first client render assume it, the full sidebar being the common case. */
+/** True from `xl`. Only the trigger's state and label read it: the layout itself is decided by CSS. */
 function useWide(): boolean {
   return useSyncExternalStore(
     subscribeXl,
@@ -20,17 +20,29 @@ function useWide(): boolean {
   )
 }
 
+export type SidebarPin = "full" | "rail" | null
+
+const PinContext = createContext<SidebarPin>(null)
+
+/** What the user chose with the trigger, `null` while they have not (then the breakpoint decides). */
+export function useSidebarPin(): SidebarPin {
+  return useContext(PinContext)
+}
+
 /**
- * Icon rail from `md`, full sidebar from `xl`. The trigger overrides that until the window crosses `xl` again, so a
- * resize never leaves the sidebar in a state the user did not ask for at the new width.
+ * Icon rail from `md`, full sidebar from `xl`, decided by CSS so the first paint is already right (no layout shift
+ * on hydration). The trigger pins one of the two until the window crosses `xl` again; only then does JS change it.
  */
 export function ShellProvider({ children }: { children: React.ReactNode }) {
   const wide = useWide()
-  const [choice, setChoice] = useState<{ wide: boolean; open: boolean } | null>(null)
-  const open = choice && choice.wide === wide ? choice.open : wide
+  const [choice, setChoice] = useState<{ wide: boolean; pin: "full" | "rail" } | null>(null)
+  const pin = choice && choice.wide === wide ? choice.pin : null
+  const expanded = pin ? pin === "full" : wide
   return (
-    <SidebarProvider open={open} onOpenChange={(next) => setChoice({ wide, open: next })}>
-      {children}
-    </SidebarProvider>
+    <PinContext.Provider value={pin}>
+      <SidebarProvider open={expanded} onOpenChange={(next) => setChoice({ wide, pin: next ? "full" : "rail" })}>
+        {children}
+      </SidebarProvider>
+    </PinContext.Provider>
   )
 }

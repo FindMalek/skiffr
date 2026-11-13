@@ -229,8 +229,8 @@ template "Overview" page. Home is called "Today" so the label says what the page
   rendered once by `PageHeader`. The breadcrumb is **not** in this row: it is the first line of `PageHeader` (4.1), only
   when the page is nested (Settings / Extension), so it also shows below `md`, where the top bar has no room for it.
 - Sidebar width: an icon rail from `md`, the full 256px sidebar from `xl`. The trigger overrides that until the window
-  crosses `xl` again. The server renders the full sidebar, so between `md` and `xl` the first paint is corrected once
-  on hydration; it never animates.
+  crosses `xl` again. Both the rail and the full sidebar are rendered and CSS shows one (`xl`), so the first
+  paint is already right and layout shift is 0; it never animates.
 - User menu (dropdown): name and email, Settings, Appearance, Keyboard shortcuts (opens the help dialog once the
   shortcuts provider, 3.2, exists), Sign out (one click, no confirm). Below `md` it also holds the theme choice
   (System, Light, Dark). Sign out is not a bare icon button in the sidebar footer, and the sidebar has no footer.
@@ -401,7 +401,7 @@ always means "done and kept"). Source and ATS labels are **not** badges: they ar
   known, a `Try again` button, the request id when the API sends `x-request-id`. Never a bare red text line.
 - **Error (route)**: `error.tsx` per route group with the same box ("Try again", "Go to Today", and the Next error
   digest as the request id); `global-error.tsx` (no providers, it reads the stored theme itself); a branded
-  `not-found.tsx` inside the shell (an unknown url under the app is caught by `(app)/[...slug]` so it keeps the sidebar).
+  root `not-found.tsx` that keeps the shell when signed in (a real 404 status). `proxy.ts` answers 404 with no body for paths that end in a file name.
   The page `h1` of these is visually hidden, the visible title is the box. Unauthenticated API errors redirect to sign in with a `next` param and a toast
   "Your session ended".
 - **Offline / slow**: a thin banner under the header when `navigator.onLine` is false.
@@ -537,7 +537,7 @@ word) sits in the user menu and on Today.
 | --- | --- |
 | tokens, primitives | `packages/ui/src/styles/*.css`, `packages/ui/src/components/*` |
 | shell | `apps/dashboard/app/(app)/layout.tsx`, `app/shell.css`, `components/app-sidebar.tsx`, `components/page-header.tsx`, `components/shell/*` |
-| error and 404 | `app/error.tsx`, `app/global-error.tsx`, `app/not-found.tsx`, `app/(app)/error.tsx`, `app/(app)/not-found.tsx`, `app/(app)/[...slug]/page.tsx`, `components/shell/error-page.tsx` |
+| error and 404 | `app/error.tsx`, `app/global-error.tsx`, `app/not-found.tsx`, `app/(app)/error.tsx`, `app/(app)/not-found.tsx`, `components/shell/error-page.tsx` |
 | format helpers | `apps/dashboard/lib/format.ts`, `components/time.tsx` |
 | settings | `apps/dashboard/app/(app)/settings/**`, `components/settings/*` |
 

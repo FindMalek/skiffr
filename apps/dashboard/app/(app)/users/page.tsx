@@ -1,7 +1,9 @@
+import { errorCode } from "@skiffr/orpc/errors"
 import { Badge } from "@skiffr/ui/components/badge"
 import { Card, CardContent } from "@skiffr/ui/components/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@skiffr/ui/components/table"
 import type { Metadata } from "next"
+import { notFound } from "next/navigation"
 import { LocalDate } from "@/components/local-date"
 import { PageHeader } from "@/components/page-header"
 import { call } from "@/lib/api"
@@ -9,7 +11,11 @@ import { call } from "@/lib/api"
 export const metadata: Metadata = { title: "Users" }
 
 export default async function UsersPage() {
-  const { total, users } = await call((api) => api.admin.users())
+  // Not an admin: the page does not exist for you (a real 404, not a crash the monitoring counts as a 5xx).
+  const { total, users } = await call((api) => api.admin.users()).catch((error: unknown) => {
+    if (errorCode(error) === "FORBIDDEN") notFound()
+    throw error
+  })
   return (
     <>
       <PageHeader title="Users" description={`${total} accounts. Admins only.`} />

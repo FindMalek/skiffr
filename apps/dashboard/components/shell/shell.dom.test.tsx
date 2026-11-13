@@ -9,8 +9,12 @@ mock.module("next/navigation", () => ({
   useRouter: () => ({ push: () => {} }),
 }))
 
+const { AppSidebar } = await import("@/components/app-sidebar")
 const { PaletteProvider, SearchButton } = await import("./palette")
-const { RouteFocus } = await import("./route-focus")
+const { ShellProvider } = await import("./shell-provider")
+const { SidebarTrigger } = await import("@skiffr/ui/components/sidebar")
+const { TooltipProvider } = await import("@skiffr/ui/components/tooltip")
+const { RouteFocus, focusPageTitle } = await import("./route-focus")
 const { TabBar } = await import("./tab-bar")
 
 const network = (globalThis as { __network?: string[] }).__network ?? []
@@ -79,6 +83,50 @@ test("Ctrl K opens the palette, Escape closes it, and nothing is fetched until y
   expect(document.activeElement).toBe(trigger)
 })
 
+test("a plain k, or Ctrl Shift K, never opens the palette: it must not hijack typing", async () => {
+  await render(
+    <PaletteProvider isAdmin={false}>
+      <input aria-label="field" />
+    </PaletteProvider>,
+  )
+  const press = (init: KeyboardEventInit) =>
+    act(async () => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", bubbles: true, cancelable: true, ...init }))
+    })
+  for (const init of [{}, { ctrlKey: true, shiftKey: true }, { metaKey: true, altKey: true }]) {
+    await press(init)
+    await wait(300)
+    expect(dialog()).toBeNull()
+  }
+  await press({ metaKey: true })
+  await wait(300)
+  expect(dialog()).not.toBeNull()
+})
+
+test("Open next job opens its tab inside the click, before any request, and closes it when nothing opens", async () => {
+  const tab = {
+    closed: false,
+    close() {
+      this.closed = true
+    },
+  }
+  const open = mock((..._args: unknown[]) => tab)
+  window.open = open as unknown as typeof window.open
+  await render(
+    <PaletteProvider isAdmin={false}>
+      <span />
+    </PaletteProvider>,
+  )
+  await pressCtrlK()
+  await wait(50)
+  const item = [...document.querySelectorAll("[cmdk-item]")].find((el) => el.textContent === "Open next job")
+  await act(async () => item?.dispatchEvent(new Event("click", { bubbles: true })))
+  expect(open).toHaveBeenCalledTimes(1)
+  expect(open.mock.calls[0]).toEqual(["about:blank", "_blank"])
+  await wait(50)
+  expect(tab.closed).toBe(true)
+})
+
 test("the tab bar marks the current tab, and More opens the one sheet that holds settings", async () => {
   nav.pathname = "/answers"
   await render(<TabBar isAdmin={false} />)
@@ -113,4 +161,45 @@ test("a route change moves focus to the page title, the first load does not", as
   await render(page("Answers"))
   expect(document.activeElement?.tagName).toBe("H1")
   expect(document.activeElement?.textContent).toBe("Answers")
+})
+
+test("the rail and the full sidebar are both rendered and told apart by css, until the trigger pins one", async () => {
+  await render(
+    <TooltipProvider>
+      <ShellProvider>
+        <SidebarTrigger />
+        <AppSidebar isAdmin />
+      </ShellProvider>
+    </TooltipProvider>,
+  )
+  const wrappers = () => [
+    ...(host.querySelector('[data-slot="sidebar-wrapper"]')?.querySelectorAll<HTMLElement>(":scope > div") ?? []),
+  ]
+  const [full, rail] = wrappers()
+  expect(full?.className).toBe("hidden xl:contents")
+  expect(rail?.className).toBe("hidden md:contents xl:hidden")
+  expect(full?.querySelector('[data-slot="sidebar"]')?.getAttribute("data-state")).toBe("expanded")
+  expect(rail?.querySelector('[data-slot="sidebar"]')?.getAttribute("data-state")).toBe("collapsed")
+  expect(host.querySelectorAll('[data-sidebar="rail"]')).toHaveLength(0)
+
+  const wide = window.matchMedia("(min-width: 1280px)").matches
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-sidebar="trigger"]')?.click())
+  const [fullAfter, railAfter] = wrappers()
+  expect(fullAfter?.className).toBe(wide ? "hidden" : "hidden md:contents")
+  expect(railAfter?.className).toBe(wide ? "hidden md:contents" : "hidden")
+})
+
+test("after Try again the focus lands on the new page title, not on the body the button left behind", async () => {
+  const page = (retried: boolean) => (
+    <main id="main" tabIndex={-1}>
+      {retried ? <h1 tabIndex={-1}>Stats</h1> : <button type="button">Try again</button>}
+    </main>
+  )
+  await render(page(false))
+  host.querySelector("button")?.focus()
+  const stop = focusPageTitle()
+  await render(page(true))
+  await wait(50)
+  expect(document.activeElement?.textContent).toBe("Stats")
+  stop()
 })

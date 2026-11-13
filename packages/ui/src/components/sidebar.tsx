@@ -53,6 +53,25 @@ function useSidebar() {
   return context
 }
 
+/**
+ * Shows its children a fixed `state`, whatever the provider says. Two sidebars (an icon rail and the full one) can then
+ * both be in the DOM and be told apart by a CSS breakpoint, so the layout never depends on JS or on hydration.
+ */
+function SidebarStateScope({
+  state,
+  children,
+}: {
+  state: "expanded" | "collapsed"
+  children: React.ReactNode
+}) {
+  const context = useSidebar()
+  const value = React.useMemo(
+    () => ({ ...context, state, open: state === "expanded" }),
+    [context, state]
+  )
+  return <SidebarContext.Provider value={value}>{children}</SidebarContext.Provider>
+}
+
 function SidebarProvider({
   defaultOpen = true,
   open: openProp,
@@ -717,6 +736,7 @@ export {
   SidebarMenuSubButton,
   SidebarMenuSubItem,
   SidebarProvider,
+  SidebarStateScope,
   SidebarRail,
   SidebarSeparator,
   SidebarTrigger,

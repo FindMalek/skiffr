@@ -30,8 +30,10 @@ import { SETTINGS_ENTRIES } from "@/components/settings/settings-routes"
 import { bankKey, fetchAllAnswers, filterAnswers } from "@/lib/answers"
 import { DEFAULT_FILTERS, listInput } from "@/lib/queue"
 import { ADMIN_NAV, PRIMARY_NAV, SETTINGS_NAV } from "./nav"
+import { focusWhenReady } from "./route-focus"
 import { useThemeToggle } from "./theme-toggle"
 
+const SYNC_TOAST = "gmail-sync"
 const MIN_QUERY = 2
 const DEBOUNCE_MS = 200
 const RESULTS = 5
@@ -43,6 +45,23 @@ function useDebounced(value: string): string {
     return () => clearTimeout(timer)
   }, [value])
   return debounced
+}
+
+/** Sends an opened blank tab to `href` without the opener and without a referrer, like the queue's own "Open". */
+function navigateTab(tab: Window, href: string): void {
+  try {
+    tab.opener = null
+    const { document: doc } = tab
+    const referrer = doc.createElement("meta")
+    referrer.name = "referrer"
+    referrer.content = "no-referrer"
+    const refresh = doc.createElement("meta")
+    refresh.httpEquiv = "refresh"
+    refresh.content = `0;url=${href}`
+    doc.head.append(referrer, refresh)
+  } catch {
+    tab.location.href = href
+  }
 }
 
 function Row({ icon: Icon, children }: { icon: LucideIcon; children: React.ReactNode }) {
@@ -90,12 +109,13 @@ export function CommandPalette({
   const sync = useMutation(
     orpc.gmail.syncNow.mutationOptions({
       onSuccess: (result) => {
-        if (result.state === "busy") toast.message("A sync is already running.")
-        else if (result.state === "stopped") toast.error("The sync stopped early. See Job sources in settings.")
-        else toast.success(result.jobsAdded > 0 ? `Added ${result.jobsAdded} jobs` : "Nothing new")
+        if (result.state === "busy") toast.message("A sync is already running.", { id: SYNC_TOAST })
+        else if (result.state === "stopped")
+          toast.error("The sync stopped early. See Job sources in settings.", { id: SYNC_TOAST })
+        else toast.success(result.jobsAdded > 0 ? `Added ${result.jobsAdded} jobs` : "Nothing new", { id: SYNC_TOAST })
         return queryClient.invalidateQueries({ queryKey: orpc.gmail.key() })
       },
-      onError: (error) => toast.error(errorMessage(error)),
+      onError: (error) => toast.error(errorMessage(error), { id: SYNC_TOAST }),
     }),
   )
 
@@ -107,15 +127,31 @@ export function CommandPalette({
     close()
     router.push(href as Route)
   }
+  const syncGmail = () => {
+    close()
+    if (sync.isPending) return
+    toast.loading("Syncing Gmail", { id: SYNC_TOAST })
+    sync.mutate(undefined)
+  }
+  const addJob = () => {
+    go("/queue#add-job")
+    focusWhenReady("#job-url")
+  }
+  /** The tab is opened first, inside the click, so a popup blocker allows it. The answer fills it in. */
   const openNext = async () => {
     close()
+    const tab = window.open("about:blank", "_blank")
+    if (!tab)
+      return void toast.error("Your browser blocked the new tab. Allow pop-ups here, or open it from the queue.")
     try {
       const next = await browserClient.jobs.next()
-      if (!next) return void toast.info("Nothing is queued.")
-      const href = safeHref(next.url)
-      if (!href) return void toast.error("That job's link is not a web address, so it was not opened.")
-      window.open(href, "_blank", "noopener,noreferrer")
+      const href = next ? safeHref(next.url) : null
+      if (href) return navigateTab(tab, href)
+      tab.close()
+      if (!next) toast.info("Nothing is queued.")
+      else toast.error("That job's link is not a web address, so it was not opened.")
     } catch (error) {
+      tab.close()
       toast.error(errorMessage(error))
     }
   }
@@ -158,7 +194,7 @@ export function CommandPalette({
             ))}
         </CommandGroup>
         <CommandGroup heading="Actions">
-          <CommandItem value="Action Add job" onSelect={() => go("/queue#add-job")}>
+          <CommandItem value="Action Add job" onSelect={addJob}>
             <Row icon={PlusIcon}>Add job</Row>
           </CommandItem>
           <CommandItem value="Action Open next job" onSelect={openNext}>
@@ -167,13 +203,7 @@ export function CommandPalette({
           <CommandItem value="Action Create extension token" onSelect={() => go("/settings/extension")}>
             <Row icon={KeyRoundIcon}>Create extension token</Row>
           </CommandItem>
-          <CommandItem
-            value="Action Sync Gmail now"
-            onSelect={() => {
-              close()
-              sync.mutate(undefined)
-            }}
-          >
+          <CommandItem value="Action Sync Gmail now" onSelect={syncGmail}>
             <Row icon={RefreshCwIcon}>Sync Gmail now</Row>
           </CommandItem>
           <CommandItem

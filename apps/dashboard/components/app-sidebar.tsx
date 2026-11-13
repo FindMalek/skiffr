@@ -10,13 +10,14 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarRail,
   SidebarSeparator,
+  SidebarStateScope,
   useSidebar,
 } from "@skiffr/ui/components/sidebar"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { ADMIN_NAV, isNavActive, type NavItem, PRIMARY_NAV, SETTINGS_NAV } from "@/components/shell/nav"
+import { useSidebarPin } from "@/components/shell/shell-provider"
 
 function NavMenu({ items, pathname }: { items: NavItem[]; pathname: string }) {
   return (
@@ -40,11 +41,34 @@ function NavMenu({ items, pathname }: { items: NavItem[]; pathname: string }) {
   )
 }
 
-/** From `md`: an icon rail, the full sidebar from `xl`. Below `md` the tab bar replaces it. */
+/**
+ * Both sidebars are in the DOM and CSS shows one: the rail from `md`, the full one from `xl` (or whichever the user
+ * pinned with the trigger). The hidden one is `display: none`, so it has no tab stops and no landmark.
+ */
 export function AppSidebar({ isAdmin }: { isAdmin: boolean }) {
-  const pathname = usePathname()
   const { isMobile } = useSidebar()
+  const pin = useSidebarPin()
   if (isMobile) return null
+  const full = pin === "rail" ? "hidden" : pin === "full" ? "hidden md:contents" : "hidden xl:contents"
+  const rail = pin === "full" ? "hidden" : pin === "rail" ? "hidden md:contents" : "hidden md:contents xl:hidden"
+  return (
+    <>
+      <div className={full}>
+        <SidebarStateScope state="expanded">
+          <SidebarNav isAdmin={isAdmin} />
+        </SidebarStateScope>
+      </div>
+      <div className={rail}>
+        <SidebarStateScope state="collapsed">
+          <SidebarNav isAdmin={isAdmin} />
+        </SidebarStateScope>
+      </div>
+    </>
+  )
+}
+
+function SidebarNav({ isAdmin }: { isAdmin: boolean }) {
+  const pathname = usePathname()
   return (
     <Sidebar collapsible="icon">
       <nav aria-label="Main" className="flex min-h-0 flex-1 flex-col">
@@ -84,7 +108,6 @@ export function AppSidebar({ isAdmin }: { isAdmin: boolean }) {
             </SidebarGroup>
           )}
         </SidebarContent>
-        <SidebarRail />
       </nav>
     </Sidebar>
   )

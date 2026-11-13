@@ -3,6 +3,7 @@
 import "@skiffr/ui/globals.css"
 import { cn } from "@skiffr/ui/lib/utils"
 import { digestOf, ErrorPage, ROUTE_ERROR } from "@/components/shell/error-page"
+import { focusPageTitle } from "@/components/shell/route-focus"
 import { fontVariables } from "./fonts"
 
 /** The root layout itself failed, so there is no theme provider: read the stored choice (the page renders in the browser only). */
@@ -27,7 +28,15 @@ export default function GlobalError({ error, retry }: { error: unknown; retry: (
       </head>
       <body className="bg-background text-foreground">
         <main id="main" tabIndex={-1} className="min-h-dvh pt-12 outline-none">
-          <ErrorPage {...ROUTE_ERROR} requestId={digestOf(error)} onRetry={retry} branded />
+          <ErrorPage
+            {...ROUTE_ERROR}
+            requestId={digestOf(error)}
+            onRetry={() => {
+              retry()
+              focusPageTitle()
+            }}
+            branded
+          />
         </main>
       </body>
     </html>

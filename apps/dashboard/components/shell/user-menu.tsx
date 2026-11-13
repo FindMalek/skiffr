@@ -1,6 +1,5 @@
 "use client"
 
-import { authClient } from "@skiffr/auth/client"
 import { Avatar, AvatarFallback, AvatarImage } from "@skiffr/ui/components/avatar"
 import { Button } from "@skiffr/ui/components/button"
 import {
@@ -18,6 +17,7 @@ import { useIsMobile } from "@skiffr/ui/hooks/use-mobile"
 import { LogOutIcon, PaletteIcon, SettingsIcon } from "lucide-react"
 import Link from "next/link"
 import { useTheme } from "next-themes"
+import { toast } from "sonner"
 
 export interface ShellUser {
   name: string
@@ -36,9 +36,16 @@ const THEMES = [
 export function UserMenu({ me }: { me: ShellUser }) {
   const { theme, setTheme } = useTheme()
   const isMobile = useIsMobile()
+  // The auth client is only needed here, so it loads when you press Sign out, not with every page.
   const signOut = async () => {
-    await authClient.signOut()
-    window.location.assign("/sign-in")
+    try {
+      const { authClient } = await import("@skiffr/auth/client")
+      const result = await authClient.signOut()
+      if (result.error) throw new Error(result.error.message)
+      window.location.assign("/sign-in")
+    } catch {
+      toast.error("Could not sign out. Check your connection and try again.")
+    }
   }
   return (
     <DropdownMenu>

@@ -13,6 +13,9 @@ test("one item is current per route, and settings sub pages light only Settings"
   expect(current("/users")).toEqual(["Users"])
   expect(current("/settings/elsewhere")).toEqual([])
   expect(current("/notes")).toEqual([])
+  expect(current("/queuefoo")).toEqual([])
+  expect(current("/answers-old")).toEqual([])
+  expect(current("/queue/anything")).toEqual(["Queue"])
 })
 
 test("the More tab is current for settings and admin pages only", () => {
