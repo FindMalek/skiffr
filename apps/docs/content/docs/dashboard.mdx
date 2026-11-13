@@ -20,7 +20,20 @@ Sign in with `ADMIN_EMAIL` and `ADMIN_PASSWORD` from your `.env`. The sidebar ha
 
 ## Settings
 
-Settings is one page with a sub-navigation: Profile, Account, Extension, Job sources (Gmail alerts and Careers pages), Resume, Data and privacy and Appearance. `/extension` redirects to `/settings/extension`. Account shows your daily AI use against the server's limits, with what is left and when it resets (midnight UTC, shown in your time zone). Appearance sets the theme (system, light or dark), stored in this browser only. It also has a switch for single key keyboard shortcuts, which are not available yet: the switch keeps your choice in this browser for when they ship. Profile and Data and privacy are placeholders for now: the profile editor and the export and delete tools are not in the dashboard yet.
+Settings is one page with a sub-navigation: Profile, Account, Extension, Job sources (Gmail alerts and Careers pages), Resume, Data and privacy and Appearance. `/extension` redirects to `/settings/extension`. Account shows your daily AI use against the server's limits, with what is left and when it resets (midnight UTC, shown in your time zone). Appearance sets the theme (system, light or dark), stored in this browser only. It also has a switch for single key keyboard shortcuts, which are not available yet: the switch keeps your choice in this browser for when they ship. Data and privacy is a placeholder for now: the export and delete tools are not in the dashboard yet.
+
+## Profile
+
+Settings, Profile is where you enter what the extension fills from: identity and contact (first and last name, email, phone), links (LinkedIn, GitHub, portfolio, website and up to 10 other links), work authorization (countries, sponsorship, visa status), salary (currency, period, minimum and maximum), location (city, region, country, postal code, willingness to relocate, remote preference) and extra fields, a label and a value for anything else a form asks (up to 200). Every field is optional, and an empty one stays empty on the form.
+
+- **Save**: the page has one explicit Save profile button. It checks links (they must start with `https://` or `http://`), email, phone, the currency code (three letters) and the salary numbers (whole numbers, 0 or more, minimum not above maximum) when you leave a field and when you save. A failed save lists every problem and moves focus to the first one. Leaving the page with unsaved edits asks first, and the browser asks before a reload or close.
+- **Meter**: "17 of 21 fields the extension can fill" counts the saved values of the fields above, extra fields not included, and names some that are still empty.
+- **Extra field labels** are stored lowercase and without punctuation (`Notice period!` is saved as `notice period`), and two labels that become the same are refused.
+- **Pronouns** are not edited here: the extension never fills them. A value saved earlier through the api is kept when you save.
+- **What leaves the server**: a value is only used to fill forms. When a field needs mapping, your AI provider may see the values on the allowlist in [privacy](/docs/privacy), and each field says whether it is one of them. Email, phone, region, postal code, salary and the relocation and remote answers stay out of every prompt.
+- **Never filled**: the page lists the questions the extension skips on every site: passwords and codes, card and bank details, government and tax ids, date of birth, equal opportunity questions, pronouns, consent and signatures, and salary history.
+
+The page replaces the whole profile with what it shows each time, like `PUT /v1/profile` does (`profile.upsert`). Work history, education and a street address are not in the profile yet.
 
 ## Answers
 
