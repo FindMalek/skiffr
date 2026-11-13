@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-// Decides the next release from git history: node scripts/release/plan.mjs [--sha HEAD] [--bump auto|patch|minor|major] [--repo owner/name] [--notes-out file]
+// Decides the next release from git history: node scripts/release/plan.mjs [--sha HEAD] [--bump auto|patch|minor|major] [--repo owner/name] [--notes-out file] [--check-ci]
 // Prints JSON. In GitHub Actions it also writes release, version and tag to $GITHUB_OUTPUT. Changes nothing.
 import { execFileSync } from "node:child_process"
 import { appendFileSync, writeFileSync } from "node:fs"
 import { parseArgs } from "node:util"
-import { latestTag, parseLog, plan, releaseStateOf, renderNotes, withReleaseState } from "./lib.mjs"
+import { hasGreenCi, latestTag, parseLog, plan, releaseStateOf, renderNotes, withReleaseState } from "./lib.mjs"
 
 const { values } = parseArgs({
   options: {
@@ -14,6 +14,8 @@ const { values } = parseArgs({
     "notes-out": { type: "string" },
     // asks GitHub (gh) whether the release of the planned tag is already published
     "check-release": { type: "boolean", default: false },
+    // asks GitHub (gh) whether the newest ci run of a push to main for --sha is green, reported as `ci` in the output
+    "check-ci": { type: "boolean", default: false },
   },
 })
 if (!["auto", "patch", "minor", "major"].includes(values.bump)) {
@@ -37,6 +39,27 @@ if (decision.release && values["check-release"]) {
   decision = withReleaseState(decision, releaseStateOf(list, `v${decision.version}`))
 }
 const result = { ...decision, tag: decision.release ? `v${decision.version}` : null, commits: commits.length }
+if (values["check-ci"]) {
+  const runs = JSON.parse(
+    execFileSync(
+      "gh",
+      [
+        "run",
+        "list",
+        "--workflow",
+        "ci.yml",
+        "--commit",
+        values.sha,
+        "--json",
+        "event,headBranch,conclusion,createdAt",
+        "--repo",
+        values.repo,
+      ],
+      { encoding: "utf8" },
+    ),
+  )
+  result.ci = hasGreenCi(runs)
+}
 
 if (decision.release && values["notes-out"]) {
   writeFileSync(
