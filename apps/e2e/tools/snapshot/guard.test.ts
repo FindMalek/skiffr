@@ -35,6 +35,7 @@ describe("localRefusal through the url parser", () => {
     "http://172.16.0.9/",
     "http://192.168.1.5/",
     "http://169.254.169.254/",
+    "http://168.63.129.16/",
     "http://100.64.0.1/",
     "http://198.18.0.1/",
     "http://192.0.2.1/",

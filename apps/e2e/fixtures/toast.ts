@@ -3,6 +3,7 @@ import type { BrowserContext, Page } from "@playwright/test"
 interface CdpNode {
   nodeId: number
   localName?: string
+  shadowRootType?: string
   nodeValue?: string
   attributes?: string[]
   children?: CdpNode[]
@@ -31,23 +32,24 @@ export class ToastDriver {
   async snapshot(): Promise<ToastSnapshot> {
     const { root } = (await this.cdp.send("DOM.getDocument", { depth: -1, pierce: true })) as { root: CdpNode }
     const found: ToastSnapshot = { title: null, buttons: [] }
-    const walk = (node: CdpNode): void => {
+    // only what sits in the extension's own closed root counts: a page can draw a button with the same attribute
+    const walk = (node: CdpNode, parent: CdpNode | null, own: boolean): void => {
       const attrs = new Map<string, string>()
       for (let i = 0; i + 1 < (node.attributes?.length ?? 0); i += 2) {
         attrs.set(node.attributes?.[i] as string, node.attributes?.[i + 1] as string)
       }
       const action = attrs.get("data-action")
-      if (action) found.buttons.push({ action, nodeId: node.nodeId })
-      if (node.localName === "p" && attrs.get("class") === "title") found.title = node.children?.[0]?.nodeValue ?? ""
-      for (const child of [
-        ...(node.children ?? []),
-        ...(node.shadowRoots ?? []),
-        ...(node.contentDocument ? [node.contentDocument] : []),
-      ]) {
-        walk(child)
+      if (own && action) found.buttons.push({ action, nodeId: node.nodeId })
+      if (own && node.localName === "p" && attrs.get("class") === "title")
+        found.title = node.children?.[0]?.nodeValue ?? ""
+      const hosts = parent?.localName === "html" && node.localName?.startsWith("x-")
+      for (const child of [...(node.children ?? []), ...(node.contentDocument ? [node.contentDocument] : [])]) {
+        walk(child, node, own)
       }
+      for (const shadow of node.shadowRoots ?? [])
+        walk(shadow, node, own || (hosts === true && shadow.shadowRootType === "closed"))
     }
-    walk(root)
+    walk(root, null, false)
     return found
   }
 
