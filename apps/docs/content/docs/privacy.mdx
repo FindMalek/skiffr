@@ -41,7 +41,7 @@ The provider keeps what its own terms say. Leave the keys unset to send nothing:
 
 ### What the extension does on a page
 
-- the content script is injected on all pages, because an application form can be on any careers site. It looks for an application form and shows the toast. Nothing goes to your api until you say yes or press the shortcut
+- the content script is injected on all pages, because an application form can be on any careers site. It looks for an application form and shows the toast. Nothing from the page goes to your api until you say yes or press the shortcut (with a token set the extension also makes a small check-in about every 15 minutes, see the connection check below)
 - the fill engine never submits a form and never clicks submit, next or apply buttons
 - it never touches password or hidden inputs
 - it sets a file only on a resume or CV upload slot, and only when the caller hands it a file
