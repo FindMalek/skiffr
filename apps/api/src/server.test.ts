@@ -96,13 +96,13 @@ test("the preflight from an extension allows its headers and never credentials",
       headers: {
         origin: EXTENSION,
         "access-control-request-method": "POST",
-        "access-control-request-headers": "authorization,content-type",
+        "access-control-request-headers": "authorization,content-type,x-skiffr-client",
       },
     }),
   )
   expect(res.status).toBe(204)
   expect(res.headers.get("access-control-allow-origin")).toBe(EXTENSION)
-  expect(res.headers.get("access-control-allow-headers")).toBe("authorization, content-type")
+  expect(res.headers.get("access-control-allow-headers")).toBe("authorization, content-type, x-skiffr-client")
   expect(res.headers.has("access-control-allow-credentials")).toBe(false)
 })
 

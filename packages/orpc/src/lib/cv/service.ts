@@ -20,6 +20,9 @@ const last4 = (key: string) => key.slice(-4)
 /** The purpose is part of what is sealed with, so a value sealed for another feature (Gmail) never opens as a key here. */
 const aad = (userId: string) => `cv:${userId}`
 
+/** What `connect` stores: the key sealed for this user and feature. Exported so seeded connections are sealed the same way. */
+export const sealApiKey = (key: Buffer, apiKey: string, userId: string): string => seal(key, apiKey, aad(userId))
+
 export async function openConnection(db: Db, runtime: CvRuntime, userId: string): Promise<Opened> {
   const [row] = await db.select().from(cvConnection).where(eq(cvConnection.userId, userId))
   if (!row) throw new CvError("not_connected")
@@ -37,7 +40,7 @@ export async function connect(
   await reactiveResume(runtime, input, userId).list()
   const values = {
     baseUrl: input.baseUrl,
-    apiKeyEnc: seal(runtime.key, input.apiKey, aad(userId)),
+    apiKeyEnc: sealApiKey(runtime.key, input.apiKey, userId),
     keyLast4: last4(input.apiKey),
     baseResumeId: null,
     baseResumeName: null,

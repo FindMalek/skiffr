@@ -24,3 +24,4 @@ test-results/
 # extension zip baked into the api image by the release workflow
 downloads/*
 !downloads/.gitkeep
+seed-links.json

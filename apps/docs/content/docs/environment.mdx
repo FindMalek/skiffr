@@ -37,7 +37,8 @@ There is one `.env` at the repo root. Every app loads it, and `packages/env` val
 | --- | --- |
 | `DATABASE_URL` | postgres connection string |
 | `POSTGRES_PORT` | host port of the local docker postgres |
-| `SEED` | `demo` fills an empty database with sample data, `none` never seeds |
+| `SEED` | `demo` fills an empty database with sample notes, `none` never seeds, `preview` seeds the full demo dataset, see [seeding](/docs/seeding) |
+| `SEED_DEMO_PASSWORD`, `SEED_RESET`, `SEED_LINKS_PATH`, `SEED_CV_URL`, `SEED_ALLOW_PRODUCTION_BUILD`, `PLAYGROUND_URL` | only read for `SEED=preview`, see [seeding](/docs/seeding) |
 | `BETTER_AUTH_SECRET` | at least 32 characters, no default: `openssl rand -base64 32`. The api does not start without it |
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | the first admin, created or reset on every api start |
 | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | optional github sign-in |

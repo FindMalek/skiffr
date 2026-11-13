@@ -22,7 +22,7 @@ export function withExtensionCors(handler: Handler, origins: string[] = []): Han
         headers: {
           "access-control-allow-origin": origin,
           "access-control-allow-methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
-          "access-control-allow-headers": "authorization, content-type",
+          "access-control-allow-headers": "authorization, content-type, x-skiffr-client",
           "access-control-max-age": "600",
           vary: "Origin",
         },

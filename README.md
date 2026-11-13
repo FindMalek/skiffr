@@ -11,6 +11,13 @@
   <a href="https://github.com/FindMalek/skiffr/stargazers"><img alt="GitHub stars" src="https://shieldcn.dev/github/stars/FindMalek/skiffr.svg?variant=secondary" /></a>
 </p>
 
+<p align="center">
+  <a href="https://skiffr.findmalek.engineer"><b>App</b></a> ·
+  <a href="https://dashboard.skiffr.findmalek.engineer"><b>Dashboard</b></a> ·
+  <a href="https://docs.skiffr.findmalek.engineer"><b>Docs</b></a> ·
+  <a href="https://api.skiffr.findmalek.engineer/health"><b>API status</b></a>
+</p>
+
 skiffr is an open-source Chrome extension for job applications. It spots an application form, asks, fills it from your own profile and answer bank, and never submits anything for you. A dashboard keeps your profile, answers and a queue of jobs to apply to. You host the api and the database yourself: your profile, answers, queue and tokens live in your own Postgres, and only a small listed slice goes to a model provider, and only if you set a key.
 
 > **Early development.** Releases are published automatically from `main`, but there is no Chrome Web Store listing yet: you load the extension by hand (see [quick start](#quick-start)). The extension learns from your edits, with the limits listed under [how it works](#how-it-works).
@@ -24,6 +31,19 @@ skiffr is an open-source Chrome extension for job applications. It spots an appl
   <img alt="Funnel stats in the dashboard" width="32%" src="https://raw.githubusercontent.com/FindMalek/skiffr/pr-screenshots/72/15-stats-data-1280-light.png" />
   <img alt="Watched job sources in the dashboard" width="32%" src="https://raw.githubusercontent.com/FindMalek/skiffr/pr-screenshots/74/13-sources-with-sources-1280-light.png" />
 </p>
+
+## Live
+
+The hosted instance runs on a self-hosted Dokploy server and deploys from `main` after CI passes.
+
+| What | Link |
+| --- | --- |
+| App (landing) | https://skiffr.findmalek.engineer |
+| Dashboard (sign in, queue, answers, settings) | https://dashboard.skiffr.findmalek.engineer |
+| Docs | https://docs.skiffr.findmalek.engineer |
+| API health | https://api.skiffr.findmalek.engineer/health |
+
+It is the maintainer's own development instance, not a service with an uptime promise, and anything you enter there is stored on the maintainer's server. For real use, run your own: see [self-hosting](#self-hosting).
 
 ## What it does
 
