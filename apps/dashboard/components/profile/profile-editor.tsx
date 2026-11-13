@@ -256,7 +256,7 @@ function ProfileEditor({ saved }: { saved: SavedProfile | null }) {
           <ExtrasGroup />
           <NeverFilled />
 
-          <div className="sticky bottom-0 z-action -mx-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-3 border-t bg-background px-4 py-3 md:-mx-6 md:px-6">
+          <div className="sticky bottom-[calc(var(--tab-bar-h)+env(safe-area-inset-bottom))] z-action -mx-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-3 border-t bg-background px-4 py-3 md:-mx-6 md:bottom-0 md:px-6">
             <p role="status" className="flex min-h-9 items-center gap-2 text-sm">
               {status}
             </p>
