@@ -3,7 +3,7 @@
     "id": "greenhouse-figma",
     "ats": "greenhouse",
     "url": "https://job-boards.greenhouse.io/figma/jobs/5426468004",
-    "checked": "2026-11-12",
+    "checked": "2026-11-13",
     "expect": {
       "minFilled": 5,
       "detect": ["email"],
@@ -15,7 +15,19 @@
     "id": "greenhouse-cloudflare",
     "ats": "greenhouse",
     "url": "https://job-boards.greenhouse.io/cloudflare/jobs/7695702",
-    "checked": "2026-11-12",
+    "checked": "2026-11-13",
+    "expect": {
+      "minFilled": 4,
+      "detect": ["email"],
+      "untouched": ["gender", "ethnicity", "veteran", "disability"],
+      "toast": true
+    }
+  },
+  {
+    "id": "greenhouse-discord",
+    "ats": "greenhouse",
+    "url": "https://job-boards.greenhouse.io/discord/jobs/8917177002",
+    "checked": "2026-11-13",
     "expect": {
       "minFilled": 4,
       "detect": ["email"],
@@ -27,7 +39,7 @@
     "id": "lever-spotify",
     "ats": "lever",
     "url": "https://jobs.lever.co/spotify/2a55d6c9-c564-443a-be3e-a3851db5a93b/apply",
-    "checked": "2026-11-12",
+    "checked": "2026-11-13",
     "expect": {
       "minFilled": 4,
       "detect": ["email"],
@@ -39,41 +51,9 @@
     "id": "lever-palantir",
     "ats": "lever",
     "url": "https://jobs.lever.co/palantir/6ed76ce8-4156-4b60-b120-403538bd66cd/apply",
-    "checked": "2026-11-12",
+    "checked": "2026-11-13",
     "expect": {
       "minFilled": 6,
-      "detect": ["email"],
-      "untouched": ["gender", "ethnicity", "veteran", "disability"],
-      "toast": true
-    }
-  },
-  {
-    "id": "ashby-ramp",
-    "ats": "ashby",
-    "url": "https://jobs.ashbyhq.com/ramp/34413f8d-26bf-4bbc-8ade-eb309a0e2245/application",
-    "readPosts": [
-      "/api/non-user-graphql?op=ApiJobPosting",
-      "/api/non-user-graphql?op=ApiOrganizationFromHostedJobsPageName"
-    ],
-    "checked": "2026-11-12",
-    "expect": {
-      "minFilled": 2,
-      "detect": ["email"],
-      "untouched": ["gender", "ethnicity", "veteran", "disability"],
-      "toast": true
-    }
-  },
-  {
-    "id": "ashby-notion",
-    "ats": "ashby",
-    "url": "https://jobs.ashbyhq.com/notion/1fc309c8-da20-4ff2-84c7-8b863ece2b0a/application",
-    "readPosts": [
-      "/api/non-user-graphql?op=ApiJobPosting",
-      "/api/non-user-graphql?op=ApiOrganizationFromHostedJobsPageName"
-    ],
-    "checked": "2026-11-12",
-    "expect": {
-      "minFilled": 2,
       "detect": ["email"],
       "untouched": ["gender", "ethnicity", "veteran", "disability"],
       "toast": true
@@ -83,7 +63,8 @@
     "id": "workable-huggingface",
     "ats": "workable",
     "url": "https://apply.workable.com/huggingface/j/81B46579FE/apply/",
-    "checked": "2026-11-12",
+    "enabled": false,
+    "checked": "2026-11-13",
     "expect": {
       "minFilled": 4,
       "detect": ["email"],

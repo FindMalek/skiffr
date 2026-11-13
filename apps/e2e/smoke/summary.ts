@@ -1,6 +1,10 @@
 import { STATUSES, type Status, type TargetResult } from "./drift.ts"
 
-const cell = (text: string): string => text.replace(/\|/g, "/").replace(/\s+/g, " ")
+const cell = (text: string): string =>
+  text
+    .replace(/\|/g, "/")
+    .replace(/\s+/g, " ")
+    .replace(/[<>`@\\*_[\]]/g, (char) => `\\${char}`)
 
 export function tally(results: TargetResult[]): Record<Status, number> {
   const counts = Object.fromEntries(STATUSES.map((status) => [status, 0])) as Record<Status, number>
@@ -11,6 +15,14 @@ export function tally(results: TargetResult[]): Record<Status, number> {
 /** A run is red only when the extension drifted or the runner itself failed: a gone or blocked page says nothing about the extension. */
 export const needsAttention = (results: TargetResult[]): boolean =>
   results.some((result) => result.status === "drift" || result.status === "error")
+
+export const NOTHING_VERIFIED = "nothing was verified: no target ended ok or drift"
+
+/** 0 clean, 1 drift or error, 3 a run that checked nothing (every target gone, blocked, skipped or errored out), which must never look green. */
+export function exitCodeOf(results: TargetResult[]): 0 | 1 | 3 {
+  if (needsAttention(results)) return 1
+  return results.some((result) => result.status === "ok") ? 0 : 3
+}
 
 export function renderSummary(results: TargetResult[], date: string): string {
   const counts = tally(results)

@@ -4,14 +4,14 @@ import { parseArgs } from "node:util"
 import { type Baseline, baselineSchema } from "./drift.ts"
 import { runSmoke } from "./runner.ts"
 import { parseTargets } from "./schema.ts"
-import { needsAttention, renderSummary } from "./summary.ts"
+import { exitCodeOf, NOTHING_VERIFIED, renderSummary } from "./summary.ts"
 
 const USAGE = `usage: pnpm --filter e2e smoke [--only <id,id>] [--update-baseline] [--targets <file>] [--out <dir>]
-                                  [--delay <ms>] [--timeout <ms>] [--settle <ms>] [--threshold <0-1>]
+                                  [--traces] [--delay <ms>] [--timeout <ms>] [--settle <ms>] [--threshold <0-1>]
 
 Opens the public pages in smoke/targets.json with the real extension and a mock api, fills them and never submits.
-Writes summary.md, summary.json and the traces of failing targets to --out (default smoke/results).
-Exit code 1 when a target drifted or errored, 0 otherwise. A gone or blocked page does not fail the run.
+Writes summary.md and summary.json to --out (default smoke/results). --traces also keeps a trace of every failing target: it holds the page itself, so only use it on your own machine.
+Exit code 1 when a target drifted or errored, 3 when no target ended ok or drift (nothing was verified), 2 for a setup problem, 0 otherwise.
 Only public pages, at a low frequency: check each site's terms before adding a target.`
 
 const number = (value: string | undefined, fallback: number): number => (value === undefined ? fallback : Number(value))
@@ -26,6 +26,7 @@ export async function run(argv: string[], here: string): Promise<number> {
         only: { type: "string" },
         "update-baseline": { type: "boolean", default: false },
         targets: { type: "string" },
+        traces: { type: "boolean", default: false },
         out: { type: "string" },
         delay: { type: "string" },
         timeout: { type: "string" },
@@ -68,38 +69,46 @@ export async function run(argv: string[], here: string): Promise<number> {
   }
 
   const out = resolve((values.out as string | undefined) ?? join(here, "results"))
-  const traceDir = join(out, "traces")
-  await mkdir(traceDir, { recursive: true })
+  const traceDir = values.traces === true ? join(out, "traces") : undefined
+  await mkdir(traceDir ?? out, { recursive: true })
   const baselineFile = (id: string): string => join(baselines, `${id}.json`)
   const update = values["update-baseline"] === true
 
-  const results = await runSmoke({
-    targets,
-    extensionDir: resolve(
-      process.env.E2E_EXTENSION_DIR ?? join(here, "..", "..", "extension", ".output", "chrome-mv3"),
-    ),
-    timeoutMs,
-    settleMs,
-    delayMs,
-    driftThreshold,
-    allowLocal: false,
-    loadBaseline: async (id): Promise<Baseline | null> => {
-      const text = await readFile(baselineFile(id), "utf8").catch(() => null)
-      return text === null ? null : baselineSchema.parse(JSON.parse(text))
-    },
-    saveBaseline: update
-      ? async (id, baseline) => {
-          await mkdir(baselines, { recursive: true })
-          await writeFile(baselineFile(id), `${JSON.stringify(baselineSchema.parse(baseline), null, 2)}\n`)
-        }
-      : undefined,
-    traceDir,
-    log: (line) => console.log(line),
-  })
+  let results: Awaited<ReturnType<typeof runSmoke>>
+  try {
+    results = await runSmoke({
+      targets,
+      extensionDir: resolve(
+        process.env.E2E_EXTENSION_DIR ?? join(here, "..", "..", "extension", ".output", "chrome-mv3"),
+      ),
+      timeoutMs,
+      settleMs,
+      delayMs,
+      driftThreshold,
+      allowLocal: false,
+      loadBaseline: async (id): Promise<Baseline | null> => {
+        const text = await readFile(baselineFile(id), "utf8").catch(() => null)
+        return text === null ? null : baselineSchema.parse(JSON.parse(text))
+      },
+      saveBaseline: update
+        ? async (id, baseline) => {
+            await mkdir(baselines, { recursive: true })
+            await writeFile(baselineFile(id), `${JSON.stringify(baselineSchema.parse(baseline), null, 2)}\n`)
+          }
+        : undefined,
+      traceDir,
+      log: (line) => console.log(line),
+    })
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error))
+    return 2
+  }
 
   const summary = renderSummary(results, new Date().toISOString().slice(0, 10))
   await writeFile(join(out, "summary.md"), summary)
   await writeFile(join(out, "summary.json"), `${JSON.stringify(results, null, 2)}\n`)
   console.log(`\n${summary}`)
-  return needsAttention(results) ? 1 : 0
+  const code = exitCodeOf(results)
+  if (code === 3) console.error(NOTHING_VERIFIED)
+  return code
 }

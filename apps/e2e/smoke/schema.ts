@@ -5,12 +5,7 @@ export const ATS_NAMES = ["greenhouse", "lever", "ashby", "workable", "other"] a
 
 const ID = /^[a-z0-9][a-z0-9-]{0,63}$/
 
-const READ_POST = z
-  .string()
-  .regex(/^\/[\w./-]*\?op=\w+$/, "use /path?op=Name")
-  .refine((entry) => !/submit|create|update|delete|mutat|save|apply|upload|send/i.test(entry), {
-    message: "that looks like a write",
-  })
+const CLICK_REFUSED = /submit|send|pay|confirm|finish|xpath=|^\/\//i
 
 const phrases = z.array(z.string().trim().min(1).max(100)).max(30).default([])
 
@@ -28,9 +23,13 @@ function targetSchema(allowLocal: boolean) {
     url: publicUrl(allowLocal),
     enabled: z.boolean().default(true),
     /** Opens the form behind an apply button. The only click the runner makes on the page. */
-    click: z.string().trim().min(1).max(200).optional(),
-    /** Read only POST calls the page needs to draw its form, as `/path?op=Name`. Anything else that is not a GET is aborted. */
-    readPosts: z.array(READ_POST).max(10).default([]),
+    click: z
+      .string()
+      .trim()
+      .min(1)
+      .max(200)
+      .refine((selector) => !CLICK_REFUSED.test(selector), { message: "that selector could submit a form" })
+      .optional(),
     checked: z.iso.date(),
     expect: z.strictObject({
       minFilled: z.number().int().min(0).max(200),

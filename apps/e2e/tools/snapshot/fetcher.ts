@@ -27,7 +27,7 @@ export interface Fetched {
 }
 
 export interface Fetcher {
-  fetch: (url: URL, method: string, headers: Record<string, string>, body?: Buffer) => Promise<Fetched>
+  fetch: (url: URL, method: string, headers: Record<string, string>) => Promise<Fetched>
   close: () => void
 }
 
@@ -68,7 +68,6 @@ export function createFetcher(options: { guard: RequestGuard; allowName: string 
     url: URL,
     method: string,
     headers: Record<string, string>,
-    payload?: Buffer,
   ): Promise<{ status: number; headers: http.IncomingHttpHeaders; body: Buffer }> {
     return new Promise((resolve, reject) => {
       const lib = url.protocol === "https:" ? https : http
@@ -76,7 +75,7 @@ export function createFetcher(options: { guard: RequestGuard; allowName: string 
         url,
         {
           method,
-          headers: payload ? { ...headers, "content-length": String(payload.length) } : headers,
+          headers,
           lookup,
           agent: agents[url.protocol as "http:" | "https:"],
           signal: AbortSignal.timeout(options.timeoutMs),
@@ -100,16 +99,11 @@ export function createFetcher(options: { guard: RequestGuard; allowName: string 
         },
       )
       req.on("error", reject)
-      req.end(payload)
+      req.end()
     })
   }
 
-  async function fetchPage(
-    first: URL,
-    method: string,
-    headers: Record<string, string>,
-    payload?: Buffer,
-  ): Promise<Fetched> {
+  async function fetchPage(first: URL, method: string, headers: Record<string, string>): Promise<Fetched> {
     const sent: Record<string, string> = { ...headers, "accept-encoding": "identity" }
     delete sent.host
     delete sent["content-length"]
@@ -122,7 +116,7 @@ export function createFetcher(options: { guard: RequestGuard; allowName: string 
       if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error(`${url.protocol} is not fetched`)
       const refusal = await options.guard(url.href)
       if (refusal) throw new Error(refusal)
-      const res = await hop(url, method, sent, payload)
+      const res = await hop(url, method, sent)
       const location = res.headers.location
       if (REDIRECTS.has(res.status) && typeof location === "string") {
         url = new URL(location, url)

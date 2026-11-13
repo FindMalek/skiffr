@@ -21,13 +21,21 @@ pnpm --filter e2e smoke --update-baseline
 | `--only <id,id>` | run these targets only |
 | `--update-baseline` | rewrite `baselines/<id>.json` from this run. Do it on purpose, after you looked at why a target drifted |
 | `--targets <file>` | another target list, default `smoke/targets.json` |
-| `--out <dir>` | where `summary.md`, `summary.json` and the traces of failing targets go, default `smoke/results` (ignored by git) |
+| `--out <dir>` | where `summary.md` and `summary.json` go, default `smoke/results` (ignored by git) |
+| `--traces` | also keep a trace of every failing target. A trace holds the third party page itself, so only use it on your own machine |
 | `--delay <ms>` | pause between targets, default 10000 |
 | `--timeout <ms>` | hard limit per target, default 90000 |
 | `--settle <ms>` | wait after the network is idle, default 2000 |
 | `--threshold <0-1>` | how far `filled` and `collected` may fall below the baseline, default 0.25 |
 
-The extension must be built first (or point `E2E_EXTENSION_DIR` at an unzipped build). Exit code 1 means a target drifted or errored; a gone or blocked page does not fail the run.
+The extension must be built first (or point `E2E_EXTENSION_DIR` at an unzipped build). Exit codes:
+
+| Code | Meaning |
+| --- | --- |
+| 0 | at least one target ended `ok` and none drifted or errored. Gone and blocked pages do not fail the run |
+| 1 | a target drifted or errored |
+| 2 | a setup problem: bad flags, no extension build |
+| 3 | nothing was verified: no target ended `ok` or `drift` (all gone, blocked, skipped or errored out). A run that checked nothing is never green |
 
 ## What a target checks
 
@@ -44,9 +52,9 @@ A target is `drift` when the offer does not appear, `filled` is below `expect.mi
 | --- | --- |
 | `ok` | everything above held |
 | `drift` | the extension no longer does what the target expects: fix the extension or, if the site really changed, the target |
-| `gone` | the posting is dead (404, 410, redirected away, or the page says it is closed). Not drift, never fails the run: replace the target |
+| `gone` | the posting is dead: HTTP 404 or 410, or the final url has another path than the target (expired postings redirect to the board). Page text is never used to decide this, so a page that lost its form is `drift`, not `gone`. Never fails the run: replace the target |
 | `blocked` | the host answered 429 or 403. Not retried |
-| `error` | the runner could not load the page or timed out |
+| `error` | the runner could not load the page, a request of the page failed or timed out, the page sent more than 300 requests, or the target timed out. A network problem is never reported as drift |
 | `skipped` | `enabled` is false, or the run stopped because a host kept refusing |
 
 ## Add a target
@@ -67,25 +75,26 @@ Add an object to `smoke/targets.json`:
 - `id`: lowercase letters, digits and dashes. Names the baseline file
 - `ats`: `greenhouse`, `lever`, `ashby`, `workable` or `other`
 - `url`: a public `http` or `https` page that needs no login. Loopback, private and credentialed addresses are refused when the file is read
-- `click`: only for pages that open the form behind a button. It is the one click the runner makes on the page
+- `click`: only for pages that open the form behind a button. It is the one click the runner makes on the page. Selectors that mention submit, send, pay, confirm or finish, or use xpath, are refused
 - `checked`: the day you confirmed the page exists
-- `enabled`: set to `false` to park a target without deleting it
-- `readPosts`: for single page boards that draw the form with a read only POST (Ashby does, `/api/non-user-graphql?op=ApiJobPosting`). Every other write is aborted. Entries are a path and an operation name, and anything that looks like a submit, create, update, delete, save or upload is refused
+- `enabled`: set to `false` to park a target without deleting it. `workable-huggingface` is parked: on the live page the first name, last name, email and phone stay empty after the fill, which is a real finding for the extension. Enable it again once that is fixed
 - `expect.minFilled`: the least number of fields the fill must report
 - `expect.detect`: words, each of which must appear in the label of a field the fill handled
 - `expect.untouched`: extra words that mark fields which must come out as they went in. The built in list already covers the usual diversity and consent questions
 
-Then run `pnpm --filter e2e smoke --only <id> --update-baseline`, look at `summary.md`, and commit the target and `baselines/<id>.json`. A baseline holds counts and one hash of the field labels and types. It never holds page text, the page itself or any personal data. To drop a target, delete it from the list and delete its baseline.
+Before adding a site, read its `robots.txt` and stay out of anything it disallows for `*`: the runner sends only GET requests and fetches what a browser visiting that page would, so a page that needs a disallowed path (an `/api/` call, say) cannot be a target. Then run `pnpm --filter e2e smoke --only <id> --update-baseline`, look at `summary.md`, and commit the target and `baselines/<id>.json` (a test fails when a target has no baseline or a baseline has no target). A baseline holds counts and one hash of the field labels and types. It never holds page text, the page itself or any personal data. To drop a target, delete it from the list and delete its baseline.
 
 ## Politeness and safety
 
-- Every request goes through the snapshot tool's guard and fetcher: public hosts only, every redirect hop checked, the address vetted when the connection is made, size caps and a deadline. The browser never talks to the network directly
-- Only GET and HEAD leave the machine. Any other request is aborted, apart from the `readPosts` a target lists. Nothing is submitted, uploaded or typed outside the fill engine
-- The api is the mock one on loopback and the profile is synthetic. No real data and no secrets are involved
+- Every request goes through the snapshot tool's guard and fetcher: public hosts only, every redirect hop checked, the address vetted when the connection is made, size caps and a deadline
+- Chromium cannot connect to anything on its own: it is started with a proxy that points at a closed local port, and only the mock api is let around it. A page that asks the browser to preconnect, prefetch or speculate gets nothing, and every real request is made by the guard
+- Only GET and HEAD leave the machine. Every other request (fetch, beacon, xhr, `ping`, a form post) is aborted, with no exception. Nothing is submitted, uploaded or typed outside the fill engine. Popups are closed, and a hostile page that makes the route handler throw ends as an `error` for that target, never as a crashed run
+- The api is the mock one on loopback and the profile is synthetic. No real data and no secrets are involved. The toast is only clicked where the extension drew it (its own closed shadow root), never on a button a page draws with the same attribute
 - User agent `skiffr-smoke/<version>` with the repository link, no personal details
-- One request per host at a time, 10 seconds between targets, images, fonts, media and known trackers and analytics hosts are not loaded
-- A host that answers 429 or 403 twice stops the whole run. The target is reported `blocked` and nothing is retried
-- A trace of every target that is not ok is uploaded as a workflow artifact. Traces contain the public page, never a real profile
+- One request per host at a time, 10 seconds between targets, at most 300 requests per target (the rest are aborted and the target is an `error`), images, fonts, media and known trackers and analytics hosts are not loaded
+- A 429, or a 403 on the page or its api calls, from the target's own host counts as one strike for that host per target (third party hosts do not count). A second strike stops the whole run. The target is reported `blocked`, the rest `skipped`, and nothing is retried
+- Targets are checked against `robots.txt` by hand when they are added. Checked 2026-11-13: `job-boards.greenhouse.io` allows everything, `jobs.lever.co` allows `/` for `*`, `apply.workable.com` has an empty `Disallow`. `jobs.ashbyhq.com` disallows `/api/` for `*` and its postings only render through POST calls to it, so no Ashby page is a target
+- Only the summary (ids, statuses and counts) is uploaded as a workflow artifact, for 3 days. Traces are opt in (`--traces`, or the `traces` input of a manual run) because they hold the third party page
 
 ## Terms of service
 
@@ -93,4 +102,4 @@ Only add public application pages of boards that you may load like any visitor, 
 
 ## The workflow
 
-`smoke.yml` runs on a weekly schedule and by hand. It does nothing until the repository variable `SMOKE_ENABLED` is `true`. It needs no secrets, builds the extension the same way the `e2e` job does, uploads `summary.md` and the traces as an artifact, and keeps a single issue with the label `smoke` up to date: it opens it on drift, edits it in place on the next drift, and comments and closes it when a run is clean.
+`smoke.yml` runs on a weekly schedule and by hand. It does nothing until the repository variable `SMOKE_ENABLED` is `true`. It needs no secrets, builds the extension the same way the `e2e` job does, uploads `summary.md` and `summary.json` as an artifact, and keeps a single issue with the label `smoke` up to date: it opens it on drift (or on runner errors, with a title that says so), edits it in place on the next failing run and adds a comment when the set of failing targets changes (an edit notifies nobody), and comments and closes it when a run is clean. A run that verified nothing (exit code 3) leaves the issue alone and fails the job.

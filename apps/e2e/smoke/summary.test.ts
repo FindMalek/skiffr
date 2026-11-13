@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { TargetResult } from "./drift.ts"
-import { needsAttention, renderSummary, tally } from "./summary.ts"
+import { exitCodeOf, needsAttention, renderSummary, tally } from "./summary.ts"
 
 const result = (over: Partial<TargetResult>): TargetResult => ({
   id: "a",
@@ -54,5 +54,20 @@ describe("summary", () => {
       false,
     )
     expect(needsAttention([result({ status: "error" })])).toBe(true)
+  })
+
+  test("markdown and mentions in a detail are escaped", () => {
+    const text = renderSummary([result({ notes: ["<img src=x> `code` @someone"] })], "2026-11-12")
+    expect(text).toContain("\\<img src=x\\> \\`code\\` \\@someone")
+  })
+
+  test("a run that verified nothing never exits clean", () => {
+    const only = (status: TargetResult["status"]) => [result({ status }), result({ id: "b", status })]
+    expect(exitCodeOf([result({}), result({ id: "b", status: "gone" })])).toBe(0)
+    expect(exitCodeOf(only("ok"))).toBe(0)
+    expect(exitCodeOf([result({}), result({ id: "b", status: "drift" })])).toBe(1)
+    expect(exitCodeOf(only("error"))).toBe(1)
+    for (const status of ["gone", "blocked", "skipped"] as const) expect(exitCodeOf(only(status))).toBe(3)
+    expect(exitCodeOf([])).toBe(3)
   })
 })

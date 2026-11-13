@@ -1,7 +1,7 @@
 name: smoke
 
 # Opens real public application pages with the built extension and a mock api, fills them and never submits.
-# Reports selector drift in one tracking issue (label `smoke`). Needs no secrets.
+# Reports drift in one tracking issue (label `smoke`). Needs no secrets.
 # Skipped until the repository variable SMOKE_ENABLED is "true", so merging this is safe.
 # Only public pages, at a low frequency: see the docs page "Smoke tests".
 
@@ -9,6 +9,11 @@ on:
   schedule:
     - cron: "41 5 * * 1"
   workflow_dispatch:
+    inputs:
+      traces:
+        description: Keep a trace of every failing target (it holds the third party page, only for a manual look)
+        type: boolean
+        default: false
 
 concurrency:
   group: smoke
@@ -27,7 +32,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      GH_TOKEN: ${{ github.token }}
       E2E_EXTENSION_DIR: ${{ github.workspace }}/apps/extension/.output/chrome-mv3
     steps:
       - uses: actions/checkout@v7
@@ -42,10 +46,14 @@ jobs:
       - run: pnpm --filter e2e exec playwright install --with-deps chromium
       - name: Run the smoke targets
         id: run
+        env:
+          TRACES: ${{ inputs.traces }}
         shell: bash
         run: |
           set +e
-          pnpm --filter e2e smoke --out "$RUNNER_TEMP/smoke"
+          args=(--out "$RUNNER_TEMP/smoke")
+          if [ "$TRACES" = "true" ]; then args+=(--traces); fi
+          pnpm --filter e2e smoke "${args[@]}"
           echo "code=$?" >> "$GITHUB_OUTPUT"
           exit 0
       - name: Show the summary
@@ -60,35 +68,45 @@ jobs:
         with:
           name: smoke-${{ github.run_id }}
           path: ${{ runner.temp }}/smoke
-          retention-days: 14
+          retention-days: 3
           if-no-files-found: ignore
       - name: Update the tracking issue
-        if: always() && steps.run.outputs.code != '2'
+        # 0: clean, close an open issue. 1: drift or error. 3: nothing was verified, leave the issue alone.
+        if: always() && (steps.run.outputs.code == '0' || steps.run.outputs.code == '1')
         env:
+          GH_TOKEN: ${{ github.token }}
           CODE: ${{ steps.run.outputs.code }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         shell: bash
         run: |
-          summary="$RUNNER_TEMP/smoke/summary.md"
-          [ -f "$summary" ] || exit 0
+          dir="$RUNNER_TEMP/smoke"
+          [ -f "$dir/summary.md" ] || exit 0
+          failing=$(jq -r '[.[] | select(.status == "drift" or .status == "error") | "\(.id):\(.status)"] | sort | join(",")' "$dir/summary.json")
+          drifted=$(jq '[.[] | select(.status == "drift")] | length' "$dir/summary.json")
           body="$RUNNER_TEMP/smoke-issue.md"
           {
-            cat "$summary"
+            cat "$dir/summary.md"
             echo
-            echo "run: $RUN_URL (traces are in the artifact)"
+            echo "run: $RUN_URL"
+            echo
+            echo "<!-- smoke-state: $failing -->"
           } > "$body"
           number=$(gh issue list --label smoke --state open --limit 1 --json number --jq '.[0].number // empty')
           if [ "$CODE" = "1" ]; then
-            if [ -n "$number" ]; then
-              gh issue edit "$number" --body-file "$body"
+            if [ "$drifted" -gt 0 ]; then title="smoke: drift on real ats pages"; else title="smoke: runner errors on real ats pages"; fi
+            if [ -z "$number" ]; then
+              gh label create smoke --color BFD4F2 --description "found by the smoke run" 2>/dev/null || true
+              gh issue create --title "$title" --label smoke --body-file "$body"
             else
-              gh label create smoke --color BFD4F2 --description "selector drift found by the smoke run" 2>/dev/null || true
-              gh issue create --title "smoke: selector drift on real ats pages" --label smoke --body-file "$body"
+              before=$(gh issue view "$number" --json body --jq '.body' | grep -o 'smoke-state: .* -->' | sed 's/smoke-state: //; s/ -->//' || true)
+              gh issue edit "$number" --title "$title" --body-file "$body"
+              # an edit notifies nobody, a comment does: say so when the set of failing targets changed
+              if [ "$before" != "$failing" ]; then gh issue comment "$number" --body-file "$body"; fi
             fi
           elif [ -n "$number" ]; then
             gh issue comment "$number" --body-file "$body"
             gh issue close "$number"
           fi
-      - name: Fail on drift
+      - name: Fail unless the run was clean
         if: steps.run.outputs.code != '0'
         run: exit 1

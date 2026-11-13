@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
-import { readFileSync } from "node:fs"
+import { readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
+import { baselineSchema } from "./drift.ts"
 import { parseTargets } from "./schema.ts"
 
 const target = (over: Record<string, unknown> = {}) => ({
@@ -18,11 +19,19 @@ describe("target schema", () => {
     expect(parseTargets(file).length).toBeGreaterThan(0)
   })
 
+  test("every target has a baseline of counts and a hash, and no baseline is orphaned", () => {
+    const ids = parseTargets(JSON.parse(readFileSync(join(import.meta.dir, "targets.json"), "utf8"))).map((t) => t.id)
+    const dir = join(import.meta.dir, "baselines")
+    const files = readdirSync(dir).map((name) => name.replace(/\.json$/, ""))
+    expect(files.sort()).toEqual([...ids].sort())
+    for (const id of ids)
+      expect(baselineSchema.safeParse(JSON.parse(readFileSync(join(dir, `${id}.json`), "utf8"))).success).toBe(true)
+  })
+
   test("fills in the defaults", () => {
     const [parsed] = parseTargets([target()])
     expect(parsed?.enabled).toBe(true)
     expect(parsed?.expect).toEqual({ minFilled: 3, detect: [], untouched: [], toast: true })
-    expect(parsed?.readPosts).toEqual([])
   })
 
   test.each([
@@ -47,17 +56,22 @@ describe("target schema", () => {
     },
   )
 
-  test("read only posts are listed by path and operation, a write is refused", () => {
-    const ok = "/api/non-user-graphql?op=ApiJobPosting"
-    expect(parseTargets([target({ readPosts: [ok] })])[0]?.readPosts).toEqual([ok])
-    for (const bad of [
-      "/api/non-user-graphql?op=ApiSubmitSingleApplicationForm",
-      "/api/non-user-graphql",
-      "https://evil.example/api?op=Read",
-      "/api/upload?op=Read",
+  test("a click selector that could submit is refused, an apply button is not", () => {
+    for (const click of [
+      "button[type=submit]",
+      "text=Submit application",
+      "#send",
+      "text=Pay now",
+      "xpath=//form//button",
+      "//form/button",
     ]) {
-      expect(() => parseTargets([target({ readPosts: [bad] })])).toThrow()
+      expect(() => parseTargets([target({ click })])).toThrow(/could submit/)
     }
+    expect(parseTargets([target({ click: "text=Apply now" })])[0]?.click).toBe("text=Apply now")
+  })
+
+  test("the readPosts exception is gone", () => {
+    expect(() => parseTargets([target({ readPosts: ["/api/x?op=Read"] })])).toThrow()
   })
 
   test("rejects credentials in the url", () => {

@@ -28,6 +28,8 @@ export interface RunOptions {
   extensionDir: string
   /** Hard limit for one target, in milliseconds. */
   timeoutMs: number
+  /** How long to wait for the extension's fill offer. */
+  offerMs?: number
   settleMs: number
   delayMs: number
   driftThreshold: number
@@ -36,16 +38,28 @@ export interface RunOptions {
   loadBaseline: (id: string) => Promise<Baseline | null>
   /** Set to rewrite baselines: called with what the run saw. */
   saveBaseline?: (id: string, baseline: Baseline) => Promise<void>
-  /** Where the trace of a target that is not ok goes. */
+  /** Requests one target may send to the network before it is stopped as an error. */
+  maxRequests?: number
+  /** Where the trace of a target that is not ok goes. Traces hold the page itself, so they are only taken on request. */
   traceDir?: string
   log?: (line: string) => void
   today?: () => string
 }
 
+const MAX_REQUESTS = 300
+const UNEXPECTED = "the runner failed on this target"
+const LOAD_FAILED = "the page did not load"
+const REQUEST_FAILED = "a page request failed or timed out"
+
 interface PageState {
   doc: { status: number; finalUrl: string } | null
-  refusals: string[]
+  /** Requests the guard or the network refused: a runner or network problem, not a change of the page. */
+  refusals: number
   refusedDocument: boolean
+  /** This target already counted as a 429 or 403 strike for its host. */
+  struck: boolean
+  requests: number
+  overBudget: () => void
   writesAborted: number
   consoleErrors: number
 }
@@ -59,9 +73,6 @@ interface FormControl {
   /** The radio group the control belongs to, and whether it is the one picked. */
   radio: { name: string; picked: boolean } | null
 }
-
-const GONE_TEXT =
-  /(job|position|posting|role|page).{0,40}(no longer|not (be )?found|expired|closed|filled|unavailable)|no longer (accepting|available)|can.?t be found|could not be found/i
 
 /** In the page: every control with the words that name it and what it holds. Read before and after the fill to see what it changed. */
 function readControls(): FormControl[] {
@@ -174,38 +185,43 @@ async function limitNetwork(
     timeoutMs: Math.min(30_000, options.timeoutMs),
   })
   await blockRealtime(context)
+  const targetHost = new URL(target.url).hostname
+  const budget = options.maxRequests ?? MAX_REQUESTS
   await context.route("**/*", async (route: Route) => {
-    const request = route.request()
-    let url: URL
     try {
-      url = new URL(request.url())
-    } catch {
-      return route.abort()
-    }
-    if (url.protocol !== "http:" && url.protocol !== "https:") return route.continue()
-    const readPost =
-      request.method() === "POST" &&
-      url.host === new URL(target.url).host &&
-      target.readPosts.includes(`${url.pathname}${url.search}`)
-    if (request.method() !== "GET" && request.method() !== "HEAD" && !readPost) {
-      state.writesAborted++
-      return route.abort()
-    }
-    if (isTrackerHost(url.hostname) || ["image", "media", "font"].includes(request.resourceType())) return route.abort()
-    const main = request.isNavigationRequest() && request.frame().parentFrame() === null
-    try {
-      const page = await shared.limit(url.host, () =>
-        fetcher.fetch(url, request.method(), request.headers(), request.postDataBuffer() ?? undefined),
-      )
-      if (isRefusal(page.status, request.resourceType())) {
-        shared.strikes.record(url.hostname)
+      const request = route.request()
+      const url = new URL(request.url())
+      if (url.protocol !== "http:" && url.protocol !== "https:") return await route.continue()
+      if (request.method() !== "GET" && request.method() !== "HEAD") {
+        state.writesAborted++
+        return await route.abort()
+      }
+      const type = request.resourceType()
+      if (isTrackerHost(url.hostname) || ["image", "media", "font"].includes(type)) return await route.abort()
+      if (state.requests >= budget) {
+        state.overBudget()
+        return await route.abort()
+      }
+      state.requests++
+      const main = request.isNavigationRequest() && request.frame().parentFrame() === null
+      let page: Awaited<ReturnType<Fetcher["fetch"]>>
+      try {
+        page = await shared.limit(url.host, () => fetcher.fetch(url, request.method(), request.headers()))
+      } catch {
+        state.refusals++
+        return await route.abort()
+      }
+      if (isRefusal(page.status, type)) {
         if (main) state.refusedDocument = true
+        if (url.hostname === targetHost && !state.struck) {
+          state.struck = true
+          shared.strikes.record(url.hostname)
+        }
       }
       if (main && !state.doc) state.doc = { status: page.status, finalUrl: page.url }
-      return await route.fulfill({ status: page.status, headers: page.headers, body: page.body })
-    } catch (error) {
-      state.refusals.push(error instanceof Error ? error.message : String(error))
-      return route.abort()
+      await route.fulfill({ status: page.status, headers: page.headers, body: page.body })
+    } catch {
+      await route.abort().catch(() => undefined)
     }
   })
   return fetcher
@@ -249,17 +265,14 @@ async function visit(
     notes: [],
     observation,
   })
-  const offerMs = Math.min(20_000, options.timeoutMs / 3)
+  const offerMs = options.offerMs ?? Math.min(20_000, options.timeoutMs / 3)
 
   try {
     await page.goto(target.url, { waitUntil: "domcontentloaded", timeout: Math.min(30_000, options.timeoutMs) })
-  } catch (error) {
+  } catch {
     if (state.doc && (state.doc.status === 404 || state.doc.status === 410))
       return done("gone", `http ${state.doc.status}`)
-    return done(
-      "error",
-      state.refusals[0] ?? (error instanceof Error ? (error.message.split("\n")[0] ?? "load failed") : "load failed"),
-    )
+    return done("error", state.refusals > 0 ? REQUEST_FAILED : LOAD_FAILED)
   }
   const doc = state.doc
   if (state.refusedDocument || (doc && (doc.status === 429 || doc.status === 403)))
@@ -299,10 +312,7 @@ async function visit(
   }
   const notes: string[] = []
   if (!offered) {
-    const closed = await page
-      .evaluate((source) => new RegExp(source, "i").test(document.body.innerText.slice(0, 6000)), GONE_TEXT.source)
-      .catch(() => false)
-    if (closed && !clickMissed) return done("gone", "the page says the posting is closed")
+    if (state.refusals > 0) return done("error", REQUEST_FAILED)
   } else {
     const before = await page.evaluate(readControls)
     await toast.click("yes")
@@ -344,28 +354,52 @@ async function visit(
   }
   observation.consoleErrors = state.consoleErrors
 
-  const baseline = await options.loadBaseline(target.id)
+  let baseline: Baseline | null = null
+  try {
+    baseline = await options.loadBaseline(target.id)
+  } catch {
+    notes.push("baseline file is invalid")
+  }
   const verdict = assess(target, observation, baseline, { threshold: options.driftThreshold })
   return { status: verdict.status, reasons: verdict.reasons, notes: [...notes, ...verdict.notes], observation }
 }
 
+const errorVisit = (reason: string): Visit => ({ status: "error", reasons: [reason], notes: [], observation: null })
+
 async function runTarget(target: Target, shared: Shared, options: RunOptions): Promise<TargetResult> {
   const started = Date.now()
-  const state: PageState = { doc: null, refusals: [], refusedDocument: false, writesAborted: 0, consoleErrors: 0 }
+  const state: PageState = {
+    doc: null,
+    refusals: 0,
+    refusedDocument: false,
+    struck: false,
+    requests: 0,
+    overBudget: () => undefined,
+    writesAborted: 0,
+    consoleErrors: 0,
+  }
   const dir = mkdtempSync(join(tmpdir(), "skiffr-smoke-"))
-  const context = await chromium.launchPersistentContext(dir, {
-    channel: "chromium",
-    args: [`--disable-extensions-except=${options.extensionDir}`, `--load-extension=${options.extensionDir}`],
-    userAgent: SMOKE_USER_AGENT,
-    viewport: { width: 1280, height: 900 },
-    serviceWorkers: "block",
-    acceptDownloads: false,
-    permissions: [],
-    locale: "en-US",
-  })
+  let context: BrowserContext | undefined
   let fetcher: Fetcher | undefined
-  let result: Visit
+  let result: Visit = errorVisit(UNEXPECTED)
   try {
+    // the proxy points at a closed port and only the mock api is let around it: nothing a page asks the browser to
+    // connect to (preconnect, prefetch, speculation rules) reaches a network, every real request is the guard's
+    context = await chromium.launchPersistentContext(dir, {
+      channel: "chromium",
+      args: [
+        `--disable-extensions-except=${options.extensionDir}`,
+        `--load-extension=${options.extensionDir}`,
+        "--proxy-server=http://127.0.0.1:9",
+        `--proxy-bypass-list=<-loopback>;127.0.0.1:${new URL(shared.api.url).port}`,
+      ],
+      userAgent: SMOKE_USER_AGENT,
+      viewport: { width: 1280, height: 900 },
+      serviceWorkers: "block",
+      acceptDownloads: false,
+      permissions: [],
+      locale: "en-US",
+    })
     shared.api.reset()
     shared.api.onMapFields(answerEverything)
     if (options.traceDir) await context.tracing.start({ screenshots: true, snapshots: true })
@@ -373,44 +407,43 @@ async function runTarget(target: Target, shared: Shared, options: RunOptions): P
     const worker = context.serviceWorkers()[0] ?? (await context.waitForEvent("serviceworker", { timeout: 15_000 }))
     await connect(worker, shared.api)
     const page = await context.newPage()
+    context.on("page", (other) => {
+      if (other !== page) void other.close().catch(() => undefined)
+    })
     page.on("pageerror", () => state.consoleErrors++)
     page.on("console", (message) => {
       if (message.type() === "error" && !/Failed to load resource|net::ERR/.test(message.text())) state.consoleErrors++
     })
-    let timer: NodeJS.Timeout | undefined
+    const timers: NodeJS.Timeout[] = []
     const deadline = new Promise<Visit>((resolve) => {
-      timer = setTimeout(
-        () =>
-          resolve({
-            status: "error",
-            reasons: [`gave up after ${Math.round(options.timeoutMs / 1000)}s`],
-            notes: [],
-            observation: null,
-          }),
-        options.timeoutMs,
+      timers.push(
+        setTimeout(
+          () => resolve(errorVisit(`gave up after ${Math.round(options.timeoutMs / 1000)}s`)),
+          options.timeoutMs,
+        ),
       )
     })
-    result = await Promise.race([visit(target, page, context, state, shared, options), deadline]).finally(() =>
-      clearTimeout(timer),
+    const overBudget = new Promise<Visit>((resolve) => {
+      state.overBudget = () =>
+        resolve(errorVisit(`the page sent more than ${options.maxRequests ?? MAX_REQUESTS} requests`))
+    })
+    result = await Promise.race([visit(target, page, context, state, shared, options), deadline, overBudget]).finally(
+      () => timers.forEach(clearTimeout),
     )
   } catch (error) {
-    result = {
-      status: "error",
-      reasons: [error instanceof Error ? (error.message.split("\n")[0] ?? "failed") : "failed"],
-      notes: [],
-      observation: null,
+    options.log?.(`${target.id}: ${error instanceof Error ? (error.message.split("\n")[0] ?? "") : String(error)}`)
+    result = errorVisit(UNEXPECTED)
+  } finally {
+    if (context && options.traceDir) {
+      const keep = result.status !== "ok" && result.status !== "gone"
+      await context.tracing
+        .stop(keep ? { path: join(options.traceDir, `${target.id}.zip`) } : undefined)
+        .catch(() => undefined)
     }
+    fetcher?.close()
+    await context?.close().catch(() => undefined)
+    rmSync(dir, { recursive: true, force: true })
   }
-
-  if (options.traceDir) {
-    const keep = result.status !== "ok" && result.status !== "gone"
-    await context.tracing
-      .stop(keep ? { path: join(options.traceDir, `${target.id}.zip`) } : undefined)
-      .catch(() => undefined)
-  }
-  fetcher?.close()
-  await context.close().catch(() => undefined)
-  rmSync(dir, { recursive: true, force: true })
 
   const {
     fields: _fields,
@@ -468,9 +501,11 @@ export async function runSmoke(options: RunOptions): Promise<TargetResult[]> {
       else {
         if (ran) await sleep(options.delayMs)
         ran = true
-        const result = await runTarget(target, shared, options)
-        const stopped = shared.strikes.stopped()
-        if (stopped && result.status !== "ok" && result.status !== "drift") result.status = "blocked"
+        const result = await runTarget(target, shared, options).catch((error): TargetResult => {
+          log(`${target.id}: ${error instanceof Error ? (error.message.split("\n")[0] ?? "") : String(error)}`)
+          return { ...skipped(target, UNEXPECTED), status: "error" }
+        })
+        if (shared.strikes.stopped() && result.status !== "ok" && result.status !== "drift") result.status = "blocked"
         results.push(result)
       }
       const last = results.at(-1) as TargetResult

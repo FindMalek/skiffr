@@ -1,6 +1,8 @@
+import { readdirSync } from "node:fs"
 import { readFile } from "node:fs/promises"
 import { createServer, type Server } from "node:http"
 import type { AddressInfo } from "node:net"
+import { tmpdir } from "node:os"
 import { dirname, extname, join, normalize } from "node:path"
 import { fileURLToPath } from "node:url"
 import { expect, test } from "@playwright/test"
@@ -18,6 +20,23 @@ const WRITES = `<script>
   navigator.sendBeacon("/submit", "x")
   const xhr = new XMLHttpRequest(); xhr.open("PUT", "/submit"); xhr.send("x")
 </script>`
+const POPUP = `<script>setTimeout(() => window.open("/w/popup-get"), 500)</script>`
+const FLOOD = `<script>
+  for (let i = 0; i < 5000; i++) { new Image().src = "/w/img" + i; fetch("/w/f" + i).catch(() => {}) }
+</script>`
+const REFUSED_FETCHES = `<script>fetch("/w/x403a").catch(() => {}); fetch("/w/x403b").catch(() => {})</script>`
+const DECOY = `<button data-action="yes" style="position:fixed;right:0;bottom:0;width:360px;height:200px;z-index:1;opacity:0" onclick="fetch('/w/decoy-click')"></button>`
+const CLOSED_TEXT = `<!doctype html><title>Jobs</title><h1>Jobs</h1><p>Positions are filled quickly and no longer listed here after a week.</p>`
+/** Everything a page can make the browser do besides a plain request: preconnect, speculation prefetch, ping, a form post. */
+const reaching = (port: number) => `<link rel="preconnect" href="http://127.0.0.1:${port}">
+<script type="speculationrules">{"prefetch":[{"source":"list","urls":["http://127.0.0.1:${port}/speculated"]}]}</script>
+<a id="ping" href="/elsewhere.html" ping="/submit">go</a>
+<form id="evil" method="post" action="/submit"><input name="x" value="1"></form>
+<iframe name="f" style="display:none"></iframe><form id="evil2" method="post" action="/submit" target="f"></form>
+<script>
+  setTimeout(() => { document.getElementById("evil2").submit(); document.getElementById("evil").submit() }, 800)
+  setTimeout(() => document.getElementById("ping").click(), 1200)
+</script>`
 const LEAK = `<script>document.getElementById("email").addEventListener("input", () => { document.getElementById("gender").value = "2" })</script>`
 
 interface Hit {
@@ -26,8 +45,11 @@ interface Hit {
 }
 
 let server: Server
+let bystander: Server
 let origin: string
+let bystanderPort = 0
 const hits: Hit[] = []
+const bystanderTouched: string[] = []
 
 async function page(file: string, extra = ""): Promise<string> {
   return (await readFile(join(PAGES, file), "utf8")).replace("</body>", `${extra}</body>`)
@@ -43,7 +65,16 @@ test.beforeAll(async () => {
       if (url.pathname === "/gone.html") return void res.writeHead(404).end("not found")
       if (url.pathname === "/moved.html") return void res.writeHead(302, { location: "/elsewhere.html" }).end()
       if (url.pathname === "/elsewhere.html") return html("<!doctype html><title>Careers</title><p>All jobs</p>")
+      if (url.pathname.startsWith("/w/x403")) return void res.writeHead(403).end("no")
+      if (url.pathname.startsWith("/w/")) return void res.writeHead(200).end("ok")
       if (url.pathname === "/site/ok.html") return html(await page("ats/greenhouse.html", WRITES))
+      if (url.pathname === "/site/popup.html") return html(await page("ats/greenhouse.html", POPUP))
+      if (url.pathname === "/site/flood.html") return html(await page("ats/greenhouse.html", FLOOD))
+      if (url.pathname === "/site/refused.html") return html(await page("ats/greenhouse.html", REFUSED_FETCHES))
+      if (url.pathname === "/site/decoy.html") return html(await page("ats/greenhouse.html", DECOY))
+      if (url.pathname === "/site/reaching.html")
+        return html(await page("ats/greenhouse.html", reaching(bystanderPort)))
+      if (url.pathname === "/site/closed.html") return html(CLOSED_TEXT)
       if (url.pathname === "/site/leaky.html") return html(await page("ats/greenhouse.html", LEAK))
       if (url.pathname === "/site/changed.html") return html(await page("negatives/newsletter.html"))
       const file = normalize(url.pathname).replace(/^[/\\]+/, "")
@@ -55,14 +86,22 @@ test.beforeAll(async () => {
   })
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
   origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  bystander = createServer((req, res) => {
+    bystanderTouched.push(`request ${req.method} ${req.url}`)
+    res.writeHead(200).end("ok")
+  })
+  bystander.on("connection", () => bystanderTouched.push("connection"))
+  await new Promise<void>((resolve) => bystander.listen(0, "127.0.0.1", resolve))
+  bystanderPort = (bystander.address() as AddressInfo).port
 })
 
 test.afterAll(async () => {
-  await new Promise<void>((resolve) => server.close(() => resolve()))
+  await Promise.all([server, bystander].map((one) => new Promise<void>((resolve) => one.close(() => resolve()))))
 })
 
 test.beforeEach(() => {
   hits.length = 0
+  bystanderTouched.length = 0
 })
 
 function targets(...list: { id: string; path: string; over?: Partial<Target> & Record<string, unknown> }[]): Target[] {
@@ -83,8 +122,9 @@ function options(list: Target[], over: Partial<RunOptions> = {}): RunOptions {
   return {
     targets: list,
     extensionDir: EXTENSION_DIR,
-    timeoutMs: 30_000,
-    settleMs: 300,
+    timeoutMs: 60_000,
+    offerMs: 15_000,
+    settleMs: 500,
     delayMs: 0,
     driftThreshold: 0.25,
     allowLocal: true,
@@ -106,7 +146,10 @@ test.describe("read only smoke against local pages", () => {
       }),
     )
 
-    expect(result).toMatchObject({ id: "site", status: "ok" })
+    expect({ status: result?.status, reasons: result?.reasons, notes: result?.notes }).toMatchObject({
+      status: "ok",
+      reasons: [],
+    })
     expect(result?.observation).toMatchObject({ toast: true, sensitiveAsked: 0, sensitiveFilled: 0 })
     expect(result?.observation?.filled).toBeGreaterThanOrEqual(3)
     expect(result?.writesAborted).toBeGreaterThanOrEqual(3)
@@ -139,6 +182,7 @@ test.describe("read only smoke against local pages", () => {
     const list = targets(
       { id: "changed", path: "/site/changed.html" },
       { id: "leaky", path: "/site/leaky.html" },
+      { id: "closed-text", path: "/site/closed.html" },
       { id: "no-button", path: "/site/ok.html", over: { click: "#not-there" } },
       { id: "removed", path: "/gone.html" },
       { id: "moved", path: "/moved.html" },
@@ -150,6 +194,7 @@ test.describe("read only smoke against local pages", () => {
 
     expect(by.changed).toMatchObject({ status: "drift" })
     expect(by.changed?.reasons.join()).toMatch(/detection stopped/)
+    expect(by["closed-text"]?.status).toBe("drift")
     expect(by.leaky?.status).toBe("drift")
     expect(by.leaky?.observation?.sensitiveFilled).toBeGreaterThanOrEqual(1)
     expect(by["no-button"]?.status).toBe("drift")
@@ -157,8 +202,8 @@ test.describe("read only smoke against local pages", () => {
     expect(by.removed).toMatchObject({ status: "gone", reasons: ["http 404"] })
     expect(by.moved?.status).toBe("gone")
     expect(by.off).toMatchObject({ status: "skipped", reasons: ["disabled"] })
-    // five targets ran with a pause before each but the first
-    expect(Date.now() - started).toBeGreaterThanOrEqual(4_000)
+    // six targets ran with a pause before each but the first
+    expect(Date.now() - started).toBeGreaterThanOrEqual(5_000)
     expect(hits.some((hit) => hit.path === "/site/ok.html")).toBe(true)
     expect(submits()).toEqual([])
   })
@@ -175,5 +220,46 @@ test.describe("read only smoke against local pages", () => {
     expect(results[2]?.reasons[0]).toMatch(/run stopped/)
     expect(hits.filter((hit) => hit.path.startsWith("/limited/"))).toHaveLength(2)
     expect(hits.some((hit) => hit.path === "/site/ok.html")).toBe(false)
+  })
+
+  test("a popup cannot crash the run, the next target still runs and no profile is left behind", async () => {
+    const leftovers = () => new Set(readdirSync(tmpdir()).filter((name) => name.startsWith("skiffr-smoke-")))
+    const before = leftovers()
+    const results = await runSmoke(
+      options(targets({ id: "popup", path: "/site/popup.html" }, { id: "after", path: "/site/ok.html" })),
+    )
+    expect(results.map((result) => result.status)).toEqual(["ok", "ok"])
+    expect(hits.filter((hit) => hit.method !== "GET" && hit.method !== "HEAD")).toEqual([])
+    expect([...leftovers()].filter((name) => !before.has(name))).toEqual([])
+  })
+
+  test("a page that floods images and fetches is stopped as an error and the run goes on", async () => {
+    const results = await runSmoke(
+      options(targets({ id: "flood", path: "/site/flood.html" }, { id: "after", path: "/site/ok.html" })),
+    )
+    expect(results.map((result) => result.status)).toEqual(["error", "ok"])
+    expect(results[0]?.reasons).toEqual(["the page sent more than 300 requests"])
+    expect(hits.filter((hit) => hit.path.startsWith("/w/f")).length).toBeLessThanOrEqual(300)
+  })
+
+  test("the browser has no way out besides the guard: preconnect, prefetch, ping and form posts reach nothing", async () => {
+    const results = await runSmoke(options(targets({ id: "reaching", path: "/site/reaching.html" })))
+    expect(["ok", "drift"]).toContain(results[0]?.status)
+    expect(bystanderTouched).toEqual([])
+    expect(hits.filter((hit) => hit.method !== "GET" && hit.method !== "HEAD")).toEqual([])
+    expect(submits()).toEqual([])
+  })
+
+  test("a button the page draws with the toast's attribute is never clicked", async () => {
+    const results = await runSmoke(options(targets({ id: "decoy", path: "/site/decoy.html" })))
+    expect(results[0]?.status).toBe("ok")
+    expect(hits.some((hit) => hit.path === "/w/decoy-click")).toBe(false)
+  })
+
+  test("refusals inside one page are one strike, so the run goes on", async () => {
+    const results = await runSmoke(
+      options(targets({ id: "refused", path: "/site/refused.html" }, { id: "after", path: "/site/ok.html" })),
+    )
+    expect(results.map((result) => result.status)).toEqual(["ok", "ok"])
   })
 })
