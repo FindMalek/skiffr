@@ -3,10 +3,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { act, type ReactNode } from "react"
 import { createRoot, type Root } from "react-dom/client"
 
-const nav = { pathname: "/queue" }
+const nav = { pathname: "/queue", pushed: [] as string[] }
 mock.module("next/navigation", () => ({
   usePathname: () => nav.pathname,
-  useRouter: () => ({ push: () => {} }),
+  useRouter: () => ({ push: (href: string) => nav.pushed.push(href) }),
 }))
 
 const { AppSidebar } = await import("@/components/app-sidebar")
@@ -14,6 +14,8 @@ const { PaletteProvider, SearchButton } = await import("./palette")
 const { ShellProvider } = await import("./shell-provider")
 const { SidebarTrigger } = await import("@skiffr/ui/components/sidebar")
 const { TooltipProvider } = await import("@skiffr/ui/components/tooltip")
+const { holdNavigation } = await import("@/lib/navigation-guard")
+const { useActionBar } = await import("./use-action-bar")
 const { RouteFocus, focusPageTitle } = await import("./route-focus")
 const { TabBar } = await import("./tab-bar")
 
@@ -23,6 +25,7 @@ let host: HTMLElement
 
 beforeEach(() => {
   nav.pathname = "/queue"
+  nav.pushed.length = 0
   network.length = 0
   host = document.createElement("div")
   document.body.append(host)
@@ -202,4 +205,65 @@ test("after Try again the focus lands on the new page title, not on the body the
   await wait(50)
   expect(document.activeElement?.textContent).toBe("Stats")
   stop()
+})
+
+const selectItem = async (label: string) => {
+  await pressCtrlK()
+  await wait(50)
+  const item = [...document.querySelectorAll("[cmdk-item]")].find((el) => el.textContent === label)
+  await act(async () => item?.dispatchEvent(new Event("click", { bubbles: true })))
+}
+
+test("a page with unsaved edits holds the palette's navigation, like its links, and the palette closes first", async () => {
+  await render(
+    <PaletteProvider isAdmin={false}>
+      <span />
+    </PaletteProvider>,
+  )
+  const asked: string[] = []
+  const release = holdNavigation((href) => {
+    asked.push(href)
+    return false
+  })
+  await selectItem("Queue")
+  expect(asked).toEqual(["/queue"])
+  expect(nav.pushed).toEqual([])
+  await wait(300)
+  expect(dialog()).toBeNull()
+
+  release()
+  await selectItem("Queue")
+  expect(nav.pushed).toEqual(["/queue"])
+})
+
+test("a sticky bottom action reports its measured height to the shell and clears it when it goes", async () => {
+  let measure: () => void = () => {}
+  const observed = { disconnected: false }
+  globalThis.ResizeObserver = class {
+    constructor(callback: () => void) {
+      measure = callback
+    }
+    observe() {}
+    unobserve() {}
+    disconnect() {
+      observed.disconnected = true
+    }
+  } as unknown as typeof ResizeObserver
+  let height = 61
+  function Bar() {
+    return <div ref={useActionBar()} />
+  }
+  await render(<Bar />)
+  const bar = host.querySelector("div")
+  if (!bar) throw new Error("no bar")
+  bar.getBoundingClientRect = () => ({ height }) as DOMRect
+  act(() => measure())
+  expect(document.documentElement.style.getPropertyValue("--action-bar-h")).toBe("61px")
+  height = 117
+  act(() => measure())
+  expect(document.documentElement.style.getPropertyValue("--action-bar-h")).toBe("117px")
+  act(() => root.unmount())
+  expect(document.documentElement.style.getPropertyValue("--action-bar-h")).toBe("")
+  expect(observed.disconnected).toBe(true)
+  root = createRoot(host)
 })

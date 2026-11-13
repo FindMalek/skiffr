@@ -28,6 +28,7 @@ import { useEffect, useMemo, useState } from "react"
 import { toast } from "sonner"
 import { SETTINGS_ENTRIES } from "@/components/settings/settings-routes"
 import { bankKey, fetchAllAnswers, filterAnswers } from "@/lib/answers"
+import { mayNavigate } from "@/lib/navigation-guard"
 import { DEFAULT_FILTERS, listInput } from "@/lib/queue"
 import { ADMIN_NAV, PRIMARY_NAV, SETTINGS_NAV } from "./nav"
 import { focusWhenReady } from "./route-focus"
@@ -123,9 +124,12 @@ export function CommandPalette({
     onOpenChange(false)
     setQuery("")
   }
-  const go = (href: string) => {
+  /** False when a page with unsaved edits held the navigation (it asks the user itself, the palette is already closed). */
+  const go = (href: string): boolean => {
     close()
+    if (!mayNavigate(href)) return false
     router.push(href as Route)
+    return true
   }
   const syncGmail = () => {
     close()
@@ -134,8 +138,7 @@ export function CommandPalette({
     sync.mutate(undefined)
   }
   const addJob = () => {
-    go("/queue#add-job")
-    focusWhenReady("#job-url")
+    if (go("/queue#add-job")) focusWhenReady("#job-url")
   }
   /** The tab is opened first, inside the click, so a popup blocker allows it. The answer fills it in. */
   const openNext = async () => {

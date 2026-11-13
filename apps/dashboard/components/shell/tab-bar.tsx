@@ -28,7 +28,7 @@ export function TabBar({ isAdmin }: { isAdmin: boolean }) {
       <nav
         aria-label="Main"
         data-shell-tab-bar=""
-        className="fixed inset-x-0 bottom-0 z-bar box-content grid h-(--tab-bar-h) grid-cols-5 border-t bg-background pb-[env(safe-area-inset-bottom)] md:hidden"
+        className="fixed inset-x-0 bottom-0 z-bar grid h-[calc(var(--tab-bar-h)+env(safe-area-inset-bottom))] grid-cols-5 border-t bg-background pb-[env(safe-area-inset-bottom)] md:hidden"
       >
         {PRIMARY_NAV.map((item) => {
           const active = isNavActive(item, pathname)

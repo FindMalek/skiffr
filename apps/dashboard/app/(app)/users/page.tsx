@@ -11,7 +11,8 @@ import { call } from "@/lib/api"
 export const metadata: Metadata = { title: "Users" }
 
 export default async function UsersPage() {
-  // Not an admin: the page does not exist for you (a real 404, not a crash the monitoring counts as a 5xx).
+  // Not an admin: the page does not exist for you. The not found page, not a crash the monitoring counts as a 5xx (the
+  // status stays 200, the shell has already started streaming).
   const { total, users } = await call((api) => api.admin.users()).catch((error: unknown) => {
     if (errorCode(error) === "FORBIDDEN") notFound()
     throw error
