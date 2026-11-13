@@ -5,11 +5,27 @@ import entries from "./learnable-main-entries.json"
 /**
  * `learnable-main-entries.json` is every entry of the word lists as they stood on main after the wording coverage work
  * (folded, one entry per item). Splitting the lists into a floor and server lists must not make any of them readable on
- * the server guard: the only entry dropped on purpose is the stem `agree`, which blocked "Agreed salary". A bare consent
- * is covered by its own test below.
+ * the server guard. The stem `agree` is replayed too: the whole word rule keeps it blocked, except where it is followed
+ * by what was agreed ("Agreed salary").
  */
-const DROPPED = new Set(["agree"])
-const kept = (list: string[]) => list.filter((entry) => !DROPPED.has(entry))
+const kept = (list: string[]) => list
+
+const CONSENT_LABELS = [
+  "Agree (required)",
+  "Agree & proceed",
+  "Agree and submit",
+  "Agree and apply",
+  "Agree and accept",
+  "Yes agree",
+  "We agree",
+  "Please agree",
+  "Tick to agree",
+  "Check to agree",
+  "Agree/Disagree",
+  "Agree here",
+  "Agree below",
+  "Agrees",
+]
 
 const ZERO_WIDTH = "​"
 const spellings = (text: string): string[] => [
@@ -76,6 +92,7 @@ test("a bare consent is blocked in every spelling, an ordinary question that sta
     "AGREE",
     "I agree",
     "Do you agree?",
+    ...CONSENT_LABELS,
   ]
   expect(
     consents
@@ -83,7 +100,7 @@ test("a bare consent is blocked in every spelling, an ordinary question that sta
       .map(readable)
       .filter(Boolean),
   ).toEqual([])
-  for (const label of ["Agreed salary", "Agreed rate", "Agreed start date"]) {
+  for (const label of ["Agreed salary", "Agreed rate", "Agreed start date", "Agreed upon compensation"]) {
     expect(readable(label), label).not.toBeNull()
   }
 })

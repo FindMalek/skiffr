@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import { SENSITIVE_POLICY_VERSION } from "@skiffr/ai"
+import { controlKind, SENSITIVE_POLICY_VERSION } from "@skiffr/ai"
 import {
   SENSITIVE_VERDICT_PRUNE_BATCH,
   SENSITIVE_VERDICT_TTL_DAYS,
@@ -17,7 +17,7 @@ const DAY_MS = 24 * 60 * 60 * 1000
 type Question = { label?: string; options?: readonly string[] }
 
 /** A field with the texts a page puts next to its label: only the label and the options are part of what a verdict is stored under. */
-type Descriptor = Question & { name?: string; ariaLabel?: string; placeholder?: string }
+type Descriptor = Question & { name?: string; ariaLabel?: string; placeholder?: string; type?: string }
 
 /**
  * The hash a question is remembered under: what it asks and what it offers, not who asked, hashed (not anonymous: a
@@ -35,11 +35,13 @@ export function verdictKey({ label, options = [] }: Question): string | null {
  * Whether a verdict the model gave for this descriptor may be remembered for everyone. The model reads the name, the aria
  * label and the placeholder too, and a page controls all three, so a verdict that could have come from them is not stored
  * under the label: a hostile page could otherwise get an ordinary question blocked for every user. Only descriptors whose
- * extra texts are empty or repeat the label are remembered.
+ * extra texts are empty or repeat the label are remembered, and a type that is not a known control is page text too. The
+ * model never sees the field id (it gets its own) or a type that is not a known control, see `mapFields`.
  */
 export function isRememberable(field: Descriptor): boolean {
   const label = normalizeLabel(field.label ?? "")
   if (!label) return false
+  if (field.type !== undefined && field.type.trim() !== "" && controlKind(field.type) === null) return false
   return [field.name, field.ariaLabel, field.placeholder].every((text) => {
     const own = normalizeLabel(text ?? "")
     return own === "" || own === label
@@ -77,8 +79,18 @@ async function reserveRows(db: Db, userId: string, day: string, count: number): 
   return rows.length > 0
 }
 
-/** Rows past the expiry are only ignored when read, so some are deleted whenever a row is written. */
+const PRUNE_EVERY_MS = 60 * 60 * 1000
+let lastPrune = Number.NEGATIVE_INFINITY
+
+/** For tests: forget when the last prune ran. */
+export function resetVerdictPrune(): void {
+  lastPrune = Number.NEGATIVE_INFINITY
+}
+
+/** Rows past the expiry are only ignored when read, so some are deleted when a row is written, at most once an hour per process (`created_at` has no index). */
 async function pruneExpired(db: Db, now: Date): Promise<void> {
+  if (Math.abs(now.getTime() - lastPrune) < PRUNE_EVERY_MS) return
+  lastPrune = now.getTime()
   const expired = new Date(now.getTime() - SENSITIVE_VERDICT_TTL_DAYS * DAY_MS)
   await db
     .delete(sensitiveVerdict)

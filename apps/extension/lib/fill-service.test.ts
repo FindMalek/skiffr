@@ -117,6 +117,23 @@ describe("the server's sensitive verdict", () => {
     }
   })
 
+  test("an older api without the marker gets one console hint, not one per fill", async () => {
+    const warn = spyOn(console, "warn").mockImplementation(() => {})
+    try {
+      const { service } = setup({ legacy: true, raw: (ids) => ids.map((id) => plain(id)) })
+      await service.run(request([field("a", "Colour")]))
+      await service.run(request([field("a", "Colour")]))
+      expect(warn).toHaveBeenCalledTimes(1)
+      expect(String(warn.mock.calls[0]?.[0])).not.toContain("Colour")
+      const current = setup({ raw: (ids) => ids.map((id) => ({ ...plain(id), sensitive: false, category: null })) })
+      warn.mockClear()
+      await current.service.run(request([field("a", "Colour")]))
+      expect(warn).not.toHaveBeenCalled()
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
   test("an older api without the marker keeps filling, and still honors a true", async () => {
     const open = setup({ legacy: true, raw: (ids) => ids.map((id) => plain(id)) })
     const filled = await open.service.run(request([field("a", "Colour")]))

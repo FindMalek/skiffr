@@ -10,6 +10,7 @@ import { generateText, type LanguageModel, Output } from "ai"
 import { z } from "zod"
 import { type AiProfile, assertPromptSize, dataBlock, fitLines, flattenProfile, UNTRUSTED_NOTICE } from "./data"
 import { toAiError } from "./errors"
+import { controlKind } from "./learnable"
 import { isSensitiveQuestion } from "./learnable-extended"
 import { SENSITIVE_POLICY } from "./sensitive"
 import { isShared } from "./shared-keys"
@@ -100,9 +101,18 @@ function guarded(field: FieldDescriptor): boolean {
   )
 }
 
-function describe(field: FieldDescriptor): string {
-  const { id, options, ...rest } = field
-  return JSON.stringify({ id, ...rest, ...(options.length > 0 ? { options } : {}) })
+/** What the model gets of a field: its own short id (the page and the caller choose the real one), and a type only when it is a known control. */
+const aliasOf = (index: number) => `f${index}`
+
+function describe(field: FieldDescriptor, alias: string): string {
+  const { id: _id, options, type, ...rest } = field
+  const kind = controlKind(type)
+  return JSON.stringify({
+    id: alias,
+    ...rest,
+    ...(kind ? { type: kind } : {}),
+    ...(options.length > 0 ? { options } : {}),
+  })
 }
 
 const categoryOf = (raw: RawMapping): SensitiveCategory =>
@@ -171,7 +181,7 @@ export async function mapFields(input: {
       "PROFILE_KEYS (key, with a value preview where it is short and safe to share):",
       dataBlock("profile", lines.join("\n")),
       "FIELDS (one JSON object per line):",
-      dataBlock("fields", fillable.map(describe).join("\n")),
+      dataBlock("fields", fillable.map((field, index) => describe(field, aliasOf(index))).join("\n")),
     ].join("\n")
     assertPromptSize(SYSTEM, prompt)
     try {
@@ -199,10 +209,10 @@ export async function mapFields(input: {
   const mappings = input.fields.map((field): ModelMapping => {
     const category = withheldCategory(field)
     if (category) return skip(field.id, "sensitive question", withheld(category))
-    const mapping = raw.get(field.id)
+    const mapping = raw.get(aliasOf(fillable.indexOf(field)))
     if (!mapping) return skip(field.id, "model gave no answer", withheld("other"))
     if (mapping.sensitive === true) flagged.set(field.id, categoryOf(mapping))
-    return normalize(mapping, keys)
+    return normalize({ ...mapping, id: field.id }, keys)
   })
   return { mappings, flagged }
 }

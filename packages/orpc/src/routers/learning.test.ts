@@ -690,6 +690,44 @@ test("a neutral label whose answers give the question away is neither recorded n
   expect(matches.map((m) => m.source)).toEqual(["none"])
 })
 
+const AGREE_LABELS = [
+  "Agree (required)",
+  "Agree & proceed",
+  "Agree and submit",
+  "Agree and apply",
+  "Agree and accept",
+  "Yes agree",
+  "We agree",
+  "Please agree",
+  "Tick to agree",
+  "Check to agree",
+  "Agree/Disagree",
+  "Agree here",
+  "Agree below",
+  "Agrees",
+]
+
+test("any checkbox with the word agree is neither recorded nor looked up, an agreed salary still is", async () => {
+  const as = await newUser()
+  const result = await record(
+    as,
+    AGREE_LABELS.map((label) => event(label, "", "true", { type: "checkbox" })),
+  )
+  expect(result).toMatchObject({ recorded: 0, skipped: AGREE_LABELS.length })
+  for (const label of AGREE_LABELS) {
+    await db
+      .insert(answer)
+      .values({ userId: as().id, normalizedLabel: label.toLowerCase(), rawLabel: label, value: "true" })
+      .onConflictDoNothing()
+  }
+  const { matches } = await lookup(
+    as,
+    AGREE_LABELS.map((label, i) => field(`a${i}`, label, { type: "checkbox" })),
+  )
+  expect(matches.map((m) => m.source)).toEqual(AGREE_LABELS.map(() => "none"))
+  expect((await record(as, [event("Agreed salary", "", "70k")])).recorded).toBe(1)
+})
+
 test("a lone consent is neither recorded nor looked up, in every spelling", async () => {
   const as = await newUser()
   const consents = ["Agree", "Agreed", "Agree *", "AGREE", "Agree and continue", "I do agree", "I agree"]

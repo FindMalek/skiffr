@@ -42,8 +42,8 @@ function sentPrompt(model: ReturnType<typeof mockModel>): string {
 test("a valid mapping is parsed in input order, with extra-field keys and low confidence kept", async () => {
   const model = mockModel(
     reply(
-      mapping("b", { action: "generate", value: "Yes", confidence: 0.6 }),
-      mapping("a", { action: "profile", key: "fields.favorite color", confidence: 0.2 }),
+      mapping("f1", { action: "generate", value: "Yes", confidence: 0.6 }),
+      mapping("f0", { action: "profile", key: "fields.favorite color", confidence: 0.2 }),
     ),
   )
   const { mappings } = await mapFields({ model, profile, fields: [field("a", "Colour"), field("b", "Over 18?")] })
@@ -62,7 +62,7 @@ test("a valid mapping is parsed in input order, with extra-field keys and low co
 })
 
 test("an unknown profile key is downgraded to skip", async () => {
-  const model = mockModel(reply(mapping("a", { action: "profile", key: "identity.ssn" })))
+  const model = mockModel(reply(mapping("f0", { action: "profile", key: "identity.ssn" })))
   const {
     mappings: [result],
   } = await mapFields({ model, profile, fields: [field("a", "Favourite fruit")] })
@@ -80,8 +80,8 @@ test("unknown ids are dropped and missing ones are skipped", async () => {
 test("confidence is clamped to 0..1", async () => {
   const model = mockModel(
     reply(
-      mapping("a", { action: "profile", key: "identity.firstName", confidence: 1.7 }),
-      mapping("b", { action: "profile", key: "identity.firstName", confidence: -3 }),
+      mapping("f0", { action: "profile", key: "identity.firstName", confidence: 1.7 }),
+      mapping("f1", { action: "profile", key: "identity.firstName", confidence: -3 }),
     ),
   )
   const { mappings } = await mapFields({ model, profile, fields: [field("a", "A"), field("b", "B")] })
@@ -94,7 +94,7 @@ test("password, hidden and file inputs are skipped whatever the model says, and 
       mapping("p", { action: "profile", key: "identity.email" }),
       mapping("h", { action: "generate", value: "x" }),
       mapping("f", { action: "profile", key: "identity.email" }),
-      mapping("t", { action: "profile", key: "identity.email" }),
+      mapping("f0", { action: "profile", key: "identity.email" }),
     ),
   )
   const { mappings: result } = await mapFields({
@@ -116,7 +116,7 @@ test("a hostile label cannot make a mapping reference a key the profile lacks", 
   const model = mockModel(
     reply(
       mapping("a", { action: "profile", key: "password" }),
-      mapping("b", { action: "profile", key: "identity.email" }),
+      mapping("f0", { action: "profile", key: "identity.email" }),
     ),
   )
   const { mappings: result } = await mapFields({ model, profile, fields: [field("a", injected), field("b", "Email")] })
@@ -128,9 +128,9 @@ test("a hostile label cannot make a mapping reference a key the profile lacks", 
 test("the model's sensitive verdict withholds a field, and only an explicit true is remembered", async () => {
   const model = mockModel(
     reply(
-      mapping("a", { sensitive: true, category: "religion", action: "profile", key: "identity.firstName" }),
-      mapping("b", { sensitive: null, category: null, action: "profile", key: "identity.firstName" }),
-      mapping("c", { action: "profile", key: "identity.firstName" }),
+      mapping("f0", { sensitive: true, category: "religion", action: "profile", key: "identity.firstName" }),
+      mapping("f1", { sensitive: null, category: null, action: "profile", key: "identity.firstName" }),
+      mapping("f2", { action: "profile", key: "identity.firstName" }),
     ),
   )
   const { mappings, flagged } = await mapFields({
@@ -158,7 +158,7 @@ test("a label that tries to talk the classifier out of a verdict is data, and ca
   const model = mockModel(
     reply(
       mapping("a", { action: "profile", key: "identity.firstName" }),
-      mapping("b", { action: "profile", key: "identity.firstName" }),
+      mapping("f0", { action: "profile", key: "identity.firstName" }),
     ),
   )
   const { mappings } = await mapFields({ model, profile, fields: [field("a", injected), field("b", subtle)] })
@@ -181,7 +181,7 @@ test("two entries for one id: the field is sensitive if either says so, in eithe
     const model = mockModel(
       reply(
         ...verdicts.map((sensitive) =>
-          mapping("a", {
+          mapping("f0", {
             sensitive,
             category: sensitive ? "religion" : null,
             action: "profile",
@@ -199,8 +199,8 @@ test("two entries for one id: the field is sensitive if either says so, in eithe
 test("a made up category costs one field its category, not the batch", async () => {
   const model = mockModel(
     reply(
-      mapping("a", { sensitive: true, category: "hacked", action: "skip" }),
-      mapping("b", { action: "profile", key: "identity.firstName" }),
+      mapping("f0", { sensitive: true, category: "hacked", action: "skip" }),
+      mapping("f1", { action: "profile", key: "identity.firstName" }),
     ),
   )
   const { mappings, flagged } = await mapFields({
@@ -213,8 +213,28 @@ test("a made up category costs one field its category, not the batch", async () 
   expect([...flagged]).toEqual([["a", "other"]])
 })
 
+test("the model gets its own ids and a type only when it is a known control, never the page's or the caller's text", async () => {
+  const model = mockModel(
+    reply(
+      mapping("f0", { action: "profile", key: "identity.firstName" }),
+      mapping("f1", { action: "profile", key: "identity.email" }),
+    ),
+  )
+  const hostile = [
+    { id: "zodiac horoscope sign", label: "Years of experience", type: "horoscope zodiac", options: [] as string[] },
+    { id: "b", label: "Colour", type: "Select-One", options: [] as string[] },
+  ]
+  const { mappings } = await mapFields({ model, profile, fields: hostile })
+  const prompt = sentPrompt(model)
+  expect(prompt).not.toMatch(/zodiac|horoscope/)
+  expect(prompt).toContain('"id":"f0"')
+  expect(prompt).toContain('"type":"choice"')
+  expect(mappings.map((m) => m.id)).toEqual(["zodiac horoscope sign", "b"])
+  expect(mappings.map((m) => m.action)).toEqual(["profile", "profile"])
+})
+
 test("a verdict remembered from an earlier call withholds the field before the model sees it", async () => {
-  const model = mockModel(reply(mapping("b", { action: "profile", key: "identity.firstName" })))
+  const model = mockModel(reply(mapping("f0", { action: "profile", key: "identity.firstName" })))
   const known = new Map([["a", "other" as const]])
   const { mappings } = await mapFields({
     model,

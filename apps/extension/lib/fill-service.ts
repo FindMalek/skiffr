@@ -135,6 +135,8 @@ export function createFillService({
   let inflight: Promise<Record<string, string> | null> | null = null
   /** Bumped when the settings change: whatever an older generation is still fetching belongs to the old token. */
   let generation = 0
+  /** One hint per worker run, never per fill. */
+  let warnedOldApi = false
 
   type Run = { deadline: number; signal?: AbortSignal; generation: number }
 
@@ -258,6 +260,10 @@ export function createFillService({
         // a missing or null verdict is withheld. An older api has no verdicts, so only a `true` it might send counts and
         // the floor in the content script is all there is. Either way a sensitive entry is only ever a skip.
         const judged = (out as { sensitiveGuard?: unknown }).sensitiveGuard === SENSITIVE_GUARD_VERSION
+        if (!judged && !warnedOldApi) {
+          warnedOldApi = true
+          console.warn("[skiffr] the api does not judge sensitive fields, update it to match this extension")
+        }
         const kept = out.mappings
           .filter((mapping) => known.has(mapping.id))
           .map(

@@ -23,6 +23,7 @@ import { drizzle } from "drizzle-orm/pglite"
 import { migrate } from "drizzle-orm/pglite/migrator"
 import { type Context, createContext } from "../context"
 import { errorMessage } from "../errors"
+import { resetVerdictPrune } from "../lib/sensitive-verdicts"
 import { hashToken } from "../lib/tokens"
 import { TOKEN_PROCEDURES } from "../procedures"
 import { appRouter } from "./index"
@@ -271,7 +272,7 @@ test("a stored embedding round-trips, nearest answers come back by cosine distan
 const mapReply = JSON.stringify({
   mappings: [
     {
-      id: "f1",
+      id: "f0",
       sensitive: false,
       category: null,
       action: "profile",
@@ -309,7 +310,7 @@ test("ai.mapFields remembers a sensitive verdict as a hash, and the next call wi
   const flagged = JSON.stringify({
     mappings: [
       {
-        id: "f1",
+        id: "f0",
         sensitive: true,
         category: "religion",
         action: "skip",
@@ -347,11 +348,12 @@ test("ai.mapFields remembers a sensitive verdict as a hash, and the next call wi
   await db.delete(sensitiveVerdict)
 })
 
-const flagAll = (ids: string[], category = "religion") =>
+/** The model answers to its own ids, f0, f1 and so on, in the order of the fields it was shown. */
+const flagAll = (count: number, category = "religion") =>
   mockModel(
     JSON.stringify({
-      mappings: ids.map((id) => ({
-        id,
+      mappings: Array.from({ length: count }, (_, i) => ({
+        id: `f${i}`,
         sensitive: true,
         category,
         action: "skip",
@@ -376,7 +378,7 @@ test("ai.mapFields says it judged every field, so an extension can fail closed",
 
 test("a verdict the model may have drawn from the placeholder, aria label or name is not remembered for the label", async () => {
   try {
-    const poison = flagAll(["f1", "f2", "f3"])
+    const poison = flagAll(3)
     await call(
       appRouter.ai.mapFields,
       {
@@ -403,7 +405,7 @@ test("a verdict the model may have drawn from the placeholder, aria label or nam
     await call(
       appRouter.ai.mapFields,
       { fields: [{ id: "f1", label: "Zodiac sign", placeholder: "zodiac  SIGN" }] },
-      withModel("ben", flagAll(["f1"])),
+      withModel("ben", flagAll(1)),
     )
     expect(await db.select().from(sensitiveVerdict)).toHaveLength(1)
   } finally {
@@ -411,16 +413,49 @@ test("a verdict the model may have drawn from the placeholder, aria label or nam
   }
 })
 
+test("a hostile type or id cannot put a verdict under an ordinary label", async () => {
+  try {
+    const typed = flagAll(1)
+    await call(
+      appRouter.ai.mapFields,
+      { fields: [{ id: "f_ok", label: "Years of experience", type: "horoscope zodiac" }] },
+      withModel("ben", typed),
+    )
+    expect(await db.select().from(sensitiveVerdict)).toHaveLength(0)
+
+    // the model is never shown the id or an unknown type, so neither can steer a verdict it gives
+    const spy = flagAll(1)
+    const out = await call(
+      appRouter.ai.mapFields,
+      { fields: [{ id: "zodiac horoscope sign", label: "Years of experience", type: "horoscope zodiac" }] },
+      withModel("ben", spy),
+    )
+    expect(JSON.stringify(spy.doGenerateCalls[0]?.prompt)).not.toMatch(/zodiac|horoscope/)
+    expect(out.mappings[0]?.id).toBe("zodiac horoscope sign")
+
+    // a plain field with a known type is remembered
+    await call(
+      appRouter.ai.mapFields,
+      { fields: [{ id: "f_ok", label: "Zodiac sign", type: "text" }] },
+      withModel("ben", flagAll(1)),
+    )
+    expect(await db.select().from(sensitiveVerdict)).toHaveLength(1)
+  } finally {
+    await db.delete(sensitiveVerdict)
+    await db.delete(aiUsage)
+  }
+})
+
 test("a call adds at most 20 verdict rows and a user at most 200 a day", async () => {
   await db.delete(aiUsage)
   try {
     const call60 = labelled(0, 60)
-    await call(appRouter.ai.mapFields, { fields: call60 }, withModel("ben", flagAll(call60.map((f) => f.id))))
+    await call(appRouter.ai.mapFields, { fields: call60 }, withModel("ben", flagAll(60)))
     expect(await db.select().from(sensitiveVerdict)).toHaveLength(20)
 
     for (let batch = 1; batch < 12; batch++) {
       const fields = labelled(batch * 100, 20)
-      await call(appRouter.ai.mapFields, { fields }, withModel("ben", flagAll(fields.map((f) => f.id))))
+      await call(appRouter.ai.mapFields, { fields }, withModel("ben", flagAll(20)))
     }
     // 20 + 9 x 20 = 200: the 11th and 12th call add nothing
     expect(await db.select().from(sensitiveVerdict)).toHaveLength(200)
@@ -432,21 +467,27 @@ test("a call adds at most 20 verdict rows and a user at most 200 a day", async (
   }
 })
 
-test("writing a verdict deletes rows past their 90 days", async () => {
+test("writing a verdict deletes rows past their 90 days, at most once an hour", async () => {
+  resetVerdictPrune()
   try {
     const old = new Date(Date.now() - 100 * 24 * 60 * 60 * 1000)
     await db.insert(sensitiveVerdict).values([
       { key: "old-1", category: "religion", policyVersion: 1, createdAt: old },
       { key: "old-2", category: "religion", policyVersion: 1, createdAt: old },
     ])
-    await call(
-      appRouter.ai.mapFields,
-      { fields: [{ id: "f1", label: "Zodiac sign" }] },
-      withModel("ben", flagAll(["f1"])),
-    )
+    await call(appRouter.ai.mapFields, { fields: [{ id: "f1", label: "Zodiac sign" }] }, withModel("ben", flagAll(1)))
     const keys = (await db.select().from(sensitiveVerdict)).map((row) => row.key)
     expect(keys).toHaveLength(1)
     expect(keys).not.toContain("old-1")
+
+    // a second write within the hour leaves the next expired row alone
+    await db.insert(sensitiveVerdict).values({ key: "old-3", category: "religion", policyVersion: 1, createdAt: old })
+    await call(
+      appRouter.ai.mapFields,
+      { fields: [{ id: "f1", label: "Zodiac sign two" }] },
+      withModel("ben", flagAll(1)),
+    )
+    expect((await db.select().from(sensitiveVerdict)).map((row) => row.key)).toContain("old-3")
   } finally {
     await db.delete(sensitiveVerdict)
     await db.delete(aiUsage)

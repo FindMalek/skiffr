@@ -183,8 +183,6 @@ export const FLOOR: WordLists = {
   bareLabels: [
     "code|avg|gazi|bic|nir|clabe|card|cc|ccv|date d expiration|fecha de caducidad|fecha de vencimiento",
     "ablaufdatum|gultig bis|expiry|expiry date|expiration|expiration date|exp date|mm yy|mm yyyy",
-    // a lone consent: "Agreed salary" is an ordinary question, "Agreed" is a checkbox
-    "agree|agreed|agree and continue|i do agree|i agree and continue|do you agree",
   ],
   squashed: [
     "password|passcode|passphrase|motdepasse|contrasena|creditcard|debitcard|cardnumber|cartebancaire",
@@ -274,6 +272,10 @@ const AGE_YES_NO =
   /\b(?:are|is) you (?:currently )?(?:(?:at least|over|under|above|below|older than|younger than|more than|less than) )?\d{2}\b(?! (?:years?|yrs?) (?:of|experience))|\b\d{2} (?:years )?(?:or|and) (?:older|over|above|younger|under)\b|\b(?:plus|moins) de \d{2} ans\b|\bau moins (?:de )?\d{2} ans\b(?! d experience)|\b(?:etes vous|es tu|etre) (?:majeur|mineur)\b|\b(?:mayor|menor|maior) de \d{2}\b|\buber \d{2}\b|\b(?:ouder|jonger) dan \d{2}\b/
 
 /** "Are you Asian?", "Are you Muslim?": a protected category asked as a yes or no. */
+/** The word "agree" in any form is a consent ("Agree", "Tick to agree", "Agree/Disagree"), unless it is followed by what was agreed: "Agreed salary". */
+const CONSENT_WORD =
+  /\bagree(?:s|d|ing)?\b(?! (?:upon )?(?:salary|salaries|rate|rates|pay|wage|wages|compensation|start|starting|date|notice|price|fee|fees|amount|budget|hours))/
+
 const PROTECTED_YES_NO =
   /\b(?:are|is) you (?:an? )?(?:asian|black|white|caucasian|african|arab|hispanic|latinx?|latino|latina|indigenous|native (?:american|hawaiian|born)|alaska native|jewish|muslim|christian|hindu|buddhist|sikh|catholic|atheist)\b/
 
@@ -435,6 +437,7 @@ export function createGuard(...parts: Partial<WordLists>[]): Guard {
       isCitizenshipStatus(label) ||
       isAgeQuestion(label) ||
       PROTECTED_YES_NO.test(label) ||
+      CONSENT_WORD.test(label) ||
       isPermissionToAct(label) ||
       isLicenceNumber(label)
     )
