@@ -230,7 +230,7 @@ Then load `apps/extension/.output/chrome-mv3` unpacked. More in the [setup docs]
 | `pnpm check-types` | typescript across the repo |
 | `pnpm test` | tests in every package |
 | `pnpm e2e` | build the extension and run the Playwright suite in `apps/e2e` |
-| `pnpm db:generate` / `db:migrate` / `db:seed` / `db:studio` | drizzle |
+| `pnpm db:generate` / `db:migrate` / `db:studio` | drizzle |
 | `pnpm zip` | zip the extension |
 | `pnpm ui:add <component>` | add a shadcn component |
 

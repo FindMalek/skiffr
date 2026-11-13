@@ -14,7 +14,6 @@ import {
   gmailMessageJob,
   job,
   jobSource,
-  notes,
   profile,
   siteProfile,
   user,
@@ -29,11 +28,9 @@ import {
   ANSWERS,
   DEMO_PROFILE,
   DEMO_USER,
-  NOTES,
   PREVIEW_USERS,
   type PreviewUser,
   SECOND_ANSWERS,
-  SECOND_NOTES,
   SECOND_PROFILE,
   SECOND_USER,
 } from "./fixtures"
@@ -313,12 +310,6 @@ async function insertPipeline(tx: Tx, userId: string, jobs: SeedJob[], applicati
   )
 }
 
-const noteRows = (userId: string, source: readonly { title: string; body: string }[], now: Date) =>
-  source.map((note, i) => {
-    const createdAt = new Date(now.getTime() - (3 + i * 9) * DAY)
-    return { id: seedId(userId, "note", i), userId, ...note, pinned: i === 0, createdAt, updatedAt: createdAt }
-  })
-
 /**
  * Fills the database with the preview dataset: three accounts (`demo`, `admin`, `second`, one password) and, for the demo
  * user, a complete product state. Deterministic and relative to `now`. A database that already has the demo user is left
@@ -330,7 +321,7 @@ export async function seedPreview(db: Db, auth: Auth, options: PreviewSeedOption
   const now = options.now ?? new Date()
   const rand = random(SEED)
   const base = options.playgroundUrl ?? EXAMPLE_BASE
-  const scenario = buildScenario(now, { ownerId: ADMIN_USER.id })
+  const scenario = buildScenario(now)
   const scenarioIds = scenario.users.map((row) => row.id!)
   const ids = [...PREVIEW_USERS.map((spec) => spec.id), ...scenarioIds]
   const emails = [...PREVIEW_USERS.map((spec) => spec.email), ...scenario.users.map((row) => row.email)]
@@ -439,18 +430,6 @@ export async function seedPreview(db: Db, auth: Auth, options: PreviewSeedOption
         updatedAt: new Date(now.getTime() - 40 * DAY),
       })
     }
-    await tx
-      .insert(notes)
-      .values([
-        ...noteRows(DEMO_USER.id, NOTES, now),
-        ...noteRows(SECOND_USER.id, SECOND_NOTES, now),
-        ...noteRows(
-          ADMIN_USER.id,
-          [{ title: "Admin checklist", body: "Check the users page, ban and unban the unverified ones." }],
-          now,
-        ),
-        ...scenario.notes,
-      ])
     return true
   })
 

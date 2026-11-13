@@ -2,7 +2,6 @@ import { resolveEmbeddingModel, resolveModel } from "@skiffr/ai"
 import { createAuth } from "@skiffr/auth"
 import { createDb } from "@skiffr/db"
 import { runMigrations } from "@skiffr/db/migrate"
-import { seedDemo } from "@skiffr/db/seed"
 import { loadApiEnv } from "@skiffr/env/api"
 import { configFromEnv, createObservability, parseDsn, reportCrashes, setObservability } from "@skiffr/observability"
 import { RateLimiter } from "@skiffr/orpc"
@@ -52,8 +51,7 @@ const auth = createAuth({
   secureCookies: cookies.secure,
 })
 
-const adminId = await ensureAdmin(db, auth, env.ADMIN_EMAIL, env.ADMIN_PASSWORD)
-if (env.SEED === "demo" && (await seedDemo(db, { ownerId: adminId }))) console.info("seeded demo data")
+await ensureAdmin(db, auth, env.ADMIN_EMAIL, env.ADMIN_PASSWORD)
 if (env.SEED === "preview") {
   const { runPreviewSeed } = await import("./seed/run")
   const { seeded, skipped } = await runPreviewSeed(db, auth, env)
