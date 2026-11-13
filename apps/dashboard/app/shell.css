@@ -1,0 +1,14 @@
+/* Shell sizes (DESIGN.md 3.1, 2.7). A page with a sticky bottom action sets --action-bar-h to its height (`useActionBar`). */
+:root {
+  --header-h: 3.5rem;
+  --tab-bar-h: 3.5rem;
+  --action-bar-h: 0px;
+  --toast-bottom: 1rem;
+}
+
+/* Below md the tab bar and any sticky page action sit under the toasts. */
+@media (max-width: 767.98px) {
+  :root:has([data-shell-tab-bar]) {
+    --toast-bottom: calc(var(--tab-bar-h) + var(--action-bar-h) + env(safe-area-inset-bottom) + 1rem);
+  }
+}

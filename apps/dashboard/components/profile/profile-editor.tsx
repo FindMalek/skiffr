@@ -22,6 +22,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { CircleAlertIcon } from "lucide-react"
 import { type FormEvent, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
+import { useActionBar } from "@/components/shell/use-action-bar"
 import { Time } from "@/components/time"
 import {
   COUNTED_FIELDS,
@@ -118,6 +119,7 @@ function ProfileEditor({ saved }: { saved: SavedProfile | null }) {
 
   // `onMutate` clears `dirty` (the cache already holds the new values), so the guard stays up until the api has answered.
   const guard = useUnsavedGuard(dirty || save.isPending)
+  const actionBar = useActionBar()
 
   const set: <K extends keyof ProfileForm>(key: K, value: ProfileForm[K]) => void = (key, value) =>
     setForm((current) => ({ ...current, [key]: value }))
@@ -256,7 +258,10 @@ function ProfileEditor({ saved }: { saved: SavedProfile | null }) {
           <ExtrasGroup />
           <NeverFilled />
 
-          <div className="sticky bottom-0 z-action -mx-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-3 border-t bg-background px-4 py-3 md:-mx-6 md:px-6">
+          <div
+            ref={actionBar}
+            className="sticky bottom-[calc(var(--tab-bar-h)+env(safe-area-inset-bottom))] z-action -mx-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-3 border-t bg-background px-4 py-3 max-md:mb-[calc(var(--action-bar-h)*-1)] md:-mx-6 md:bottom-0 md:px-6"
+          >
             <p role="status" className="flex min-h-9 items-center gap-2 text-sm">
               {status}
             </p>
