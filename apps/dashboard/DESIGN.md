@@ -233,8 +233,8 @@ template "Overview" page. Home is called "Today" so the label says what the page
 - Sidebar width: an icon rail from `md`, the full 256px sidebar from `xl`. The trigger overrides that until the window
   crosses `xl` again. Both the rail and the full sidebar are rendered and CSS shows one (`xl`), so the first
   paint is already right and layout shift is 0; it never animates.
-- User menu (dropdown): name and email, Settings, Appearance, Keyboard shortcuts (opens the help dialog once the
-  shortcuts provider, 3.2, exists), Sign out (one click, no confirm). Below `md` it also holds the theme choice
+- User menu (dropdown): name and email, Settings, Appearance, Keyboard shortcuts (opens the help dialog, 3.2, with
+  shortcuts on or off), Sign out (one click, no confirm). Below `md` it also holds the theme choice
   (System, Light, Dark). Sign out is not a bare icon button in the sidebar footer, and the sidebar has no footer.
 - Skip link "Skip to content" first in tab order (rendered by the root layout, `z-skip` while focused), target
   `<main id="main" tabIndex={-1}>` (the auth layout has one too); focus moves to the `h1` on route change
@@ -272,8 +272,8 @@ Single-character shortcuts must not fire from anywhere. Rules:
    field, select, or an open overlay. They are never attached to `document` while focus is on the browser chrome,
    the sidebar or a dialog. List keys (`j k x o a s u e c f` and friends) are active only while the list or one of
    its rows has focus.
-2. **Off switch**: Settings > Appearance > "Keyboard shortcuts" (on by default). When off, no single-key shortcut is
-   registered. The modified shortcuts below keep working.
+2. **Off switch**: Settings > Appearance > "Keyboard shortcuts" (on by default). When off, no single-key shortcut fires (they stay
+   registered and the setting is checked on every key press). The modified shortcuts below keep working.
 3. **Never the only way**: every shortcut action also exists as a visible control and in the command palette.
 4. **Modified shortcuts** (`⌘K` / `Ctrl K`, the palette) are exempt from 2.1.4 and may be global. `Esc` is not a
    character key, so it is exempt too (close, clear selection).
@@ -294,6 +294,25 @@ Map (one list, all pages use it; the `?` dialog is generated from it):
 | `o` `a` `s` `u` `Backspace` | queue row | open link, mark applied, skip, restore, remove |
 | `e` `c` `f` | answers row | edit, confirm, stop filling |
 | `Esc` | anywhere | close, clear selection |
+
+Implementation: `components/shell/shortcuts.tsx` holds the one provider (inside `AppShell`) and its `document` `keydown`
+and `focusout` listeners; the rules live in `lib/shortcuts.ts` (`createShortcuts`). A page registers with
+`useShortcut({ id, keys, label, group, scope, priority, run })` and the registration ends with the component, so there is
+no second list. When two registrations have the same keys, the higher `priority` wins (the shell's own use -1, a page
+uses the default 0), then the latest registration, whichever mounted first. `keys` is one key or a sequence
+(`["g", "q"]`); a sequence waits 1.5s for its next key and is dropped by any other key, by focus moving out of `main`
+(`focusout`), or by the switch turning off. A press is ignored when it has `Ctrl`, `Cmd` or `Alt`, is a repeat or an
+IME keystroke (`isComposing`, key `Process`, keyCode 229), was already handled (`defaultPrevented`), comes from a text
+input, textarea, select, contenteditable or `textbox` / `combobox` role (`isTypingTarget` in
+`@skiffr/ui/lib/typing-target`, also used by the `Ctrl B` sidebar toggle, so that does not fire while typing either),
+or while a `dialog`, `alertdialog` or `menu` is open. Scope `page` is focus inside `#main`, or nothing focused (the body,
+so the keys work on a fresh load); scope `list` also needs focus inside an element with `data-shortcuts-list`. A
+sequence in progress shows its next keys in a `role="status"` chip above the bottom bars. The `?` dialog
+(`shortcuts-help.tsx`, a separate chunk) lists the modified keys plus whatever is registered at that moment; with the
+switch off it marks those groups "(off)". Its `Ctrl B` row is hidden below `md`, where there is no sidebar. When it
+closes and its opener is gone, focus goes to the page title. Single keys with `aria-keyshortcuts` get it only while the
+switch is on; a sequence has no valid `aria-keyshortcuts` value, so it is shown as visible `kbd` hints only. Only `?` and
+`g` + key exist so far; the list and row keys in the map are registered by their pages.
 
 ## 4. Component patterns
 

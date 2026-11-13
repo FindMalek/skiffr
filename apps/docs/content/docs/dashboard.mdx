@@ -14,17 +14,26 @@ Sign in with `ADMIN_EMAIL` and `ADMIN_PASSWORD` from your `.env`. Anyone who can
 | Settings | profile, account, extension tokens, Gmail alerts ([Gmail job emails](/docs/gmail)), careers pages ([Job sources](/docs/sources)), resume and appearance, see below |
 | Users | admins only: manage the accounts on this server |
 
-The top bar has search, the theme switch and your account menu (settings, appearance and sign out, one click). On a phone the theme is in the account menu. The Notes example board has no sidebar entry, but `/notes` still opens.
+The top bar has search, the theme switch and your account menu (settings, appearance, keyboard shortcuts and sign out, one click). On a phone the theme is in the account menu. The Notes example board has no sidebar entry, but `/notes` still opens.
 
 ## Search and commands
 
 Press `Ctrl K` (`Cmd K` on a Mac) anywhere, or use the search button, to open one box for pages, actions and search. Type two or more characters to search your jobs by company or role and your answers by question. It loads nothing until you open it, and what you type goes only to your own server and is not logged. Actions: add a job, open the next job, create an extension token, sync Gmail now and switch theme. `Esc` closes it and puts you back where you were.
 
+## Keyboard shortcuts
+
+Press `?` while focus is in the page, or choose Keyboard shortcuts in your account menu, to open the list of shortcuts for the page you are on. The dialog closes with `Esc` and puts focus back where it was.
+
+- `Ctrl K` (`Cmd K` on a Mac) opens search and `Ctrl B` (`Cmd B`) shows or hides the sidebar. `Ctrl B` does nothing while you type in a field.
+- `g` then `h`, `q`, `a`, `s` or `,` goes to Today, Queue, Answers, Stats or Settings. After `g`, a small hint shows the keys that finish it, and it goes away after one and a half seconds, on any other key, or when focus leaves the page content.
+
+Single key shortcuts only work while focus is in the page content, never while you type in a field or while a dialog or menu is open, and never with `Ctrl`, `Cmd` or `Alt` held. Every one of them is an accelerator: the same action is also a button, a link or an item in search. Turn all single key shortcuts off in Settings, Appearance; search, `Ctrl B` and `Esc` keep working, and the help dialog stays in the account menu. The setting is kept in this browser only.
+
 Press `Tab` once on any page to reach "Skip to content". After you follow a link, keyboard focus moves to the page title, so a screen reader reads where you are. A page that does not exist shows a not found page inside the dashboard with a link back to Today, and a page that fails shows the error with a request id when there is one.
 
 ## Settings
 
-Settings is one page with a sub-navigation: Profile, Account, Extension, Job sources (Gmail alerts and Careers pages), Resume, Data and privacy and Appearance. `/extension` redirects to `/settings/extension`. Account shows your daily AI use against the server's limits, with what is left and when it resets (midnight UTC, shown in your time zone). Appearance sets the theme (system, light or dark), stored in this browser only. It also has a switch for single key keyboard shortcuts, which are not available yet: the switch keeps your choice in this browser for when they ship. Data and privacy is a placeholder for now: the export and delete tools are not in the dashboard yet.
+Settings is one page with a sub-navigation: Profile, Account, Extension, Job sources (Gmail alerts and Careers pages), Resume, Data and privacy and Appearance. `/extension` redirects to `/settings/extension`. Account shows your daily AI use against the server's limits, with what is left and when it resets (midnight UTC, shown in your time zone). Appearance sets the theme (system, light or dark), stored in this browser only. It also has the switch for single key keyboard shortcuts (see Keyboard shortcuts above), also stored in this browser only. Data and privacy is a placeholder for now: the export and delete tools are not in the dashboard yet.
 
 ## Profile
 
