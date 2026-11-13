@@ -8,6 +8,7 @@ const RULES: RateRules = {
   upload: { burst: 1, perMinute: 6 },
   ai: { burst: 1, perMinute: 6 },
   expensive: { burst: 1, perMinute: 6 },
+  sensitive: { burst: 1, perMinute: 6 },
 }
 
 function setup(rules: RateRules = RULES) {
