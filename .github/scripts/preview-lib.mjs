@@ -200,7 +200,7 @@ export function extensionNote({ pr, repo, runUrl, apiUrl, dashboardUrl }) {
     : `\`extension-chrome-pr-${pr}\` from [the ci runs](https://github.com/${repo}/actions/workflows/ci.yml)`
   return [
     `**Extension**: take ${artifact} from the ci run, unzip it twice and load the folder unpacked (details in the docs).`,
-    `In its options set the api url to \`${apiUrl}\`, then create a token in the dashboard under [Extension](${dashboardUrl}/extension) and paste it.`,
+    `In its options set the api url to \`${apiUrl}\`, then create a token in the dashboard under [Extension](${dashboardUrl}/settings/extension) and paste it.`,
   ].join("\n")
 }
 

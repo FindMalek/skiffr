@@ -289,8 +289,8 @@ function SecurityNote() {
 export function CvSettings({ docsUrl }: { docsUrl: string }) {
   const { data: status } = useSuspenseQuery(orpc.cv.status.queryOptions())
   return (
-    <div className="grid gap-4 p-4 md:p-6 lg:grid-cols-3">
-      <div className="grid content-start gap-4 lg:col-span-2">
+    <div className="grid gap-4 p-4 md:p-6 @4xl:grid-cols-3">
+      <div className="grid content-start gap-4 @4xl:col-span-2">
         {!status.configured && (
           <Card>
             <CardHeader>
@@ -326,7 +326,7 @@ export function CvSettings({ docsUrl }: { docsUrl: string }) {
         {status.configured && status.connected && <BaseResume status={status} />}
         {status.configured && <ConnectForm status={status} />}
       </div>
-      <div className="grid content-start gap-4 lg:col-span-1">
+      <div className="grid content-start gap-4 @4xl:col-span-1">
         <SecurityNote />
       </div>
     </div>

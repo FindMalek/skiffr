@@ -75,7 +75,7 @@ export async function readSeedLinks(db: Db, input: LinkInput): Promise<SeedLinks
       sources: `${dash}/settings/sources`,
       cv: `${dash}/settings/cv`,
       gmail: `${dash}/settings/gmail`,
-      extension: `${dash}/extension`,
+      extension: `${dash}/settings/extension`,
       notes: `${dash}/notes`,
       users: `${dash}/users`,
     },
