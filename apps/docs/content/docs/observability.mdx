@@ -33,7 +33,7 @@ Where to look when something breaks, the OpenObserve dashboards and saved views,
 
 ## Metrics
 
-`skiffr.http.requests`, `skiffr.http.duration_ms`, `skiffr.db.up`, `skiffr.scheduler.runs`, `skiffr.scheduler.duration_ms`, `skiffr.scheduler.items`, `skiffr.scheduler.last_success_seconds` (per job: `gmail`, `watch`), `skiffr.sync.failures`, `skiffr.rate_limit.rejected`, `skiffr.ai.calls`, `skiffr.ai.tokens`, `skiffr.ai.duration_ms`. `skiffr.db.up` is set each time `/health` is called, so it needs a poller (the container healthcheck is one). Every request except `/health` is also a log record, queued 500 at a time per 15 second flush with the oldest dropped first, so above about 30 requests per second some lines are lost, never the metrics. Alert on `last_success_seconds` going stale and on `skiffr.db.up` of 0.
+`skiffr.http.requests`, `skiffr.http.duration_ms`, `skiffr.db.up`, `skiffr.scheduler.runs`, `skiffr.scheduler.duration_ms`, `skiffr.scheduler.items`, `skiffr.scheduler.last_success_seconds` (per job: `gmail`, `watch`), `skiffr.sync.failures`, `skiffr.rate_limit.rejected`, `skiffr.ai.calls`, `skiffr.ai.tokens`, `skiffr.ai.duration_ms`. `skiffr.db.up` is set each time `/health` is called, so it needs a poller (the container healthcheck is one). Every request is also a log record (a passing `/health` is skipped, a failing one is logged), queued 500 at a time per 15 second flush with the oldest dropped first, so above about 30 requests per second some lines are lost, never the metrics. Alert on `last_success_seconds` going stale and on `skiffr.db.up` of 0.
 
 ## Setting it up
 

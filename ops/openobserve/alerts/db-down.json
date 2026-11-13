@@ -1,6 +1,6 @@
 {
   "name": "skiffr_db_down",
-  "description": "skiffr_db_up reported 0 in the last 5 minutes. needs /health to be polled, the container healthcheck does it",
+  "description": "the latest skiffr_db_up sample is 0 (postgres unreachable from the api). needs /health to be polled, the container healthcheck does it. checked every 2 minutes",
   "stream_type": "metrics",
   "stream_name": "skiffr_db_up",
   "is_real_time": false,

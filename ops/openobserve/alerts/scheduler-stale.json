@@ -1,6 +1,6 @@
 {
   "name": "skiffr_scheduler_stale",
-  "description": "a scheduler job (gmail or watch) has not finished ok for 30 minutes. watch ticks every 5 minutes, gmail every 15",
+  "description": "a scheduler job (gmail or watch) has not finished ok for 30 minutes. watch ticks every 5 minutes, gmail every GMAIL_SYNC_INTERVAL_MINUTES (default 15): raise the 1800 second threshold if you set the gmail interval above 25 minutes",
   "stream_type": "metrics",
   "stream_name": "skiffr_scheduler_last_success_seconds",
   "is_real_time": false,

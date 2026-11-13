@@ -2,7 +2,7 @@
   "name": "skiffr_unset",
   "type": "http",
   "method": "post",
-  "url": "https://errors.findmalek.engineer/skiffr-alert-placeholder",
+  "url": "https://example.com/skiffr-alert-placeholder",
   "template": "o2_default_content",
   "skip_tls_verify": false,
   "headers": {}
