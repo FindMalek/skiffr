@@ -663,6 +663,90 @@ test("a question the model called sensitive is neither learned nor looked up, un
   }
 })
 
+const NEUTRAL = "Please select one"
+const OPTION_ONLY: string[][] = [
+  ["Latina", "Not Hispanic"],
+  ["Prefer not to state", "Yes", "No"],
+  ["Heterosexuell", "Bisexuell"],
+  ["Tengo una discapacidad", "No"],
+  ["Pas de reponse", "Oui", "Non"],
+]
+
+test("a neutral label whose answers give the question away is neither recorded nor looked up", async () => {
+  const as = await newUser()
+  for (const options of OPTION_ONLY) {
+    const result = await record(as, [
+      event(NEUTRAL, options[0] as string, options[0] as string, { type: "select", options }),
+      event("Lucky colour", "", "green"),
+    ])
+    expect(result, options.join()).toMatchObject({ recorded: 1, skipped: 1 })
+  }
+  expect(await db.select().from(fieldEvent).where(eq(fieldEvent.finalValue, "Latina"))).toHaveLength(0)
+
+  await db
+    .insert(answer)
+    .values({ userId: as().id, normalizedLabel: "please select one", rawLabel: NEUTRAL, value: "Latina" })
+  const { matches } = await lookup(as, [field("a", NEUTRAL, { type: "select", options: OPTION_ONLY[0] })])
+  expect(matches.map((m) => m.source)).toEqual(["none"])
+})
+
+test("a lone consent is neither recorded nor looked up, in every spelling", async () => {
+  const as = await newUser()
+  const consents = ["Agree", "Agreed", "Agree *", "AGREE", "Agree and continue", "I do agree", "I agree"]
+  for (const label of consents) {
+    const result = await record(as, [
+      event(label, "", "true", { type: "checkbox" }),
+      event("Lucky colour", "", "green"),
+    ])
+    expect(result, label).toMatchObject({ recorded: 1, skipped: 1 })
+    await db
+      .insert(answer)
+      .values({ userId: as().id, normalizedLabel: label.toLowerCase(), rawLabel: label, value: "true" })
+      .onConflictDoNothing()
+  }
+  const { matches } = await lookup(
+    as,
+    consents.map((label, i) => field(`c${i}`, label, { type: "checkbox" })),
+  )
+  expect(matches.map((m) => m.source)).toEqual(consents.map(() => "none"))
+  const ordinary = await record(as, [event("Agreed salary", "", "70k")])
+  expect(ordinary.recorded).toBe(1)
+})
+
+const verdictAge = async (label: string, ageMs: number, extra: Partial<typeof sensitiveVerdict.$inferInsert> = {}) => {
+  const key = verdictKey({ label }) as string
+  await db
+    .insert(sensitiveVerdict)
+    .values({ key, category: "religion", policyVersion: 1, createdAt: new Date(Date.now() - ageMs), ...extra })
+  return key
+}
+
+test("the answer bank marks a saved answer whose question the api would not fill any more, by its long lists too", async () => {
+  const as = await newUser()
+  for (const rawLabel of ["Zivildienst absolviert", "Notice period"]) {
+    await db.insert(answer).values({ userId: as().id, normalizedLabel: rawLabel.toLowerCase(), rawLabel, value: "x" })
+  }
+  const rows = await call(appRouter.answers.list, undefined, as())
+  expect(Object.fromEntries(rows.map((row) => [row.rawLabel, row.sensitive]))).toEqual({
+    "Zivildienst absolviert": true,
+    "Notice period": false,
+  })
+})
+
+test("a remembered verdict counts for 90 days and not a day more", async () => {
+  const as = await newUser()
+  try {
+    await verdictAge("Old question", 91 * DAY)
+    await verdictAge("Almost old question", 89 * DAY)
+    const result = await record(as, [event("Old question", "", "a"), event("Almost old question", "", "b")])
+    expect(result).toMatchObject({ recorded: 1, skipped: 1 })
+    const { matches } = await lookup(as, [field("a", "Old question"), field("b", "Almost old question")])
+    expect(matches.map((m) => m.source)).toEqual(["exact", "none"])
+  } finally {
+    await db.delete(sensitiveVerdict)
+  }
+})
+
 test("a failing database write is logged by class and code only, never with the labels or values it carried", async () => {
   const as = await newUser()
   const pii = "zebra-label zebra-value"

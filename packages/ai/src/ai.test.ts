@@ -166,9 +166,51 @@ test("a label that tries to talk the classifier out of a verdict is data, and ca
   expect(mappings[0]).toMatchObject({ sensitive: true, action: "skip" })
   const prompt = sentPrompt(model)
   expect(prompt).not.toContain(injected)
-  // the second reaches the model only as an escaped data block, never in the system text
+  // the second reaches the model only as an escaped data block, never in the system text. A model that obeys it is
+  // the one thing code cannot catch for wording no list knows: the outcome is a fill, which the docs name as a residual risk
+  expect(mappings[1]).toMatchObject({ action: "profile", sensitive: false })
   expect(prompt).toContain(subtle)
   expect(JSON.stringify(model.doGenerateCalls[0]?.prompt.find((m) => m.role === "system"))).not.toContain(subtle)
+})
+
+test("two entries for one id: the field is sensitive if either says so, in either order", async () => {
+  for (const verdicts of [
+    [true, false],
+    [false, true],
+  ]) {
+    const model = mockModel(
+      reply(
+        ...verdicts.map((sensitive) =>
+          mapping("a", {
+            sensitive,
+            category: sensitive ? "religion" : null,
+            action: "profile",
+            key: "identity.firstName",
+          }),
+        ),
+      ),
+    )
+    const { mappings, flagged } = await mapFields({ model, profile, fields: [field("a", "Zodiac sign")] })
+    expect(mappings[0], String(verdicts)).toMatchObject({ action: "skip", sensitive: true, category: "religion" })
+    expect([...flagged.keys()]).toEqual(["a"])
+  }
+})
+
+test("a made up category costs one field its category, not the batch", async () => {
+  const model = mockModel(
+    reply(
+      mapping("a", { sensitive: true, category: "hacked", action: "skip" }),
+      mapping("b", { action: "profile", key: "identity.firstName" }),
+    ),
+  )
+  const { mappings, flagged } = await mapFields({
+    model,
+    profile,
+    fields: [field("a", "Zodiac sign"), field("b", "Colour")],
+  })
+  expect(mappings[0]).toMatchObject({ sensitive: true, category: "other" })
+  expect(mappings[1]).toMatchObject({ action: "profile", sensitive: false })
+  expect([...flagged]).toEqual([["a", "other"]])
 })
 
 test("a verdict remembered from an earlier call withholds the field before the model sees it", async () => {

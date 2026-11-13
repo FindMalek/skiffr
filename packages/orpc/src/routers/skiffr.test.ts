@@ -5,7 +5,16 @@ import { vector } from "@electric-sql/pglite-pgvector"
 import { call, createRouterClient } from "@orpc/server"
 import { mockModel } from "@skiffr/ai/testing"
 import type { Session } from "@skiffr/auth"
-import { answer, answerColumns, apiToken, type Db, findSimilarAnswers, sensitiveVerdict, user } from "@skiffr/db"
+import {
+  aiUsage,
+  answer,
+  answerColumns,
+  apiToken,
+  type Db,
+  findSimilarAnswers,
+  sensitiveVerdict,
+  user,
+} from "@skiffr/db"
 import * as schema from "@skiffr/db/schema"
 import { createTestDb, strictDateSerializers } from "@skiffr/db/test-db"
 import { APICallError } from "ai"
@@ -336,6 +345,112 @@ test("ai.mapFields remembers a sensitive verdict as a hash, and the next call wi
   expect(mappings[1]).toMatchObject({ id: "f1", sensitive: false })
   expect(JSON.stringify(next.doGenerateCalls[0]?.prompt)).not.toMatch(/zodiac/i)
   await db.delete(sensitiveVerdict)
+})
+
+const flagAll = (ids: string[], category = "religion") =>
+  mockModel(
+    JSON.stringify({
+      mappings: ids.map((id) => ({
+        id,
+        sensitive: true,
+        category,
+        action: "skip",
+        key: null,
+        value: null,
+        confidence: 1,
+        reason: "",
+      })),
+    }),
+  )
+const labelled = (from: number, count: number) =>
+  Array.from({ length: count }, (_, i) => ({ id: `z${from + i}`, label: `Zodiac sign ${from + i}` }))
+
+test("ai.mapFields says it judged every field, so an extension can fail closed", async () => {
+  const out = await call(
+    appRouter.ai.mapFields,
+    { fields: [{ id: "f1", label: "Notice period" }] },
+    withModel("ben", mockModel(mapReply)),
+  )
+  expect(out.sensitiveGuard).toBe(1)
+})
+
+test("a verdict the model may have drawn from the placeholder, aria label or name is not remembered for the label", async () => {
+  try {
+    const poison = flagAll(["f1", "f2", "f3"])
+    await call(
+      appRouter.ai.mapFields,
+      {
+        fields: [
+          { id: "f1", label: "Years of experience", placeholder: "horoscope zodiac sign" },
+          { id: "f2", label: "Years of experience", ariaLabel: "zodiac" },
+          { id: "f3", label: "Years of experience", name: "zodiac" },
+        ],
+      },
+      withModel("ben", poison),
+    )
+    expect(await db.select().from(sensitiveVerdict)).toHaveLength(0)
+
+    const next = mockModel(mapReply)
+    const { mappings } = await call(
+      appRouter.ai.mapFields,
+      { fields: [{ id: "f1", label: "Years of experience" }] },
+      withModel("ben", next),
+    )
+    expect(mappings[0]).toMatchObject({ sensitive: false })
+    expect(next.doGenerateCalls).toHaveLength(1)
+
+    // the same texts next to the label, or a placeholder that only repeats it, are the label's own verdict
+    await call(
+      appRouter.ai.mapFields,
+      { fields: [{ id: "f1", label: "Zodiac sign", placeholder: "zodiac  SIGN" }] },
+      withModel("ben", flagAll(["f1"])),
+    )
+    expect(await db.select().from(sensitiveVerdict)).toHaveLength(1)
+  } finally {
+    await db.delete(sensitiveVerdict)
+  }
+})
+
+test("a call adds at most 20 verdict rows and a user at most 200 a day", async () => {
+  await db.delete(aiUsage)
+  try {
+    const call60 = labelled(0, 60)
+    await call(appRouter.ai.mapFields, { fields: call60 }, withModel("ben", flagAll(call60.map((f) => f.id))))
+    expect(await db.select().from(sensitiveVerdict)).toHaveLength(20)
+
+    for (let batch = 1; batch < 12; batch++) {
+      const fields = labelled(batch * 100, 20)
+      await call(appRouter.ai.mapFields, { fields }, withModel("ben", flagAll(fields.map((f) => f.id))))
+    }
+    // 20 + 9 x 20 = 200: the 11th and 12th call add nothing
+    expect(await db.select().from(sensitiveVerdict)).toHaveLength(200)
+    const [usage] = await db.select().from(aiUsage).where(eq(aiUsage.userId, "ben"))
+    expect(usage?.verdicts).toBe(200)
+  } finally {
+    await db.delete(sensitiveVerdict)
+    await db.delete(aiUsage)
+  }
+})
+
+test("writing a verdict deletes rows past their 90 days", async () => {
+  try {
+    const old = new Date(Date.now() - 100 * 24 * 60 * 60 * 1000)
+    await db.insert(sensitiveVerdict).values([
+      { key: "old-1", category: "religion", policyVersion: 1, createdAt: old },
+      { key: "old-2", category: "religion", policyVersion: 1, createdAt: old },
+    ])
+    await call(
+      appRouter.ai.mapFields,
+      { fields: [{ id: "f1", label: "Zodiac sign" }] },
+      withModel("ben", flagAll(["f1"])),
+    )
+    const keys = (await db.select().from(sensitiveVerdict)).map((row) => row.key)
+    expect(keys).toHaveLength(1)
+    expect(keys).not.toContain("old-1")
+  } finally {
+    await db.delete(sensitiveVerdict)
+    await db.delete(aiUsage)
+  }
 })
 
 test("ai.mapFields does not remember a verdict that is missing or says not sensitive", async () => {

@@ -102,7 +102,12 @@ export const sensitiveCategorySchema = z.enum(SENSITIVE_CATEGORIES)
 export const sensitiveVerdictSchema = z.object({ sensitive: z.boolean(), category: sensitiveCategorySchema.nullable() })
 
 export const modelMappingSchema = fieldMappingSchema.and(sensitiveVerdictSchema)
-export const mapFieldsOutputSchema = z.object({ mappings: z.array(modelMappingSchema) })
+/** `sensitiveGuard` says the api judges every field: an extension that sees it withholds anything but an explicit `sensitive: false`. An older api has neither. */
+export const SENSITIVE_GUARD_VERSION = 1
+export const mapFieldsOutputSchema = z.object({
+  mappings: z.array(modelMappingSchema),
+  sensitiveGuard: z.literal(SENSITIVE_GUARD_VERSION),
+})
 export const draftAnswerOutputSchema = z.discriminatedUnion("ok", [
   z.object({ ok: z.literal(true), text: z.string() }),
   z.object({ ok: z.literal(false), reason: z.enum(["empty", "not_enough_info"]) }),

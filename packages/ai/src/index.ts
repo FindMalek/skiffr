@@ -36,7 +36,7 @@ export { EMBEDDING_MODEL_ID, embedTexts, resolveEmbeddingModel } from "./embeddi
 export { AiInputError, AiModelError, ModelBudgetError } from "./errors"
 export { type ControlKind, controlKind, isSensitiveValue } from "./learnable"
 /** The api checks every label with the floor plus the long lists. The content script imports `./learnable` for the floor alone. */
-export { isLearnableField, isSensitiveQuestion } from "./learnable-extended"
+export { isLearnableField, isLearnableQuestion, isSensitiveQuestion } from "./learnable-extended"
 export { type MapFieldsResult, mapFields } from "./map-fields"
 export {
   SENSITIVE_CATEGORIES,

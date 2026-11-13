@@ -11,6 +11,7 @@ import {
   type LearningField,
   learningFieldSchema,
   type ModelMapping,
+  SENSITIVE_GUARD_VERSION,
 } from "@skiffr/common"
 import { flattenProfile } from "@skiffr/common/utils"
 import type { AppRouterClient } from "@skiffr/orpc/client"
@@ -110,7 +111,7 @@ const withheld = ({ id, category }: ModelMapping): ModelMapping => ({
   confidence: 0,
   reason: "sensitive question",
   sensitive: true,
-  category,
+  category: category ?? "other",
 })
 
 const learningSize = (f: LearningField) =>
@@ -253,10 +254,16 @@ export function createFillService({
         const out = await api(ctx, RETRY_PAID, CALL_TIMEOUT_MS.mapFields, (client, signal) =>
           client.ai.mapFields({ fields: batch.slice(0, AI_FIELDS_MAX) }, { signal }),
         )
-        // a sensitive verdict wins over whatever else the entry says: it can only ever be a skip here
+        // An api that judges every field says so (`sensitiveGuard`): then only an explicit `false` lets a mapping through,
+        // a missing or null verdict is withheld. An older api has no verdicts, so only a `true` it might send counts and
+        // the floor in the content script is all there is. Either way a sensitive entry is only ever a skip.
+        const judged = (out as { sensitiveGuard?: unknown }).sensitiveGuard === SENSITIVE_GUARD_VERSION
         const kept = out.mappings
           .filter((mapping) => known.has(mapping.id))
-          .map((mapping): ModelMapping => (mapping.sensitive ? withheld(mapping) : mapping))
+          .map(
+            (mapping): ModelMapping =>
+              (judged ? mapping.sensitive !== false : mapping.sensitive === true) ? withheld(mapping) : mapping,
+          )
         mappings.push(...kept)
         onBatch(kept)
       } catch (error) {

@@ -183,6 +183,8 @@ export const FLOOR: WordLists = {
   bareLabels: [
     "code|avg|gazi|bic|nir|clabe|card|cc|ccv|date d expiration|fecha de caducidad|fecha de vencimiento",
     "ablaufdatum|gultig bis|expiry|expiry date|expiration|expiration date|exp date|mm yy|mm yyyy",
+    // a lone consent: "Agreed salary" is an ordinary question, "Agreed" is a checkbox
+    "agree|agreed|agree and continue|i do agree|i agree and continue|do you agree",
   ],
   squashed: [
     "password|passcode|passphrase|motdepasse|contrasena|creditcard|debitcard|cardnumber|cartebancaire",

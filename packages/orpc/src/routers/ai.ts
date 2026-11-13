@@ -5,6 +5,7 @@ import {
   draftAnswerOutputSchema,
   mapFieldsInputSchema,
   mapFieldsOutputSchema,
+  SENSITIVE_GUARD_VERSION,
   type SensitiveCategory,
 } from "@skiffr/common/schemas"
 import { profile } from "@skiffr/db"
@@ -67,12 +68,13 @@ export const aiRouter = {
       await rememberFlagged(
         context.db,
         now,
+        context.user.id,
         [...result.flagged].flatMap(([id, category]) => {
           const field = byId.get(id)
-          return field ? [{ question: field, category }] : []
+          return field ? [{ field, category }] : []
         }),
       ).catch((error: unknown) => logBestEffort("ai.mapFields", "verdict write failed", error))
-      return { mappings: result.mappings }
+      return { mappings: result.mappings, sensitiveGuard: SENSITIVE_GUARD_VERSION }
     }),
 
   draftAnswer: protectedProcedure

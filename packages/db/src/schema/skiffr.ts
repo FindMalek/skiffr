@@ -380,6 +380,8 @@ export const aiUsage = pgTable(
     calls: integer("calls").notNull().default(0),
     inputTokens: integer("input_tokens").notNull().default(0),
     outputTokens: integer("output_tokens").notNull().default(0),
+    /** New `sensitive_verdict` rows this user's calls added today, so one account can't fill the global table. */
+    verdicts: integer("verdicts").notNull().default(0),
   },
   (t) => [primaryKey({ columns: [t.userId, t.day] })],
 )

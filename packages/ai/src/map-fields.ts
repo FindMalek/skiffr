@@ -46,14 +46,15 @@ function profileKeyLines(profile: AiProfile): { lines: string[]; keys: Set<strin
 
 /**
  * Loose on purpose: the model's answer is checked in code, so a bad key downgrades one field instead of failing the call.
- * `sensitive` is nullable so that a missing verdict can be told apart and treated as sensitive.
+ * `sensitive` is nullable so that a null verdict can be told apart and treated as sensitive. `category` is any string here and
+ * read as one of the known categories in code, so a made-up category costs one field its label, not the whole batch.
  */
 const modelOutputSchema = z.object({
   mappings: z.array(
     z.object({
       id: z.string(),
       sensitive: z.boolean().nullable(),
-      category: sensitiveCategorySchema.nullable(),
+      category: z.string().nullable(),
       action: z.enum(["profile", "generate", "skip"]),
       key: z.string().nullable(),
       value: z.string().nullable(),
@@ -104,9 +105,12 @@ function describe(field: FieldDescriptor): string {
   return JSON.stringify({ id, ...rest, ...(options.length > 0 ? { options } : {}) })
 }
 
+const categoryOf = (raw: RawMapping): SensitiveCategory =>
+  sensitiveCategorySchema.safeParse(raw.category).data ?? "other"
+
 /** A verdict that is not an explicit `false` counts as sensitive. */
 function verdictOf(raw: RawMapping): Verdict {
-  return raw.sensitive === false ? open : withheld(raw.category ?? "other")
+  return raw.sensitive === false ? open : withheld(categoryOf(raw))
 }
 
 function normalize(raw: RawMapping, keys: Set<string>): ModelMapping {
@@ -181,7 +185,11 @@ export async function mapFields(input: {
         output: Output.object({ schema: modelOutputSchema }),
         prompt,
       })
-      for (const mapping of output.mappings) raw.set(mapping.id, mapping)
+      for (const mapping of output.mappings) {
+        // two entries for one id: the field is sensitive if either says so
+        const prior = raw.get(mapping.id)
+        if (!prior || (prior.sensitive === false && mapping.sensitive !== false)) raw.set(mapping.id, mapping)
+      }
     } catch (error) {
       throw toAiError(error, input.model)
     }
@@ -193,7 +201,7 @@ export async function mapFields(input: {
     if (category) return skip(field.id, "sensitive question", withheld(category))
     const mapping = raw.get(field.id)
     if (!mapping) return skip(field.id, "model gave no answer", withheld("other"))
-    if (mapping.sensitive === true) flagged.set(field.id, mapping.category ?? "other")
+    if (mapping.sensitive === true) flagged.set(field.id, categoryOf(mapping))
     return normalize(mapping, keys)
   })
   return { mappings, flagged }

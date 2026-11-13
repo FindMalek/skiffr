@@ -18,6 +18,8 @@ export const answerSchema = z.object({
   lastCorrectedAt: z.date().nullable(),
   createdAt: z.date(),
   updatedAt: z.date(),
+  /** Set by `answers.list`: the question is one the api no longer fills or learns, so the bank can say so. */
+  sensitive: z.boolean().optional(),
 })
 
 export const answerInputSchema = z.object({

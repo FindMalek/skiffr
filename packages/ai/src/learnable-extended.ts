@@ -91,3 +91,13 @@ export const EXTENDED: Partial<WordLists> = {
 
 export const serverGuard = createGuard(FLOOR, EXTENDED)
 export const { isLearnableField, isSensitiveSection, isDemographicOptions, isSensitiveQuestion } = serverGuard
+
+/** Whether a field's value may be kept: the label, the type and the autocomplete hint, and the answers it offers, which can give a neutral label away. */
+export const isLearnableQuestion = (field: {
+  label: string
+  type?: string
+  autocomplete?: string
+  options?: readonly string[]
+}): boolean =>
+  isLearnableField(field) &&
+  !isSensitiveQuestion({ label: field.label, options: field.options, autocomplete: field.autocomplete })

@@ -1,5 +1,5 @@
 import { ORPCError } from "@orpc/server"
-import { embedTexts, isLearnableField, isSensitiveValue } from "@skiffr/ai"
+import { embedTexts, isLearnableQuestion, isSensitiveValue } from "@skiffr/ai"
 import {
   CLEARED_STOP_MIN,
   FIELD_EVENT_PURGE_BATCH,
@@ -263,7 +263,7 @@ export const learningRouter = {
       const fields = input.fields.map((field) => ({
         field,
         ...fingerprintOf(field),
-        learnable: isLearnableField(field) && !flagged.has(verdictKey(field) ?? ""),
+        learnable: isLearnableQuestion(field) && !flagged.has(verdictKey(field) ?? ""),
       }))
       const usable = fields.filter((f) => f.learnable && f.normalizedLabel)
       const keys = usable.map((f) => f.fieldKey)
@@ -422,7 +422,7 @@ export const learningRouter = {
 
       const flagged = await guardLearningDb("record", () => flaggedKeys(context.db, context.now(), input.events))
       const learnable = (event: (typeof input.events)[number]) =>
-        isLearnableField(event) && !flagged.has(verdictKey(event) ?? "")
+        isLearnableQuestion(event) && !flagged.has(verdictKey(event) ?? "")
       const events = input.events
         .filter(
           (event) => learnable(event) && !isSensitiveValue(event.filledValue) && !isSensitiveValue(event.finalValue),

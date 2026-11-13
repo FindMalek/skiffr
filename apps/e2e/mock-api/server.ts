@@ -17,6 +17,7 @@ import {
   profileDataSchema,
   recordInputSchema,
   recordOutputSchema,
+  SENSITIVE_GUARD_VERSION,
 } from "@skiffr/common/schemas"
 import type { z } from "zod"
 
@@ -78,6 +79,8 @@ export interface MockApi {
   applications: RecordedApplication[]
   /** Replace the canned `ai.mapFields` answer. */
   onMapFields: (handler: MapFieldsHandler) => void
+  /** Answer `ai.mapFields` like an api from before the sensitive verdict: the handler's mappings as they are, no verdict, no `sensitiveGuard`. */
+  legacyMapFields: (on: boolean) => void
   /** Replace the canned `learning.lookup` answer (no saved answers by default). */
   onLookup: (handler: LookupHandler) => void
   /** Make the next request fail with this status (oRPC error body), then go back to normal. `extension.whoami` is skipped: the worker's heartbeat sends it on its own. */
@@ -163,6 +166,7 @@ function parseInput<T extends z.ZodType>(schema: T, body: unknown): z.output<T> 
 export async function startMockApi(): Promise<MockApi> {
   const requests: RecordedRequest[] = []
   let mapFields: MapFieldsHandler = defaultMapFields
+  let legacyMapFields = false
   const records: RecordedBatch[] = []
   const batches = new Map<string, string>()
   /** What the person corrected to, by question: the answers a real server would learn. */
@@ -193,8 +197,9 @@ export async function startMockApi(): Promise<MockApi> {
     if (method === "POST" && path === "/rpc/profile/get") return applicantProfileSchema.parse(PROFILE)
     if (method === "POST" && path === "/rpc/ai/mapFields") {
       const input = parseInput(mapFieldsInputSchema, body)
+      if (legacyMapFields) return { mappings: mapFields(input.fields) }
       const mappings = mapFields(input.fields).map((mapping) => ({ sensitive: false, category: null, ...mapping }))
-      return mapFieldsOutputSchema.parse({ mappings })
+      return mapFieldsOutputSchema.parse({ mappings, sensitiveGuard: SENSITIVE_GUARD_VERSION })
     }
     if (method === "POST" && path === "/rpc/ai/draftAnswer") {
       parseInput(draftAnswerInputSchema, body)
@@ -294,6 +299,9 @@ export async function startMockApi(): Promise<MockApi> {
     onMapFields: (handler) => {
       mapFields = handler
     },
+    legacyMapFields: (on) => {
+      legacyMapFields = on
+    },
     onLookup: (handler) => {
       lookup = handler
     },
@@ -303,6 +311,7 @@ export async function startMockApi(): Promise<MockApi> {
     reset: () => {
       requests.length = 0
       mapFields = defaultMapFields
+      legacyMapFields = false
       lookup = fromLearned
       records.length = 0
       applications.length = 0

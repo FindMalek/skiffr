@@ -143,3 +143,9 @@ export const CV_REJECTIONS = [
 export const ACTIVITY_WINDOW_DAYS = 30
 export const ACTIVITY_LIMIT_DEFAULT = 30
 export const ACTIVITY_LIMIT_MAX = 100
+
+/** How long a remembered sensitive verdict counts, and how many rows one call and one user may add (a day) to the global table. */
+export const SENSITIVE_VERDICT_TTL_DAYS = 90
+export const SENSITIVE_VERDICTS_PER_CALL_MAX = 20
+export const SENSITIVE_VERDICTS_PER_USER_DAY_MAX = 200
+export const SENSITIVE_VERDICT_PRUNE_BATCH = 200

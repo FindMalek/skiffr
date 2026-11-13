@@ -1,5 +1,5 @@
 {
-  "id": "8a768c0f-4963-4db1-9a26-b2f53ab7f9c1",
+  "id": "6e3d99c0-880e-46dd-9ee1-bf1d2e464223",
   "prevId": "7dcd162d-b245-4867-b2e6-bbe54f52e23f",
   "version": "7",
   "dialect": "postgresql",
@@ -557,6 +557,13 @@
         },
         "output_tokens": {
           "name": "output_tokens",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "verdicts": {
+          "name": "verdicts",
           "type": "integer",
           "primaryKey": false,
           "notNull": true,

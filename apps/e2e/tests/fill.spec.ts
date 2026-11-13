@@ -59,6 +59,23 @@ test("a field the server calls sensitive is never filled, even when its mapping 
   await expect(page.locator(FIELDS.phone)).toHaveValue("")
 })
 
+test("an api from before the sensitive verdict still fills what the floor lets through", async ({
+  context,
+  serviceWorker,
+  fixtureServer,
+  mockApi,
+}) => {
+  mockApi.legacyMapFields(true)
+  await connect(serviceWorker, mockApi)
+  const { page, toast } = await openApplication(context, fixtureServer.origin)
+
+  await toast.click("yes")
+  await toast.waitFor((s) => s.title !== null && FILLED.test(s.title))
+
+  await expect(page.locator(FIELDS.first)).toHaveValue("Ana")
+  await expect(page.locator(FIELDS.email)).toHaveValue("ana.silva@example.com")
+})
+
 test("the shortcut path fills the active tab", async ({ context, serviceWorker, fixtureServer, mockApi }) => {
   await connect(serviceWorker, mockApi)
   const { page, toast } = await openApplication(context, fixtureServer.origin)
