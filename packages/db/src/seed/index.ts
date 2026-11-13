@@ -3,7 +3,7 @@ import type { Db } from "../index"
 import { notes, user } from "../schema"
 import { buildScenario } from "./scenario"
 
-export { buildScenario } from "./scenario"
+export { buildScenario, random } from "./scenario"
 
 /** Writes the demo scenario into an empty database only, so it never touches real data. */
 export async function seedDemo(db: Db, opts: { ownerId?: string } = {}): Promise<boolean> {

@@ -6,7 +6,7 @@ type NewNote = typeof notes.$inferInsert
 const DAY = 864e5
 
 /** mulberry32: a tiny seeded PRNG, so every preview gets the same data (only the dates move with "now"). */
-function random(seed: number) {
+export function random(seed: number) {
   let a = seed
   return () => {
     a = (a + 0x6d2b79f5) | 0
