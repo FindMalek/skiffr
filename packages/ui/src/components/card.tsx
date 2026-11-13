@@ -11,7 +11,7 @@ function Card({
       data-slot="card"
       data-size={size}
       className={cn(
-        "group/card flex flex-col gap-(--card-spacing) overflow-hidden rounded-none bg-card py-(--card-spacing) text-xs/relaxed text-card-foreground ring-1 ring-foreground/10 [--card-spacing:--spacing(4)] has-data-[slot=card-footer]:pb-0 has-[>img:first-child]:pt-0 data-[size=sm]:[--card-spacing:--spacing(3)] data-[size=sm]:has-data-[slot=card-footer]:pb-0 *:[img:first-child]:rounded-none *:[img:last-child]:rounded-none",
+        "group/card flex flex-col gap-(--card-spacing) overflow-hidden rounded-none border border-border bg-card py-(--card-spacing) text-sm text-card-foreground [--card-spacing:--spacing(4)] md:[--card-spacing:--spacing(6)] has-data-[slot=card-footer]:pb-0 has-[>img:first-child]:pt-0 data-[size=sm]:[--card-spacing:--spacing(3)] md:data-[size=sm]:[--card-spacing:--spacing(4)] data-[size=sm]:has-data-[slot=card-footer]:pb-0 *:[img:first-child]:rounded-none *:[img:last-child]:rounded-none",
         className
       )}
       {...props}
@@ -32,14 +32,16 @@ function CardHeader({ className, ...props }: React.ComponentProps<"div">) {
   )
 }
 
-function CardTitle({ className, ...props }: React.ComponentProps<"div">) {
+/** A `div` by default (big numbers and wrapped headings use it). Pass `as="h3"` inside a `Section`, or `as="h2"`, for a real heading. */
+function CardTitle({
+  className,
+  as: Tag = "div",
+  ...props
+}: React.ComponentProps<"div"> & { as?: "h2" | "h3" | "div" }) {
   return (
-    <div
+    <Tag
       data-slot="card-title"
-      className={cn(
-        "font-heading text-sm font-medium group-data-[size=sm]/card:text-sm",
-        className
-      )}
+      className={cn("font-heading text-base font-semibold", className)}
       {...props}
     />
   )
@@ -49,7 +51,7 @@ function CardDescription({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="card-description"
-      className={cn("text-xs/relaxed text-muted-foreground", className)}
+      className={cn("text-sm text-muted-foreground", className)}
       {...props}
     />
   )
