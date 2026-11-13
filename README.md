@@ -43,7 +43,7 @@ The hosted instance runs on a self-hosted Dokploy server and deploys from `main`
 | Docs | https://docs.skiffr.findmalek.engineer |
 | API health | https://api.skiffr.findmalek.engineer/health |
 
-It is the maintainer's own instance, not a service with an uptime promise. To run your own, see [self-hosting](#self-hosting).
+It is the maintainer's own development instance, not a service with an uptime promise, and anything you enter there is stored on the maintainer's server. For real use, run your own: see [self-hosting](#self-hosting).
 
 ## What it does
 
