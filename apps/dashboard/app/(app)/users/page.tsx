@@ -1,11 +1,8 @@
 import { errorCode } from "@skiffr/orpc/errors"
-import { Badge } from "@skiffr/ui/components/badge"
-import { Card, CardContent } from "@skiffr/ui/components/card"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@skiffr/ui/components/table"
 import type { Metadata } from "next"
 import { notFound } from "next/navigation"
-import { LocalDate } from "@/components/local-date"
 import { PageHeader } from "@/components/page-header"
+import { UsersTable } from "@/components/users/users-table"
 import { call } from "@/lib/api"
 
 export const metadata: Metadata = { title: "Users" }
@@ -19,36 +16,13 @@ export default async function UsersPage() {
   })
   return (
     <>
-      <PageHeader title="Users" description={`${total} accounts. Admins only.`} />
+      <PageHeader
+        title="Users"
+        description="Every account on this server, newest first. Admins only."
+        breadcrumb={[{ label: "Admin" }, { label: "Users" }]}
+      />
       <div className="p-4 md:p-6">
-        <Card>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Role</TableHead>
-                  <TableHead className="text-right">Joined</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {users.map((u) => (
-                  <TableRow key={u.id}>
-                    <TableCell className="font-medium">{u.name}</TableCell>
-                    <TableCell className="text-muted-foreground">{u.email}</TableCell>
-                    <TableCell>
-                      <Badge variant={u.role === "admin" ? "default" : "outline"}>{u.role ?? "user"}</Badge>
-                    </TableCell>
-                    <TableCell className="text-right text-muted-foreground">
-                      <LocalDate value={u.createdAt} />
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+        <UsersTable users={users} total={total} />
       </div>
     </>
   )
