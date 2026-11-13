@@ -39,8 +39,9 @@ let drop: () => Promise<void>
 let mock: MockGoogle
 let h: Harness
 let auth: ReturnType<typeof createAuth>
-let real = false
 
+/** What `connectDb` reads: decided when the file is collected, which is when `skipIf` is evaluated. */
+const real = Boolean(process.env.TEST_DATABASE_URL)
 const PASSWORD = "correct horse battery"
 const EXPORT_KEYS: Record<string, string[]> = {
   account: ["createdAt", "email", "image", "name"],
@@ -145,7 +146,6 @@ beforeAll(async () => {
   const connected = await connectDb([])
   db = connected.db
   drop = connected.drop
-  real = connected.real
   auth = createAuth({
     db,
     secret: "a".repeat(40),
@@ -199,6 +199,15 @@ async function signUp(tag: string, role?: string): Promise<Person> {
     .join("; ")
   if (role) await db.update(user).set({ role }).where(eq(user.id, response.user.id))
   return { id: response.user.id, email, cookie, secret: `private-${tag}` }
+}
+
+/** A cookie minted now, so it carries the role the user has now (a sign up cookie carries the role from before). */
+async function signIn(email: string): Promise<string> {
+  const { headers } = await auth.api.signInEmail({ body: { email, password: PASSWORD }, returnHeaders: true })
+  return headers
+    .getSetCookie()
+    .map((line) => line.split(";")[0])
+    .join("; ")
 }
 
 async function contextOf(
@@ -467,6 +476,30 @@ test("deleting removes every row of the user in every table, revokes Google, end
     expect(lines).not.toContain(personal)
 })
 
+test("a pending magic link is deleted for the exact email only, not for one that contains it", async () => {
+  const al = await signUp("magic-a")
+  const other = await signUp("magic-ba")
+  const link = (identifier: string, email: string) => ({
+    id: crypto.randomUUID(),
+    identifier,
+    value: JSON.stringify({ email, name: "n" }),
+    expiresAt: new Date(NOW),
+  })
+  await db
+    .insert(verification)
+    .values([
+      link("tok-exact", al.email),
+      link("tok-longer", `b${al.email}`),
+      link("tok-prefixed", `joe.${al.email}`),
+      link("tok-other", other.email),
+    ])
+  await deleteAccount({ db, gmail: null, storage: null }, al)
+  const left = (await db.select().from(verification).where(sql`${verification.identifier} like 'tok-%'`)).map(
+    (row) => row.identifier,
+  )
+  expect(left.sort()).toEqual(["tok-longer", "tok-other", "tok-prefixed"])
+})
+
 test("a wrong email, a missing password or a wrong one delete nothing and revoke nothing", async () => {
   const cy = await signUp("refuse-cy")
   await seed(cy)
@@ -565,10 +598,13 @@ test("a failure that is not a wrong password is not reported as one", async () =
 })
 
 test("a deleted user's cached session can't update, upload (no file is left) or list users", async () => {
-  const ghost = await signUp("ghost-admin", "admin")
+  const first = await signUp("ghost-admin", "admin")
   const keep = await signUp("ghost-keeper", "admin")
-  await onlyAdmins(ghost.id, keep.id)
+  await onlyAdmins(first.id, keep.id)
+  const ghost = { ...first, cookie: await signIn(first.email) }
   const storage = memoryStorage([])
+  // the cookie carries the admin role, so only the database can tell it is gone
+  await expect((await api(ghost, { storage })).admin.users()).resolves.toMatchObject({ users: expect.any(Array) })
   await (await api(ghost, { storage })).account.delete({ confirmEmail: ghost.email, password: PASSWORD })
 
   // the same cookie, answered from the session cache

@@ -14,9 +14,9 @@ export interface DeleteDeps {
   storage: Storage | null
 }
 
-const LAST_ADMIN = new ORPCError("BAD_REQUEST", {
-  message: "You are the last admin. Make someone else an admin first.",
-})
+/** A new error per call: a shared instance would carry the stack of the import, and a test matcher can overwrite its message. */
+const lastAdmin = () =>
+  new ORPCError("BAD_REQUEST", { message: "You are the last admin. Make someone else an admin first." })
 
 async function roleOf(db: Pick<Db, "select">, userId: string): Promise<string | null | undefined> {
   const [row] = await db.select({ role: user.role }).from(user).where(eq(user.id, userId))
@@ -73,7 +73,7 @@ export async function deleteAccount(
   owner: { id: string; email: string },
 ): Promise<{ gmailRevoked: boolean | null; filesRemoved: boolean }> {
   // Checked again inside the transaction, where it can't race another admin. This one only spares a refused call the work.
-  if ((await roleOf(db, owner.id)) === "admin" && !(await otherAdminExists(db, owner.id))) throw LAST_ADMIN
+  if ((await roleOf(db, owner.id)) === "admin" && !(await otherAdminExists(db, owner.id))) throw lastAdmin()
   const [mailbox] = await db
     .select({ id: gmailAccount.id, refreshTokenEnc: gmailAccount.refreshTokenEnc })
     .from(gmailAccount)
@@ -86,19 +86,19 @@ export async function deleteAccount(
     // after it gets the lock, a repeatable read transaction would not.
     if ((await roleOf(tx, owner.id)) === "admin") {
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext('account-delete-admin'))`)
-      if (!(await otherAdminExists(tx, owner.id))) throw LAST_ADMIN
+      if (!(await otherAdminExists(tx, owner.id))) throw lastAdmin()
     }
     for (const table of userTables()) {
       await tx.delete(table).where(eq(getTableColumns(table).userId!, owner.id))
     }
-    // Reset links hold the user id, magic links hold the email inside their value.
+    // Reset links hold the user id, magic links hold the email as a quoted json value (`a@x.test` must not match `ba@x.test`).
     await tx
       .delete(verification)
       .where(
         or(
           eq(verification.identifier, owner.email),
           eq(verification.value, owner.id),
-          sql`strpos(lower(${verification.value}), ${owner.email.toLowerCase()}) > 0`,
+          sql`strpos(lower(${verification.value}), ${`"email":${JSON.stringify(owner.email.toLowerCase())}`}) > 0`,
         ),
       )
     await tx.delete(user).where(eq(user.id, owner.id))
