@@ -37,7 +37,7 @@ Everything here is off until its variable is set. An instance without any of it 
 
 1. GlitchTip: create a project for the api (and one each for web and dashboard). Copy each dsn.
 2. Umami: add a website per app (web, docs, dashboard, api) and copy the website ids.
-3. OpenObserve: create a user for ingestion only and build `authorization=Basic <base64 of email:password>,stream-name=skiffr`. If OpenObserve is private to your tailnet, point the api at the address it has inside the Docker network (`http://openobserve:5080/api/default` on Dokploy), not the public hostname.
+3. OpenObserve: create a dedicated user for skiffr (use the lowest role your build allows, see the note below on the open source build) and build `authorization=Basic <base64 of email:password>,stream-name=skiffr`. If OpenObserve is private to your tailnet, point the api at the address it has inside the Docker network (`http://openobserve:5080/api/default` on Dokploy), not the public hostname.
 4. Keep the values in your secrets manager and put them in the app's environment in Dokploy, never in the repo. `scripts/dokploy-bootstrap.mjs --env-file` adds missing keys to the apps and never overwrites one that is set, see [deploy](/docs/deploy).
 5. Check: the api logs `observability: errors, otlp, umami` at start. Test a dsn with
    `printf '%s\n%s\n%s' '{}' '{"type":"event"}' '{"message":"smoke test"}' | curl -X POST "https://<glitchtip host>/api/<project id>/envelope/" -H "X-Sentry-Auth: Sentry sentry_version=7, sentry_key=<key>" --data-binary @-`
@@ -49,19 +49,19 @@ Everything here is off until its variable is set. An instance without any of it 
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | api | OTLP/HTTP base up to the org |
 | `OTEL_EXPORTER_OTLP_HEADERS` | api | `key=value,key=value`, a secret |
 | `AI_TRACE_CAPTURE_CONTENT` | api | `true` adds prompts and answers to model spans, default `false` |
-| `UMAMI_URL`, `UMAMI_WEBSITE_ID` | web, dashboard and docs | read at request time, so one image serves any site id. Web, docs and dashboard load `/analytics.js`, which does nothing when they are unset |
+| `UMAMI_URL`, `UMAMI_WEBSITE_ID` | all four (the api only for the budget event) | read at request time, so one image serves any site id. Web, docs and dashboard load `/analytics.js`, which does nothing when they are unset |
 
 In the bootstrap env file the per app values are `UMAMI_<APP>_WEBSITE_ID` and `GLITCHTIP_WEB_DSN`, `GLITCHTIP_DASHBOARD_DSN`.
 
 ## Verified on the keep
 
-The production instance was wired to the self hosted stack (GlitchTip 6.2.6, Umami 3.4.1, OpenObserve 1.1.2) and checked end to end. What the setup taught:
+At the time of writing the production instance was wired to the self hosted stack (GlitchTip 6.2.6, Umami 3.4.1, OpenObserve 1.1.2) and checked end to end. What the setup taught:
 
 - GlitchTip: use the public host (`errors.findmalek.engineer`) in every DSN. The envelope endpoint is `/api/<project id>/envelope/`. Docs does not report errors, so it has no project. A direct envelope send with a fake message is a safe smoke test, delete the issue afterwards.
 - Umami: it drops headless and bot user agents, so a Playwright smoke test needs a normal user agent. There is no site for the api yet, so `UMAMI_API_WEBSITE_ID` stays unset and the budget event is not recorded.
 - OpenObserve: the api reaches it over the swarm network at `http://openobserve:5080/api/default`. The open source build only has admin and root roles, so an ingest only user cannot be made. The skiffr user is an admin on the `default` org, so treat the header as a secret. Passwords need upper and lower case, a digit and a special character. `OTEL_EXPORTER_OTLP_HEADERS` contains a space, keep the whole value on one env line.
 - A test record named `skiffr_ops_check` sits in the `skiffr` logs stream from the first ingest check. It is harmless.
-- `scripts/bootstrap-env.mjs` only fills keys that are not set yet, so it cannot rotate a value that is already there.
+- `scripts/dokploy-bootstrap.mjs` only fills keys that are not set yet, so it cannot rotate a value that is already there.
 
 ## Not done
 
