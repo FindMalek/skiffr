@@ -12,6 +12,7 @@ import {
 import { cn } from "@skiffr/ui/lib/utils"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
+import { mayNavigate } from "@/lib/navigation-guard"
 import { SETTINGS_ENTRIES, SETTINGS_GROUPS, settingsEntryFor } from "./settings-routes"
 
 const SELECT_ITEMS = SETTINGS_ENTRIES.map((entry) => ({ value: entry.href as string, label: entry.label }))
@@ -35,7 +36,8 @@ export function SettingsNav() {
           items={SELECT_ITEMS}
           value={current?.href ?? null}
           onValueChange={(href) => {
-            if (href && href !== current?.href) router.push(href as (typeof SETTINGS_ENTRIES)[number]["href"])
+            if (href && href !== current?.href && mayNavigate(href))
+              router.push(href as (typeof SETTINGS_ENTRIES)[number]["href"])
           }}
         >
           <SelectTrigger aria-label="Settings section" className="w-full">

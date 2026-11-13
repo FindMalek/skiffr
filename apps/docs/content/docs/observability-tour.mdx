@@ -1,0 +1,321 @@
+---
+title: Observability tour
+description: Where to look when something is slow or broken, the OpenObserve dashboards and saved views, copy paste queries, GlitchTip triage and Umami.
+---
+
+[Observability](/docs/observability) says what is collected and what never leaves the process. This page is the other half: where to click, what to type, and how to follow one request through all three tools. The menu paths are the same on any instance. The self hosted stack on the keep uses `errors.findmalek.engineer` for GlitchTip and `analytics.findmalek.engineer` for Umami, replace the host if yours differs. OpenObserve there is reachable on the tailnet only.
+
+## Where to look
+
+| question | tool | where |
+| --- | --- | --- |
+| is the api up and healthy right now | OpenObserve | dashboard `skiffr overview`, panels `db up` and `error rate` |
+| what failed in the last hour | OpenObserve | dashboard `skiffr errors and slow requests`, or the saved view `skiffr errors` in Logs |
+| why is one request slow or failing | OpenObserve then GlitchTip | saved view `skiffr by request id`, then a GlitchTip search for `request_id:<id>` (model errors: search by `route` and `model`, see the trail below) |
+| which route is slow | OpenObserve | `skiffr overview` p50 and p95 panels, `skiffr errors and slow requests` slowest routes |
+| is gmail or the watcher running | OpenObserve | dashboard `skiffr jobs and scheduler`, panel `seconds since last success` |
+| who is being rate limited or refused | OpenObserve | saved view `skiffr auth and rate limits`, panel `rate limited requests by class` |
+| a new exception, with a stack | GlitchTip | `errors.findmalek.engineer`, org `findmalek`, Issues, filter by project |
+| did a fixed bug come back | GlitchTip | a resolved issue turns unresolved again on the next event (regression) |
+| how many people visit the site and docs | Umami | `analytics.findmalek.engineer`, sites `skiffr web`, `skiffr docs`, `skiffr dashboard` |
+| are model calls failing or over budget | OpenObserve | `skiffr overview`, panels `ai calls by outcome` and `ai tokens by direction` |
+
+Nothing sends a push notification yet. The alerts are created switched off, see [alerts](#alerts). Until you wire one, look at `skiffr overview` once a day.
+
+## OpenObserve
+
+### Dashboards
+
+They live in the folder `skiffr` (menu Dashboards, folder `skiffr`). The default range is the last hour. Auto refresh is not stored in the dashboard, it is a url parameter, so open them with `&refresh=30s` and bookmark that:
+
+- `skiffr overview`: requests per minute by status class, 5xx share, db up, p50 and p95 per route, scheduler freshness and failures, status mix, model calls and tokens, rate limited requests, top routes.
+- `skiffr errors and slow requests`: 4xx and 5xx over time, auth failures and 429, tables of the latest 5xx, latest 4xx and requests over a second, slowest routes, failing routes. The tables have plain columns: time, severity, status, method, route, ms, request id, message.
+- `skiffr jobs and scheduler`: runs by job and outcome, seconds since the last success, average run time, items handled, failed runs, sync failures by kind, rate limited requests.
+
+```text
+https://<openobserve host>/web/dashboards/view?org_identifier=default&folder=<folder id>&refresh=30s&dashboard=<dashboard id>
+```
+
+The folder and dashboard ids are in the address bar when you open a dashboard from the list. They are different on every instance.
+
+Notes on reading them:
+
+- A passing `/health` is counted in the metrics but not written as a log line, because the container healthcheck hits it every few seconds. A failing one (status 400 or more) is logged, so a down probe shows in the error tables. The log panels also hide passing health lines from older data, and the metric panels for traffic and latency leave `/health` out.
+- Panels filter on fields (`severity`, `http_route`, `http_status_code`, `duration_ms`), never on the text of `body`.
+- Metric panels use PromQL (`rate`, `increase`, `histogram_quantile`) because the counters are cumulative. Log panels use SQL.
+- The latency percentiles come from histogram buckets, so read them as a band. `p95` of a route with three requests means little.
+- Panels about model calls, sync failures and rate limits are empty until the first event of that kind. An empty panel there is good news. A flat empty `requests per minute` is not.
+- Only the logs go through the 500 line queue, so above about 30 requests per second the log tables lose lines while the metric panels stay exact.
+
+### Saved views
+
+In Logs, open the stream `skiffr`, then the Saved views menu (the bookmark icon next to the query box). Pick one, set the time range, press the run button.
+
+| view | filter | use it for |
+| --- | --- | --- |
+| `skiffr errors` | `severity = 'ERROR' or http_status_code >= 500` | what we got wrong |
+| `skiffr warnings and errors` | `severity in ('WARN', 'ERROR') or http_status_code >= 400` | everything a caller or we got wrong |
+| `skiffr slow requests (>1s)` | `duration_ms > 1000` | slow routes, newest first |
+| `skiffr by request id` | `request_id = 'PASTE-REQUEST-ID-HERE'` | one request. Replace the id in the query box and run |
+| `skiffr auth and rate limits` | `http_status_code in (401, 403, 429)` | not signed in, not allowed, rate limited |
+
+Every view shows the columns `severity`, `http_status_code`, `http_method`, `http_route`, `duration_ms`, `request_id`, `body`, and starts at the last hour. Change the columns with the field list on the left, the view itself stays as saved until you choose update view.
+
+The stream also has these settings, so filters on them are fast: full text search on `body`, an index on `severity`, `http_route`, `http_method`, `http_status_code`, `http_status_class`, `request_id` and `service_name`, and a bloom filter on `request_id`. Retention is 30 days, set on the server.
+
+### Field glossary
+
+Log stream `skiffr`:
+
+| field | meaning |
+| --- | --- |
+| `_timestamp` | when the request finished, in microseconds. The table shows it as a date |
+| `body` | the readable line, `GET /v1/answers/:id 200 14ms`, or `error internal: TypeError` (error kind, then class) for the short line written next to an error report. Older lines say `http.request`. Do not filter on it, use the fields |
+| `event` | `http.request` for a request line, `error` for an error line. This is where the old body value went. Only present on newer lines |
+| `severity` | `INFO` for 1xx to 3xx, `WARN` for 4xx, `ERROR` for 5xx. Older lines are all `INFO`, so the views also test the status code |
+| `severity_number` | the OTLP number for severity (9 info, 13 warn, 17 error) |
+| `http_method` | `GET`, `POST` and so on |
+| `http_route` | the router's template (missing on `error` lines), never the typed url: `/rpc/answers/update`, `/v1/answers/:id`, `/health`, or `other` for anything unmatched |
+| `http_status_code` | the status, a number |
+| `http_status_class` | `2xx`, `3xx`, `4xx`, `5xx` |
+| `duration_ms` | time spent in the api, in whole milliseconds (request lines only) |
+| `request_id` | the id returned to the caller in `x-request-id`. Missing on `/health` and on lines for requests that never reached the router. Also attached to GlitchTip reports of unexpected procedure errors, but on model errors the tag holds the provider's id, not this one |
+| `service_name` | `skiffr-api` |
+| `route`, `job`, `model`, `account_id`, `source_id`, `error_class`, `error_kind`, `error_code`, `error_status` | only on the `error` lines: the procedure path (`answers.update`, not an http route) or the scheduler job, and the ids and codes of the error report. No message |
+| `deploy_env`, `deployment_environment_name` | `production`, the same value twice (one from the app, one from the OTLP resource) |
+| `instrumentation_library_name`, `dropped_attributes_count` | OTLP bookkeeping, ignore |
+
+Metric streams (each has `service_name`, `deployment_environment_name`, `start_time` which changes when the api restarts, so a restart shows up as a new series):
+
+| stream | type | labels | meaning |
+| --- | --- | --- | --- |
+| `skiffr_http_requests` | counter | `http_method`, `http_route`, `http_status_class` | requests since the process started |
+| `skiffr_http_duration_ms_bucket`, `_sum`, `_count` | histogram | same, plus `le` on the bucket | request time in ms |
+| `skiffr_db_up` | gauge | none | 1 when the last `/health` reached postgres, 0 when not |
+| `skiffr_scheduler_runs` | counter | `job`, `outcome` | scheduler passes, outcome `ok`, `error` or `skipped` |
+| `skiffr_scheduler_duration_ms_*` | histogram | `job` | time of a pass |
+| `skiffr_scheduler_items` | gauge | `job` | items seen by the last pass |
+| `skiffr_scheduler_last_success_seconds` | gauge | `job` | unix time of the last good pass. `time() - value` is its age |
+| `skiffr_sync_failures` | counter | `job`, `error_kind` | gmail and watcher failures by kind, appears with the first failure |
+| `skiffr_rate_limit_rejected` | counter | `limit_class` | requests the limiter refused, appears with the first refusal |
+| `skiffr_ai_calls` | counter | `operation`, `model`, `outcome` | model calls. Outcome `budget` means the daily limit was hit |
+| `skiffr_ai_tokens` | counter | `operation`, `model`, `direction` | input and output tokens |
+| `skiffr_ai_duration_ms_*` | histogram | `operation`, `model` | model call time |
+
+### SQL cheat sheet
+
+Open Logs, pick the stream `skiffr`, switch on SQL mode, paste, set the range. Metric queries go in the Metrics page (SQL or PromQL). Counters are cumulative, so a plain `max(value)` is the total since the last restart. For rates use PromQL.
+
+Errors, last hour:
+
+```sql
+select _timestamp, severity, http_status_code, http_route, duration_ms, request_id, body
+from "skiffr"
+where severity = 'ERROR' or http_status_code >= 500
+order by _timestamp desc limit 100
+```
+
+Which routes fail, and how:
+
+```sql
+select http_route, http_status_code, count(*) as n
+from "skiffr" where http_status_code >= 400
+group by http_route, http_status_code order by n desc limit 20
+```
+
+Slow requests:
+
+```sql
+select _timestamp, http_method, http_route, duration_ms, request_id
+from "skiffr" where duration_ms > 1000
+order by duration_ms desc limit 50
+```
+
+Requests by route with latency:
+
+```sql
+select http_route, count(*) as requests, avg(duration_ms) as avg_ms,
+  approx_percentile_cont(duration_ms, 0.95) as p95_ms, max(duration_ms) as max_ms
+from "skiffr" group by http_route order by requests desc limit 20
+```
+
+Status class breakdown:
+
+```sql
+select http_status_class, count(*) as n from "skiffr"
+group by http_status_class order by n desc
+```
+
+One request by id:
+
+```sql
+select _timestamp, severity, http_status_code, http_route, duration_ms, body
+from "skiffr" where request_id = 'PASTE-REQUEST-ID-HERE' order by _timestamp
+```
+
+Who gets rate limited:
+
+```sql
+select http_route, http_method, count(*) as n
+from "skiffr" where http_status_code = 429
+group by http_route, http_method order by n desc
+```
+
+Who is refused (not signed in, not allowed):
+
+```sql
+select http_route, http_status_code, count(*) as n
+from "skiffr" where http_status_code in (401, 403)
+group by http_route, http_status_code order by n desc
+```
+
+Requests per minute:
+
+```sql
+select histogram(_timestamp, '1 minute') as minute, count(*) as requests
+from "skiffr" group by minute order by minute
+```
+
+5xx share per 5 minutes:
+
+```sql
+select histogram(_timestamp, '5 minutes') as bucket, count(*) as total,
+  sum(case when http_status_code >= 500 then 1 else 0 end) as errors
+from "skiffr" group by bucket order by bucket
+```
+
+Db up gaps (a missing minute means nobody polled `/health`, a 0 means postgres was unreachable). Run it as a metrics query:
+
+```sql
+select histogram(_timestamp, '1 minute') as minute, min(value) as db_up
+from "skiffr_db_up" group by minute order by minute
+```
+
+Scheduler runs that did not end ok since the last restart:
+
+```sql
+select job, outcome, max(value) as runs_since_start
+from "skiffr_scheduler_runs" where outcome <> 'ok'
+group by job, outcome order by job
+```
+
+Scheduler freshness (PromQL, seconds since the last good pass per job):
+
+```text
+min by (job) (time() - skiffr_scheduler_last_success_seconds)
+```
+
+Sync failures and model budget (PromQL):
+
+```text
+sum by (job, error_kind) (increase(skiffr_sync_failures[1h]))
+sum(increase(skiffr_ai_calls{outcome="budget"}[1h]))
+```
+
+p95 per route (PromQL):
+
+```text
+histogram_quantile(0.95, sum by (le, http_route) (rate(skiffr_http_duration_ms_bucket{http_route!="/health"}[5m])))
+```
+
+### Time range and refresh
+
+- Start with the last 15 minutes in Logs, widen only when you need to. Queries over days of logs get slow.
+- Dashboards default to 1 hour. Add `&refresh=30s` to the address to auto refresh, and bookmark that address. The minimum is 5 seconds.
+- Times in the tables made with `to_char` are UTC. The log table and charts use your browser's timezone.
+- Metrics and logs are flushed every 15 seconds, so the newest point is up to 15 seconds behind.
+
+### Import the JSON
+
+Everything above is in `ops/openobserve/` as json, so another instance (or this one after a mishap) can get it back. You need `curl` and `jq`.
+
+```sh
+export OPENOBSERVE_URL=https://o2.example.net
+export OPENOBSERVE_AUTH='Basic <base64 of email:password>'
+sh ops/openobserve/import.sh
+```
+
+The script is safe to run again. It finds every object by name and updates it in place, never deletes, never touches anything not named `skiffr`, and passes the auth to curl on stdin so it is not printed or visible in the process list. Details are in `ops/openobserve/README.md`. To change a dashboard, edit it in the UI, export the json from the dashboard settings and replace the file.
+
+### Alerts
+
+The import creates three alerts in the alert folder `skiffr`, all switched off:
+
+| alert | fires when |
+| --- | --- |
+| `skiffr_5xx_burst` | 5 or more 5xx in 5 minutes, checked every 5 minutes |
+| `skiffr_db_down` | the latest `skiffr_db_up` sample is 0 |
+| `skiffr_scheduler_stale` | a scheduler job has no good pass for 30 minutes. Gmail runs every `GMAIL_SYNC_INTERVAL_MINUTES` (15 by default, plus or minus 20 percent), so raise the 1800 second threshold in the alert if you set that above 25 |
+
+Alert names cannot contain spaces in this OpenObserve version, so they use underscores.
+
+Two blind spots: if the api is down or crashed there is no sample and no log line, so nothing fires (the series just ends). And a job that is switched off (`GMAIL_SCHEDULER=off`) has no series, so no alert. Watch `skiffr overview` or add an uptime check from outside for the first case.
+
+OpenObserve cannot create an alert without a destination, and the open source build here has no SMTP, so email destinations are refused. The alerts point at a placeholder webhook, `skiffr_unset`, aimed at `https://example.com/skiffr-alert-placeholder`, which receives nothing you own. To go live:
+
+1. Alerts, Destinations, add a webhook (ntfy, Discord, Slack or any url you own) or, after setting `ZO_SMTP_*` on the OpenObserve container, an email destination.
+2. Open each alert, replace `skiffr_unset` with the new destination, switch it on.
+3. Running the import again is safe: it only creates the placeholder when it is missing and keeps the destinations and the on/off switch of an alert that already exists.
+
+## GlitchTip
+
+Org `findmalek`, team `skiffr`, projects `skiffr-api`, `skiffr-web`, `skiffr-dashboard`. Docs has no project because it reports nothing. Every project belongs to the team `skiffr`, so Issues and Projects list them for any member.
+
+### Triage
+
+1. Issues, pick the project (or all three), filter `is:unresolved`. Newest and most frequent first.
+2. Open an issue: the stack (function, file, line), the tags (`route`, `request_id`, `job`, `account_id`, `source_id`, `error_kind`, `model`, and sometimes `cause`, `constraint`, `table`) and the environment. The exception type is the issue title. There is no message, request body, header or breadcrumb, on purpose.
+3. Decide: fix it and mark resolved, or ignore it (for a known upstream blip), or leave it open and comment.
+4. Regressions: if a resolved issue gets a new event, it reopens by itself and counts as a regression. Mark it resolved in the release that fixed it to keep that signal sharp.
+5. Only errors in our own code reach GlitchTip: failed procedures, model errors and `internal` sync failures. Google 5xx, expired grants, rate limits and dead careers pages are metrics only.
+
+### Finding the event for a request id
+
+An unexpected error thrown inside a procedure carries skiffr's request id as a tag (`request_id`). In Issues type `request_id:<id>` in the search box. The same id is in the log line (`request_id` field) and in the `x-request-id` response header, which makes it the bridge between the two tools.
+
+Model errors are different. The api reports them with the provider's request id in the `request_id` tag, then answers the caller with a 503, so skiffr's own id never reaches GlitchTip. For those, search by `route` and `model` instead, for example `route:ai.draftAnswer model:<model id>` (the route is the procedure path, shown on the log line's `error` row). Scheduler errors have no request at all, they carry `job` and `account_id` or `source_id`.
+
+### What is scrubbed
+
+- The api only sends allowlisted fields (see [observability](/docs/observability)), so most of this is a second line of defence.
+- On the server each project has data scrubbing on: values under keys such as `password`, `token`, `secret`, `authorization`, `cookie`, `session`, credit card numbers, private key blocks and email addresses in free text become `[Filtered]`. Tags like `request_id` and `route` are not touched.
+- Ip addresses are anonymised (`scrub_ip_addresses`), per project and for the org.
+- Retention is the server default of 90 days, set with `GLITCHTIP_RETENTION_DAYS` on the container, not per project.
+
+A test event with an email in the message and a tag called `authorization` came back with both filtered and `request_id`, `route` and `job` intact. It was deleted afterwards.
+
+### Alerts
+
+Each project has one rule, `skiffr new issue or regression` (1 event within 1 minute). GlitchTip has no on/off switch for a rule, a rule with no recipients does nothing, and this install has `EMAIL_URL=consolemail://` (email is only printed in the worker log), so the rules have no recipients yet. To turn them on: set a real `EMAIL_URL` (smtp) on the GlitchTip containers, then in each project, Settings, Alerts, open the rule and add the email recipient or a webhook. New issues and regressions are both covered by that rule.
+
+### Settings that are fixed by the server
+
+- Environment filters: the apps send `DEPLOY_ENV` as the environment, so after the first event `production` shows up in the environment dropdown. Pick it there, GlitchTip remembers the choice per browser. GlitchTip creates the environment on its own, so there is nothing to preset.
+- Event limits: `event_throttle_rate` is 0 (nothing dropped). There is no per project size or count cap in this version.
+
+## Umami
+
+Nothing to configure here. The numbers live at `analytics.findmalek.engineer` (sign in with the Umami admin), one site per app: `skiffr web`, `skiffr docs`, `skiffr dashboard`. The api has no site, so the `ai_budget_exhausted` event is not recorded until `UMAMI_API_WEBSITE_ID` is set. Page views are counted without cookies, without query strings and not at all with Do Not Track on. Umami says nothing about errors or latency, use the two tools above for those.
+
+## A request went wrong: follow the trail
+
+Say a user reports "saving an answer failed a minute ago".
+
+1. OpenObserve, Logs, saved view `skiffr errors`, range last 15 minutes. If you know the route, add `and http_route = '/rpc/answers/update'`. Pick the line with a 5xx. If nothing is there, try `skiffr warnings and errors`: a 4xx is the caller's input, a 429 is the limiter.
+2. Read the line: `body` has the method, route, status and time, `duration_ms` tells slow from broken. Copy `request_id` from the row.
+3. Open `skiffr by request id`, paste the id between the quotes, run. You get every line carrying that id.
+4. GlitchTip, project `skiffr-api`, Issues, search `request_id:<id>`. If an issue comes up, the stack and tags say where it threw. If nothing comes up, check the route: a 503 on a model route is a model provider error, and GlitchTip has it under `route` and `model`, not under this id (the log line `error provider: AiModelError` next to it holds the same story). If it is neither, the failure was not an error in our code (bad input, a refusal, an upstream answer), and the log line is the whole story.
+5. Check the neighbourhood on `skiffr overview`: is it one request, or did the error rate and p95 move at the same time, or `db up` drop? If the db or a scheduler is involved, `skiffr jobs and scheduler` shows it.
+6. Fix, ship, and mark the GlitchTip issue resolved. A regression will reopen it.
+
+## What is never logged
+
+These have no key to travel under, see the allowlist in [observability](/docs/observability):
+
+- request or response bodies, headers, cookies, query strings and the typed url (only the router's route template)
+- field labels and values, answers, resume and job text, emails, names, tokens, passwords
+- user ids (only mailbox and source row ids appear, as `account_id` and `source_id`)
+- model prompts and answers, unless `AI_TRACE_CAPTURE_CONTENT=true`
+- error messages other than the fixed sentences written in this repo, causes and stack variables
+
+The dashboards and views cannot show what is not stored. If a panel seems to be missing a detail, that is by design. Do not add a field to the allowlist to fill a dashboard without a privacy review.

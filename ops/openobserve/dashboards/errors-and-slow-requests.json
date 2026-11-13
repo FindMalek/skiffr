@@ -1,0 +1,1109 @@
+{
+  "version": 8,
+  "title": "skiffr errors and slow requests",
+  "description": "failed and slow requests with readable columns. last hour, refresh 30s",
+  "role": "",
+  "owner": "",
+  "tabs": [
+    {
+      "tabId": "default",
+      "name": "Default",
+      "panels": [
+        {
+          "id": "Panel_err_time",
+          "type": "stacked",
+          "title": "4xx and 5xx over time",
+          "description": "failed requests per bucket, split by status class. 5xx is a bug or an outage, 4xx is mostly callers",
+          "config": {
+            "show_legends": true,
+            "legends_position": "bottom",
+            "decimals": 2,
+            "line_thickness": 1.5,
+            "step_value": "0",
+            "top_results_others": false,
+            "axis_border_show": false,
+            "label_option": {
+              "rotate": 0
+            },
+            "show_symbol": false,
+            "line_interpolation": "smooth",
+            "legend_width": {
+              "unit": "px"
+            },
+            "base_map": {
+              "type": "osm"
+            },
+            "map_type": {
+              "type": "world"
+            },
+            "map_view": {
+              "zoom": 1,
+              "lat": 0,
+              "lng": 0
+            },
+            "map_symbol_style": {
+              "size": "by Value",
+              "size_by_value": {
+                "min": 1,
+                "max": 100
+              },
+              "size_fixed": 2
+            },
+            "drilldown": [],
+            "mark_line": [],
+            "override_config": [],
+            "connect_nulls": false,
+            "no_value_replacement": "",
+            "wrap_table_cells": false,
+            "table_transpose": false,
+            "table_dynamic_columns": false,
+            "color": {
+              "mode": "palette-classic-by-series",
+              "fixedColor": ["#53ca53"],
+              "seriesBy": "last"
+            }
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "select histogram(_timestamp) as \"x_axis_1\", http_status_class as \"breakdown_1\", count(*) as \"y_axis_1\" from \"skiffr\" where http_status_code >= 400 group by x_axis_1, breakdown_1 order by x_axis_1",
+              "customQuery": true,
+              "vrlFunctionQuery": "",
+              "fields": {
+                "stream": "skiffr",
+                "stream_type": "logs",
+                "x": [
+                  {
+                    "label": "time",
+                    "alias": "x_axis_1",
+                    "column": "x_axis_1",
+                    "color": null,
+                    "isDerived": false,
+                    "havingConditions": [],
+                    "type": "custom",
+                    "args": [],
+                    "functionName": null
+                  }
+                ],
+                "y": [
+                  {
+                    "label": "requests",
+                    "alias": "y_axis_1",
+                    "column": "y_axis_1",
+                    "color": null,
+                    "isDerived": false,
+                    "havingConditions": [],
+                    "type": "custom",
+                    "args": [],
+                    "functionName": "count"
+                  }
+                ],
+                "z": [],
+                "breakdown": [
+                  {
+                    "label": "status class",
+                    "alias": "breakdown_1",
+                    "column": "breakdown_1",
+                    "color": null,
+                    "isDerived": false,
+                    "havingConditions": [],
+                    "type": "custom",
+                    "args": [],
+                    "functionName": null
+                  }
+                ],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              }
+            }
+          ],
+          "layout": {
+            "x": 0,
+            "y": 0,
+            "w": 24,
+            "h": 18,
+            "i": 1
+          },
+          "htmlContent": "",
+          "markdownContent": "",
+          "customChartContent": ""
+        },
+        {
+          "id": "Panel_auth_rl",
+          "type": "stacked",
+          "title": "auth failures and rate limits over time",
+          "description": "401 not signed in, 403 not allowed, 429 rate limited. a jump in 429 is the limiter doing its job or a client in a loop",
+          "config": {
+            "show_legends": true,
+            "legends_position": "bottom",
+            "decimals": 2,
+            "line_thickness": 1.5,
+            "step_value": "0",
+            "top_results_others": false,
+            "axis_border_show": false,
+            "label_option": {
+              "rotate": 0
+            },
+            "show_symbol": false,
+            "line_interpolation": "smooth",
+            "legend_width": {
+              "unit": "px"
+            },
+            "base_map": {
+              "type": "osm"
+            },
+            "map_type": {
+              "type": "world"
+            },
+            "map_view": {
+              "zoom": 1,
+              "lat": 0,
+              "lng": 0
+            },
+            "map_symbol_style": {
+              "size": "by Value",
+              "size_by_value": {
+                "min": 1,
+                "max": 100
+              },
+              "size_fixed": 2
+            },
+            "drilldown": [],
+            "mark_line": [],
+            "override_config": [],
+            "connect_nulls": false,
+            "no_value_replacement": "",
+            "wrap_table_cells": false,
+            "table_transpose": false,
+            "table_dynamic_columns": false,
+            "color": {
+              "mode": "palette-classic-by-series",
+              "fixedColor": ["#53ca53"],
+              "seriesBy": "last"
+            }
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "select histogram(_timestamp) as \"x_axis_1\", http_status_code as \"breakdown_1\", count(*) as \"y_axis_1\" from \"skiffr\" where http_status_code in (401, 403, 429) group by x_axis_1, breakdown_1 order by x_axis_1",
+              "customQuery": true,
+              "vrlFunctionQuery": "",
+              "fields": {
+                "stream": "skiffr",
+                "stream_type": "logs",
+                "x": [
+                  {
+                    "label": "time",
+                    "alias": "x_axis_1",
+                    "column": "x_axis_1",
+                    "color": null,
+                    "isDerived": false,
+                    "havingConditions": [],
+                    "type": "custom",
+                    "args": [],
+                    "functionName": null
+                  }
+                ],
+                "y": [
+                  {
+                    "label": "requests",
+                    "alias": "y_axis_1",
+                    "column": "y_axis_1",
+                    "color": null,
+                    "isDerived": false,
+                    "havingConditions": [],
+                    "type": "custom",
+                    "args": [],
+                    "functionName": "count"
+                  }
+                ],
+                "z": [],
+                "breakdown": [
+                  {
+                    "label": "status",
+                    "alias": "breakdown_1",
+                    "column": "breakdown_1",
+                    "color": null,
+                    "isDerived": false,
+                    "havingConditions": [],
+                    "type": "custom",
+                    "args": [],
+                    "functionName": null
+                  }
+                ],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              }
+            }
+          ],
+          "layout": {
+            "x": 24,
+            "y": 0,
+            "w": 24,
+            "h": 18,
+            "i": 2
+          },
+          "htmlContent": "",
+          "markdownContent": "",
+          "customChartContent": ""
+        },
+        {
+          "id": "Panel_5xx",
+          "type": "table",
+          "title": "latest 5xx and errors",
+          "description": "newest first, 100 rows. includes the short error lines the api writes for its own errors (error kind and class). copy the request id into the saved view skiffr by request id, then look it up in glitchtip",
+          "config": {
+            "show_legends": false,
+            "legends_position": "bottom",
+            "decimals": 2,
+            "line_thickness": 1.5,
+            "step_value": "0",
+            "top_results_others": false,
+            "axis_border_show": false,
+            "label_option": {
+              "rotate": 0
+            },
+            "show_symbol": false,
+            "line_interpolation": "smooth",
+            "legend_width": {
+              "unit": "px"
+            },
+            "base_map": {
+              "type": "osm"
+            },
+            "map_type": {
+              "type": "world"
+            },
+            "map_view": {
+              "zoom": 1,
+              "lat": 0,
+              "lng": 0
+            },
+            "map_symbol_style": {
+              "size": "by Value",
+              "size_by_value": {
+                "min": 1,
+                "max": 100
+              },
+              "size_fixed": 2
+            },
+            "drilldown": [],
+            "mark_line": [],
+            "override_config": [],
+            "connect_nulls": false,
+            "no_value_replacement": "",
+            "wrap_table_cells": false,
+            "table_transpose": false,
+            "table_dynamic_columns": false,
+            "color": {
+              "mode": "palette-classic-by-series",
+              "fixedColor": ["#53ca53"],
+              "seriesBy": "last"
+            }
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "select to_char(to_timestamp_micros(_timestamp), '%Y-%m-%d %H:%M:%S') as \"time\", severity as \"severity\", http_status_code as \"status\", http_method as \"method\", http_route as \"route\", duration_ms as \"duration_ms\", request_id as \"request_id\", body as \"message\" from \"skiffr\" where (http_status_code >= 500 or severity = 'ERROR') order by _timestamp desc limit 100",
+              "customQuery": true,
+              "vrlFunctionQuery": "",
+              "fields": {
+                "stream": "skiffr",
+                "stream_type": "logs",
+                "x": [
+                  {
+                    "label": "time (utc)",
+                    "alias": "time",
+                    "column": "time",
+                    "color": null,
+                    "isDerived": false,
+                    "havingConditions": [],
+                    "type": "custom",
+                    "args": [],
+                    "functionName": null
+                  },
+                  {
+                    "label": "severity",
+                    "alias": "severity",
+                    "column": "severity",
+                    "color": null,
+                    "isDerived": false,
+                    "havingConditions": [],
+                    "type": "custom",
+                    "args": [],
+                    "functionName": null
+                  },
+                  {
+                    "label": "status",
+                    "alias": "status",
+                    "column": "status",
+                    "color": null,
+                    "isDerived": false,
+                    "havingConditions": [],
+                    "type": "custom",
+                    "args": [],
+                    "functionName": null
+                  },
+                  {
+                    "label": "method",
+                    "alias": "method",
+                    "column": "method",
+                    "color": null,
+                    "isDerived": false,
+                    "havingConditions": [],
+                    "type": "custom",
+                    "args": [],
+                    "functionName": null
+                  },
+                  {
+                    "label": "route",
+                    "alias": "route",
+                    "column": "route",
+                    "color": null,
+                    "isDerived": false,
+                    "havingConditions": [],
+                    "type": "custom",
+                    "args": [],
+                    "functionName": null
+                  },
+                  {
+                    "label": "ms",
+                    "alias": "duration_ms",
+                    "column": "duration_ms",
+                    "color": null,
+                    "isDerived": false,
+                    "havingConditions": [],
+                    "type": "custom",
+                    "args": [],
+                    "functionName": null
+                  },
+                  {
+                    "label": "request id",
+                    "alias": "request_id",
+                    "column": "request_id",
+                    "color": null,
+                    "isDerived": false,
+                    "havingConditions": [],
+                    "type": "custom",
+                    "args": [],
+                    "functionName": null
+                  },
+                  {
+                    "label": "message",
+                    "alias": "message",
+                    "column": "message",
+                    "color": null,
+                    "isDerived": false,
+                    "havingConditions": [],
+                    "type": "custom",
+                    "args": [],
+                    "functionName": null
+                  }
+                ],
+                "y": [],
+                "z": [],
+                "breakdown": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              }
+            }
+          ],
+          "layout": {
+            "x": 0,
+            "y": 18,
+            "w": 48,
+            "h": 20,
+            "i": 3
+          },
+          "htmlContent": "",
+          "markdownContent": "",
+          "customChartContent": ""
+        },
+        {
+          "id": "Panel_4xx",
+          "type": "table",
+          "title": "latest 4xx",
+          "description": "newest first, 100 rows. mostly callers: bad input (400, 422), not signed in (401), not allowed (403), missing (404), limited (429)",
+          "config": {
+            "show_legends": false,
+            "legends_position": "bottom",
+            "decimals": 2,
+            "line_thickness": 1.5,
+            "step_value": "0",
+            "top_results_others": false,
+            "axis_border_show": false,
+            "label_option": {
+              "rotate": 0
+            },
+            "show_symbol": false,
+            "line_interpolation": "smooth",
+            "legend_width": {
+              "unit": "px"
+            },
+            "base_map": {
+              "type": "osm"
+            },
+            "map_type": {
+              "type": "world"
+            },
+            "map_view": {
+              "zoom": 1,
+              "lat": 0,
+              "lng": 0
+            },
+            "map_symbol_style": {
+              "size": "by Value",
+              "size_by_value": {
+                "min": 1,
+                "max": 100
+              },
+              "size_fixed": 2
+            },
+            "drilldown": [],
+            "mark_line": [],
+            "override_config": [],
+            "connect_nulls": false,
+            "no_value_replacement": "",
+            "wrap_table_cells": false,
+            "table_transpose": false,
+            "table_dynamic_columns": false,
+            "color": {
+              "mode": "palette-classic-by-series",
+              "fixedColor": ["#53ca53"],
+              "seriesBy": "last"
+            }
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "select to_char(to_timestamp_micros(_timestamp), '%Y-%m-%d %H:%M:%S') as \"time\", severity as \"severity\", http_status_code as \"status\", http_method as \"method\", http_route as \"route\", duration_ms as \"duration_ms\", request_id as \"request_id\", body as \"message\" from \"skiffr\" where http_status_code >= 400 and http_status_code < 500 order by _timestamp desc limit 100",
+              "customQuery": true,
+              "vrlFunctionQuery": "",
+              "fields": {
+                "stream": "skiffr",
+                "stream_type": "logs",
+                "x": [
+                  {
+                    "label": "time (utc)",
+                    "alias": "time",
+                    "column": "time",
+                    "color": null,
+                    "isDerived": false,
+                    "havingConditions": [],
+                    "type": "custom",
+                    "args": [],
+                    "functionName": null
+                  },
+                  {
+                    "label": "severity",
+                    "alias": "severity",
+                    "column": "severity",
+                    "color": null,
+                    "isDerived": false,
+                    "havingConditions": [],
+                    "type": "custom",
+                    "args": [],
+                    "functionName": null
+                  },
+                  {
+                    "label": "status",
+                    "alias": "status",
+                    "column": "status",
+                    "color": null,
+                    "isDerived": false,
+                    "havingConditions": [],
+                    "type": "custom",
+                    "args": [],
+                    "functionName": null
+                  },
+                  {
+                    "label": "method",
+                    "alias": "method",
+                    "column": "method",
+                    "color": null,
+                    "isDerived": false,
+                    "havingConditions": [],
+                    "type": "custom",
+                    "args": [],
+                    "functionName": null
+                  },
+                  {
+                    "label": "route",
+                    "alias": "route",
+                    "column": "route",
+                    "color": null,
+                    "isDerived": false,
+                    "havingConditions": [],
+                    "type": "custom",
+                    "args": [],
+                    "functionName": null
+                  },
+                  {
+                    "label": "ms",
+                    "alias": "duration_ms",
+                    "column": "duration_ms",
+                    "color": null,
+                    "isDerived": false,
+                    "havingConditions": [],
+                    "type": "custom",
+                    "args": [],
+                    "functionName": null
+                  },
+                  {
+                    "label": "request id",
+                    "alias": "request_id",
+                    "column": "request_id",
+                    "color": null,
+                    "isDerived": false,
+                    "havingConditions": [],
+                    "type": "custom",
+                    "args": [],
+                    "functionName": null
+                  },
+                  {
+                    "label": "message",
+                    "alias": "message",
+                    "column": "message",
+                    "color": null,
+                    "isDerived": false,
+                    "havingConditions": [],
+                    "type": "custom",
+                    "args": [],
+                    "functionName": null
+                  }
+                ],
+                "y": [],
+                "z": [],
+                "breakdown": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              }
+            }
+          ],
+          "layout": {
+            "x": 0,
+            "y": 38,
+            "w": 48,
+            "h": 20,
+            "i": 4
+          },
+          "htmlContent": "",
+          "markdownContent": "",
+          "customChartContent": ""
+        },
+        {
+          "id": "Panel_slow",
+          "type": "table",
+          "title": "slow requests (over 1s)",
+          "description": "slowest first, 100 rows",
+          "config": {
+            "show_legends": false,
+            "legends_position": "bottom",
+            "decimals": 2,
+            "line_thickness": 1.5,
+            "step_value": "0",
+            "top_results_others": false,
+            "axis_border_show": false,
+            "label_option": {
+              "rotate": 0
+            },
+            "show_symbol": false,
+            "line_interpolation": "smooth",
+            "legend_width": {
+              "unit": "px"
+            },
+            "base_map": {
+              "type": "osm"
+            },
+            "map_type": {
+              "type": "world"
+            },
+            "map_view": {
+              "zoom": 1,
+              "lat": 0,
+              "lng": 0
+            },
+            "map_symbol_style": {
+              "size": "by Value",
+              "size_by_value": {
+                "min": 1,
+                "max": 100
+              },
+              "size_fixed": 2
+            },
+            "drilldown": [],
+            "mark_line": [],
+            "override_config": [],
+            "connect_nulls": false,
+            "no_value_replacement": "",
+            "wrap_table_cells": false,
+            "table_transpose": false,
+            "table_dynamic_columns": false,
+            "color": {
+              "mode": "palette-classic-by-series",
+              "fixedColor": ["#53ca53"],
+              "seriesBy": "last"
+            }
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "select to_char(to_timestamp_micros(_timestamp), '%Y-%m-%d %H:%M:%S') as \"time\", severity as \"severity\", http_status_code as \"status\", http_method as \"method\", http_route as \"route\", duration_ms as \"duration_ms\", request_id as \"request_id\", body as \"message\" from \"skiffr\" where duration_ms > 1000 and (http_route <> '/health' or http_status_code >= 400) order by duration_ms desc limit 100",
+              "customQuery": true,
+              "vrlFunctionQuery": "",
+              "fields": {
+                "stream": "skiffr",
+                "stream_type": "logs",
+                "x": [
+                  {
+                    "label": "time (utc)",
+                    "alias": "time",
+                    "column": "time",
+                    "color": null,
+                    "isDerived": false,
+                    "havingConditions": [],
+                    "type": "custom",
+                    "args": [],
+                    "functionName": null
+                  },
+                  {
+                    "label": "severity",
+                    "alias": "severity",
+                    "column": "severity",
+                    "color": null,
+                    "isDerived": false,
+                    "havingConditions": [],
+                    "type": "custom",
+                    "args": [],
+                    "functionName": null
+                  },
+                  {
+                    "label": "status",
+                    "alias": "status",
+                    "column": "status",
+                    "color": null,
+                    "isDerived": false,
+                    "havingConditions": [],
+                    "type": "custom",
+                    "args": [],
+                    "functionName": null
+                  },
+                  {
+                    "label": "method",
+                    "alias": "method",
+                    "column": "method",
+                    "color": null,
+                    "isDerived": false,
+                    "havingConditions": [],
+                    "type": "custom",
+                    "args": [],
+                    "functionName": null
+                  },
+                  {
+                    "label": "route",
+                    "alias": "route",
+                    "column": "route",
+                    "color": null,
+                    "isDerived": false,
+                    "havingConditions": [],
+                    "type": "custom",
+                    "args": [],
+                    "functionName": null
+                  },
+                  {
+                    "label": "ms",
+                    "alias": "duration_ms",
+                    "column": "duration_ms",
+                    "color": null,
+                    "isDerived": false,
+                    "havingConditions": [],
+                    "type": "custom",
+                    "args": [],
+                    "functionName": null
+                  },
+                  {
+                    "label": "request id",
+                    "alias": "request_id",
+                    "column": "request_id",
+                    "color": null,
+                    "isDerived": false,
+                    "havingConditions": [],
+                    "type": "custom",
+                    "args": [],
+                    "functionName": null
+                  },
+                  {
+                    "label": "message",
+                    "alias": "message",
+                    "column": "message",
+                    "color": null,
+                    "isDerived": false,
+                    "havingConditions": [],
+                    "type": "custom",
+                    "args": [],
+                    "functionName": null
+                  }
+                ],
+                "y": [],
+                "z": [],
+                "breakdown": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              }
+            }
+          ],
+          "layout": {
+            "x": 0,
+            "y": 58,
+            "w": 48,
+            "h": 20,
+            "i": 5
+          },
+          "htmlContent": "",
+          "markdownContent": "",
+          "customChartContent": ""
+        },
+        {
+          "id": "Panel_slowest_routes",
+          "type": "table",
+          "title": "slowest routes",
+          "description": "per route p95 and worst time in the window, slowest p95 first. passing health checks left out",
+          "config": {
+            "show_legends": false,
+            "legends_position": "bottom",
+            "decimals": 2,
+            "line_thickness": 1.5,
+            "step_value": "0",
+            "top_results_others": false,
+            "axis_border_show": false,
+            "label_option": {
+              "rotate": 0
+            },
+            "show_symbol": false,
+            "line_interpolation": "smooth",
+            "legend_width": {
+              "unit": "px"
+            },
+            "base_map": {
+              "type": "osm"
+            },
+            "map_type": {
+              "type": "world"
+            },
+            "map_view": {
+              "zoom": 1,
+              "lat": 0,
+              "lng": 0
+            },
+            "map_symbol_style": {
+              "size": "by Value",
+              "size_by_value": {
+                "min": 1,
+                "max": 100
+              },
+              "size_fixed": 2
+            },
+            "drilldown": [],
+            "mark_line": [],
+            "override_config": [],
+            "connect_nulls": false,
+            "no_value_replacement": "",
+            "wrap_table_cells": false,
+            "table_transpose": false,
+            "table_dynamic_columns": false,
+            "color": {
+              "mode": "palette-classic-by-series",
+              "fixedColor": ["#53ca53"],
+              "seriesBy": "last"
+            }
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "select http_route as \"route\", count(*) as \"requests\", round(avg(duration_ms)) as \"avg_ms\", approx_percentile_cont(duration_ms, 0.95) as \"p95_ms\", max(duration_ms) as \"max_ms\" from \"skiffr\" where (http_route <> '/health' or http_status_code >= 400) group by http_route order by p95_ms desc limit 20",
+              "customQuery": true,
+              "vrlFunctionQuery": "",
+              "fields": {
+                "stream": "skiffr",
+                "stream_type": "logs",
+                "x": [
+                  {
+                    "label": "route",
+                    "alias": "route",
+                    "column": "route",
+                    "color": null,
+                    "isDerived": false,
+                    "havingConditions": [],
+                    "type": "custom",
+                    "args": [],
+                    "functionName": null
+                  },
+                  {
+                    "label": "requests",
+                    "alias": "requests",
+                    "column": "requests",
+                    "color": null,
+                    "isDerived": false,
+                    "havingConditions": [],
+                    "type": "custom",
+                    "args": [],
+                    "functionName": null
+                  },
+                  {
+                    "label": "avg ms",
+                    "alias": "avg_ms",
+                    "column": "avg_ms",
+                    "color": null,
+                    "isDerived": false,
+                    "havingConditions": [],
+                    "type": "custom",
+                    "args": [],
+                    "functionName": null
+                  },
+                  {
+                    "label": "p95 ms",
+                    "alias": "p95_ms",
+                    "column": "p95_ms",
+                    "color": null,
+                    "isDerived": false,
+                    "havingConditions": [],
+                    "type": "custom",
+                    "args": [],
+                    "functionName": null
+                  },
+                  {
+                    "label": "max ms",
+                    "alias": "max_ms",
+                    "column": "max_ms",
+                    "color": null,
+                    "isDerived": false,
+                    "havingConditions": [],
+                    "type": "custom",
+                    "args": [],
+                    "functionName": null
+                  }
+                ],
+                "y": [],
+                "z": [],
+                "breakdown": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              }
+            }
+          ],
+          "layout": {
+            "x": 0,
+            "y": 78,
+            "w": 28,
+            "h": 20,
+            "i": 6
+          },
+          "htmlContent": "",
+          "markdownContent": "",
+          "customChartContent": ""
+        },
+        {
+          "id": "Panel_err_routes",
+          "type": "h-bar",
+          "title": "failing routes",
+          "description": "routes with the most 4xx and 5xx in the window",
+          "config": {
+            "show_legends": false,
+            "legends_position": "bottom",
+            "decimals": 2,
+            "line_thickness": 1.5,
+            "step_value": "0",
+            "top_results_others": false,
+            "axis_border_show": false,
+            "label_option": {
+              "rotate": 0
+            },
+            "show_symbol": false,
+            "line_interpolation": "smooth",
+            "legend_width": {
+              "unit": "px"
+            },
+            "base_map": {
+              "type": "osm"
+            },
+            "map_type": {
+              "type": "world"
+            },
+            "map_view": {
+              "zoom": 1,
+              "lat": 0,
+              "lng": 0
+            },
+            "map_symbol_style": {
+              "size": "by Value",
+              "size_by_value": {
+                "min": 1,
+                "max": 100
+              },
+              "size_fixed": 2
+            },
+            "drilldown": [],
+            "mark_line": [],
+            "override_config": [],
+            "connect_nulls": false,
+            "no_value_replacement": "",
+            "wrap_table_cells": false,
+            "table_transpose": false,
+            "table_dynamic_columns": false,
+            "color": {
+              "mode": "palette-classic-by-series",
+              "fixedColor": ["#53ca53"],
+              "seriesBy": "last"
+            }
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "select http_route as \"x_axis_1\", count(*) as \"y_axis_1\" from \"skiffr\" where http_status_code >= 400 group by x_axis_1 order by y_axis_1 desc limit 10",
+              "customQuery": true,
+              "vrlFunctionQuery": "",
+              "fields": {
+                "stream": "skiffr",
+                "stream_type": "logs",
+                "x": [
+                  {
+                    "label": "route",
+                    "alias": "x_axis_1",
+                    "column": "x_axis_1",
+                    "color": null,
+                    "isDerived": false,
+                    "havingConditions": [],
+                    "type": "custom",
+                    "args": [],
+                    "functionName": null
+                  }
+                ],
+                "y": [
+                  {
+                    "label": "failed requests",
+                    "alias": "y_axis_1",
+                    "column": "y_axis_1",
+                    "color": null,
+                    "isDerived": false,
+                    "havingConditions": [],
+                    "type": "custom",
+                    "args": [],
+                    "functionName": "count"
+                  }
+                ],
+                "z": [],
+                "breakdown": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              }
+            }
+          ],
+          "layout": {
+            "x": 28,
+            "y": 78,
+            "w": 20,
+            "h": 20,
+            "i": 7
+          },
+          "htmlContent": "",
+          "markdownContent": "",
+          "customChartContent": ""
+        }
+      ]
+    }
+  ],
+  "variables": {
+    "list": [],
+    "showDynamicFilters": false
+  },
+  "defaultDatetimeDuration": {
+    "type": "relative",
+    "relativeTimePeriod": "1h",
+    "startTime": null,
+    "endTime": null
+  }
+}
