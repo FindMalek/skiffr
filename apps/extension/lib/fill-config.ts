@@ -58,7 +58,7 @@ export const FILL_ERROR_TEXT: Record<FillErrorCode, string> = {
   "not-configured": "skiffr is not connected yet. Add your token in the settings.",
   rejected: "skiffr no longer accepts this connection. It may have been revoked: reconnect in the settings.",
   unavailable: "skiffr had a problem. Try again in a moment.",
-  "no-ai-key": "The skiffr server has no AI key yet. Ask whoever runs it to set GROQ_API_KEY or OPENAI_API_KEY.",
+  "no-ai-key": "The skiffr server has no AI key yet. Ask whoever runs it to set GROQ_API_KEY.",
   unreachable: "Could not reach skiffr. Check your connection or the server address in settings.",
   timeout: "skiffr took too long to answer. Try again.",
   "no-profile": "No profile saved yet. Fill in your profile in the dashboard first.",
