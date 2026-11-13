@@ -443,3 +443,15 @@ test("padding after a bare label cannot hide it either", () => {
   }
   expect(isLearnableField({ label: `Code${"\u2060".repeat(5000)}`, type: "text" })).toBe(false)
 })
+
+test("empty sections after a bare label cannot push it out of the tails", () => {
+  for (const label of [
+    `Section: Code${": ".repeat(25)}`,
+    `x: x: Ccv${": ".repeat(25)}`,
+    `Payment details: Firma${":  ".repeat(20)}`,
+    `Payment details: Code${": -".repeat(30)}`,
+    `Payment details: Code${": .".repeat(30)}`,
+  ]) {
+    expect(isLearnableField({ label, type: "text" }), label).toBe(false)
+  }
+})

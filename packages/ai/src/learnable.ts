@@ -427,7 +427,7 @@ const OWN_LABEL_TAILS = 20
 
 /** The label and each of its last tails after a section prefix (`Payment details: Code` also reads `Code`), normalized. */
 function ownLabels(label: string): string[] {
-  const parts = label.split(/:\s+/)
+  const parts = label.split(/:\s+/).filter((part) => /[\p{L}\p{N}]/u.test(part))
   const tails = parts.slice(-OWN_LABEL_TAILS)
   const owns = tails.map((_, index) => clean(tails.slice(index).join(" ")))
   if (tails.length < parts.length) owns.push(clean(label))
