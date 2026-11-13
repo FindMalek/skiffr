@@ -5,9 +5,10 @@
   "type": "module",
   "scripts": {
     "e2e": "playwright test",
-    "test": "bun test tools",
+    "test": "bun test tools smoke/",
     "check-types": "tsc --noEmit",
-    "snapshot": "node tools/snapshot/cli.ts"
+    "snapshot": "node tools/snapshot/cli.ts",
+    "smoke": "node smoke/cli.ts"
   },
   "dependencies": {
     "@skiffr/common": "workspace:*",

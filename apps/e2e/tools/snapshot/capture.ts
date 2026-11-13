@@ -1,6 +1,6 @@
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { type Browser, chromium } from "@playwright/test"
+import { type Browser, type BrowserContext, chromium } from "@playwright/test"
 import { build } from "esbuild"
 import { createFetcher } from "./fetcher.ts"
 import { createRequestGuard, normalizeHost, urlRefusal } from "./guard.ts"
@@ -184,6 +184,16 @@ function bundleDetect(): Promise<string> {
 
 const esc = (text: string): string => text.replace(/&/g, "&amp;").replace(/</g, "&lt;")
 
+/** A page cannot open a channel the request route does not see: no websocket, WebRTC or WebTransport. */
+export async function blockRealtime(context: BrowserContext): Promise<void> {
+  await context.addInitScript(() => {
+    for (const name of ["WebTransport", "RTCPeerConnection", "webkitRTCPeerConnection", "RTCDataChannel"]) {
+      Object.defineProperty(window, name, { value: undefined, configurable: true })
+    }
+  })
+  await context.routeWebSocket(/.*/, (socket) => socket.close())
+}
+
 export async function capture(browser: Browser, options: CaptureOptions): Promise<Capture> {
   const refusal = urlRefusal(options.url)
   if (refusal) throw new Error(refusal)
@@ -206,25 +216,24 @@ export async function capture(browser: Browser, options: CaptureOptions): Promis
     timeoutMs: options.timeoutMs,
   })
   try {
-    await context.addInitScript(() => {
-      for (const name of ["WebTransport", "RTCPeerConnection", "webkitRTCPeerConnection", "RTCDataChannel"]) {
-        Object.defineProperty(window, name, { value: undefined, configurable: true })
-      }
-    })
+    await blockRealtime(context)
     const blocked: string[] = []
     await context.route("**/*", async (route) => {
       const request = route.request()
       if (request.method() !== "GET" && request.method() !== "HEAD") return route.abort()
       if (request.resourceType() === "media" || request.resourceType() === "font") return route.abort()
       try {
-        const page = await fetcher.fetch(new URL(request.url()), request.method(), request.headers())
-        return await route.fulfill(page)
+        const { status, headers, body } = await fetcher.fetch(
+          new URL(request.url()),
+          request.method(),
+          request.headers(),
+        )
+        return await route.fulfill({ status, headers, body })
       } catch (error) {
         blocked.push(error instanceof Error ? error.message : String(error))
         return route.abort()
       }
     })
-    await context.routeWebSocket(/.*/, (socket) => socket.close())
     const page = await context.newPage()
     await page.goto(options.url, { waitUntil: "domcontentloaded", timeout: options.timeoutMs }).catch((error) => {
       throw new Error(blocked[0] ? `the page was not loaded: ${blocked[0]}` : String(error?.message ?? error))
