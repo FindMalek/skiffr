@@ -133,6 +133,9 @@ export function Legend({ parts }: { parts: Pick<Part, "key" | "label" | "color">
   )
 }
 
+/** Every `--viz-*` fill has a `-foreground` token with at least 4.5:1 on it, for text printed on the mark. */
+const onFill = (color: string): string => color.replace(/\)$/, "-foreground)")
+
 /** One whole in parts. Tall: the count is printed on a block that is wide enough for it, otherwise it is only in the table. */
 export function SegmentedBar({ label, parts }: { label: string; parts: Part[] }) {
   const total = parts.reduce((sum, part) => sum + part.value, 0)
@@ -148,8 +151,8 @@ export function SegmentedBar({ label, parts }: { label: string; parts: Part[] })
           <div
             key={part.key}
             title={`${part.label}: ${part.value}`}
-            className="viz-mark viz-grow-x min-w-0 grow-(--n) basis-0 rounded-xs bg-(--c) px-2 font-medium text-white text-xs leading-7"
-            style={{ "--n": part.value, "--c": part.color } as CSSProperties}
+            className="viz-mark viz-grow-x min-w-0 grow-(--n) basis-0 rounded-xs bg-(--c) px-2 font-medium text-(--fg) text-xs leading-7"
+            style={{ "--n": part.value, "--c": part.color, "--fg": onFill(part.color) } as CSSProperties}
           >
             {part.value / total >= 0.12 ? part.value : null}
           </div>

@@ -75,14 +75,14 @@ function Breakdown({
       {rows.every((row) => row.applied === 0) ? (
         <p className="text-muted-foreground text-sm">No applications in this range.</p>
       ) : (
-        <Table className="table-fixed">
+        <Table className="sm:table-fixed">
           <TableHeader>
             <TableRow>
-              <TableHead className="w-1/3">{keyHeader}</TableHead>
-              <TableHead className="text-right">Applied</TableHead>
-              <TableHead className="text-right">Replied</TableHead>
-              <TableHead className="text-right">Interview</TableHead>
-              <TableHead className="text-right">Offer</TableHead>
+              <TableHead className="sm:w-1/3">{keyHeader}</TableHead>
+              <TableHead className="text-right text-xs sm:text-sm">Applied</TableHead>
+              <TableHead className="text-right text-xs sm:text-sm">Replied</TableHead>
+              <TableHead className="text-right text-xs sm:text-sm">Interview</TableHead>
+              <TableHead className="text-right text-xs sm:text-sm">Offer</TableHead>
               <TableHead className="hidden text-right sm:table-cell">Reply %</TableHead>
             </TableRow>
           </TableHeader>
@@ -91,7 +91,7 @@ function Breakdown({
               .filter((row) => row.applied > 0)
               .map((row) => (
                 <TableRow key={row.key}>
-                  <TableCell className="truncate">{name(row.key)}</TableCell>
+                  <TableCell className="max-w-24 truncate sm:max-w-none">{name(row.key)}</TableCell>
                   <TableCell className="text-right tabular-nums">{row.applied}</TableCell>
                   <TableCell className="text-right tabular-nums">{row.responded}</TableCell>
                   <TableCell className="text-right tabular-nums">{row.interview}</TableCell>

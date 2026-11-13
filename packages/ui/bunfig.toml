@@ -1,0 +1,3 @@
+# `bun test --isolate`: every *.test.ts(x) runs in a fresh global, with a DOM from happy-dom.
+[test]
+preload = ["./test/setup.ts"]
