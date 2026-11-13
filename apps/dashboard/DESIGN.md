@@ -96,6 +96,8 @@ tool and below the 16px iOS needs to avoid zooming into inputs.
 | big number | `font-heading text-3xl tabular-nums` | 30 / 36 | 600 | tiles; never above `text-3xl` |
 | identifier | `font-mono text-xs` | 12 / 16 | 400 | hosts, token prefixes, shortcuts |
 
+The one exception to the 14px body size in navigation: the mobile tab bar labels (3.1) are `text-xs` (12px) under a 20px icon. That is the standard bottom bar pattern, and at 320px each of the five tabs is 64px wide, where `text-sm` does not fit "Answers" without truncating.
+
 Rules: sentence case everywhere ("Add answer", not "Add Answer"), no `uppercase` transform anywhere. Brand is
 lowercase `skiffr`. Numbers in tables and tiles are `tabular-nums`. Max line length 70ch for prose (`max-w-prose`).
 Inputs are `text-base` below `md` and `text-sm` from `md`.

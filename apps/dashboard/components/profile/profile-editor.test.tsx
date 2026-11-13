@@ -193,6 +193,19 @@ test("leaving with unsaved edits asks first and only goes on after Leave page", 
   expect(nav.pushed).toEqual(["/settings/extension"])
 })
 
+test("the save bar tells the shell its height so toasts sit above it, and the shell gets it back when the page goes", async () => {
+  await mount({
+    ...stored,
+    data: stored.data,
+    createdAt: new Date(stored.createdAt),
+    updatedAt: new Date(stored.updatedAt),
+  })
+  expect(document.documentElement.style.getPropertyValue("--action-bar-h")).toMatch(/^\d+px$/)
+  act(() => root.unmount())
+  expect(document.documentElement.style.getPropertyValue("--action-bar-h")).toBe("")
+  root = createRoot(host)
+})
+
 test("code that calls router.push itself is held too: the mobile settings select asks mayNavigate first", async () => {
   const { mayNavigate } = await import("@/lib/navigation-guard")
   await mount({

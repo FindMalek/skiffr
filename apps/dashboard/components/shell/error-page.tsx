@@ -1,11 +1,11 @@
 import { Button, buttonVariants } from "@skiffr/ui/components/button"
 import { ErrorState } from "@skiffr/ui/components/error-state"
 import { cn } from "@skiffr/ui/lib/utils"
-import Link from "next/link"
 
 /**
  * A whole page that failed or does not exist. The `h1` is for assistive tech and the route-change focus, the visible
- * title is the error box. `onRetry` adds "Try again"; "Go to Today" is always there.
+ * title is the error box. `onRetry` adds "Try again"; "Go to Today" is always there. It is a plain anchor, a full
+ * navigation: a client navigation to `/` from the error page of `/` would keep the failed boundary on screen.
  */
 export function ErrorPage({
   heading,
@@ -25,7 +25,7 @@ export function ErrorPage({
   return (
     <div className={cn("flex w-full max-w-3xl flex-col gap-6 p-4 md:p-6", branded && "mx-auto")}>
       {branded && (
-        <Link href="/" className="flex w-fit items-center gap-2 font-heading font-semibold text-base">
+        <a href="/" className="flex w-fit items-center gap-2 font-heading font-semibold text-base">
           <span
             aria-hidden="true"
             className="grid size-7 place-items-center bg-primary text-primary-foreground text-sm"
@@ -33,7 +33,7 @@ export function ErrorPage({
             s
           </span>
           skiffr
-        </Link>
+        </a>
       )}
       <h1 tabIndex={-1} className="sr-only">
         {heading}
@@ -45,9 +45,9 @@ export function ErrorPage({
         action={
           <div className="flex flex-wrap gap-2">
             {onRetry && <Button onClick={onRetry}>Try again</Button>}
-            <Link href="/" className={cn(buttonVariants({ variant: onRetry ? "outline" : "default" }))}>
+            <a href="/" className={cn(buttonVariants({ variant: onRetry ? "outline" : "default" }))}>
               Go to Today
-            </Link>
+            </a>
           </div>
         }
       />

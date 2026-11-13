@@ -16,7 +16,7 @@ const { SidebarTrigger } = await import("@skiffr/ui/components/sidebar")
 const { TooltipProvider } = await import("@skiffr/ui/components/tooltip")
 const { holdNavigation } = await import("@/lib/navigation-guard")
 const { useActionBar } = await import("./use-action-bar")
-const { RouteFocus, focusPageTitle } = await import("./route-focus")
+const { RouteFocus, focusPageTitle, focusWhenReady } = await import("./route-focus")
 const { TabBar } = await import("./tab-bar")
 
 const network = (globalThis as { __network?: string[] }).__network ?? []
@@ -266,4 +266,74 @@ test("a sticky bottom action reports its measured height to the shell and clears
   expect(document.documentElement.style.getPropertyValue("--action-bar-h")).toBe("")
   expect(observed.disconnected).toBe(true)
   root = createRoot(host)
+})
+
+test("the sidebar pin ends when the window crosses xl, and does not come back when it crosses again", async () => {
+  const query = { wide: false, listeners: new Set<() => void>() }
+  const original = window.matchMedia
+  window.matchMedia = ((media: string) => ({
+    media,
+    get matches() {
+      return query.wide
+    },
+    addEventListener: (_type: string, listener: () => void) => query.listeners.add(listener),
+    removeEventListener: (_type: string, listener: () => void) => query.listeners.delete(listener),
+  })) as unknown as typeof window.matchMedia
+  const cross = (wide: boolean) =>
+    act(async () => {
+      query.wide = wide
+      for (const listener of query.listeners) listener()
+    })
+  try {
+    await render(
+      <TooltipProvider>
+        <ShellProvider>
+          <SidebarTrigger />
+          <AppSidebar isAdmin />
+        </ShellProvider>
+      </TooltipProvider>,
+    )
+    const fullClass = () =>
+      host.querySelector('[data-slot="sidebar-wrapper"]')?.querySelector<HTMLElement>(":scope > div")?.className
+    expect(fullClass()).toBe("hidden xl:contents")
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-sidebar="trigger"]')?.click())
+    expect(fullClass()).toBe("hidden md:contents")
+    await cross(true)
+    expect(fullClass()).toBe("hidden xl:contents")
+    await cross(false)
+    expect(fullClass()).toBe("hidden xl:contents")
+  } finally {
+    window.matchMedia = original
+  }
+})
+
+test("add job never takes focus from something the user pressed or focused after it, and a slow page title is still found", async () => {
+  const page = (title: string | null) => (
+    <main id="main" tabIndex={-1}>
+      {title ? <h1 tabIndex={-1}>{title}</h1> : <p>loading</p>}
+      <input id="job-url" />
+      <button type="button">Other</button>
+    </main>
+  )
+  await render(page("Queue"))
+  const stop = focusWhenReady("#job-url")
+  act(() => host.querySelector("button")?.focus())
+  document.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true }))
+  await wait(450)
+  expect(document.activeElement?.tagName).toBe("BUTTON")
+  stop()
+
+  const untouched = focusWhenReady("#job-url")
+  await wait(450)
+  expect(document.activeElement?.id).toBe("job-url")
+  untouched()
+
+  await render(page(null))
+  act(() => (document.activeElement as HTMLElement | null)?.blur())
+  const watch = focusPageTitle()
+  await wait(1700)
+  await render(page("Stats"))
+  await wait(50)
+  expect(document.activeElement?.textContent).toBe("Stats")
+  watch()
 })

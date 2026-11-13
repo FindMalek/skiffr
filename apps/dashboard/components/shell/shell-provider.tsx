@@ -36,6 +36,8 @@ export function useSidebarPin(): SidebarPin {
 export function ShellProvider({ children }: { children: React.ReactNode }) {
   const wide = useWide()
   const [choice, setChoice] = useState<{ wide: boolean; pin: "full" | "rail" } | null>(null)
+  // Crossing `xl` ends the pin: it is cleared (not just ignored), so crossing back does not bring it back.
+  if (choice && choice.wide !== wide) setChoice(null)
   const pin = choice && choice.wide === wide ? choice.pin : null
   const expanded = pin ? pin === "full" : wide
   return (
