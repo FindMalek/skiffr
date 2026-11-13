@@ -1,17 +1,15 @@
 name: release
 
-# Every green push to main is released when it holds a change a user can feel: the next version comes from the squash titles since the
-# last tag (scripts/release/lib.mjs, rules in apps/docs/content/docs/releasing.mdx). It builds the four images for amd64 and arm64,
-# pushes them to ghcr as vX.Y.Z, X.Y and latest, and publishes a GitHub release with the extension zip, docker-compose.yml, install.sh,
-# the skiffr helper and SHA256SUMS. Needs no secret beyond GITHUB_TOKEN and never runs for pull requests or forks.
+# Releases are cut on purpose, not on every merge. The maintainer runs this by hand when a milestone (v0.6, v0.7, ...) is done: Actions,
+# release, Run workflow. Merging to main releases nothing. The next version comes from the squash titles since the last tag
+# (scripts/release/lib.mjs, rules in apps/docs/content/docs/releasing.mdx). It builds the four images for amd64 and arm64, pushes them to
+# ghcr as vX.Y.Z, X.Y and latest, and publishes a GitHub release with the extension zip, docker-compose.yml, install.sh, the skiffr helper
+# and SHA256SUMS. Needs no secret beyond GITHUB_TOKEN and never runs for pull requests or forks.
 #
-# Run it by hand to force a release or to rehearse one: Actions, release, Run workflow. dry_run builds everything and pushes nothing.
+# Only a commit whose ci run on main is green is ever released: a real run refuses otherwise. dry_run (the default) builds everything and
+# pushes nothing, run it first. bump: auto reads the commit titles, the others force that level.
 
 on:
-  workflow_run:
-    workflows: [ci]
-    types: [completed]
-    branches: [main]
   workflow_dispatch:
     inputs:
       bump:
@@ -24,10 +22,10 @@ on:
         type: boolean
         default: true
 
-# Only runs that will really release take the group. A red or foreign ci completion gets a group of its own and is skipped by the plan
-# job, so it can never replace a pending run of a green commit. Runs in the group queue one after the other and are never cancelled.
+# Real runs queue one after the other and are never cancelled. A dry run gets a group of its own, so a rehearsal can never replace a
+# pending real release (GitHub keeps only one pending run per group).
 concurrency:
-  group: release-${{ (github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')) && 'main' || github.run_id }}
+  group: release-${{ inputs.dry_run && github.run_id || 'main' }}
   cancel-in-progress: false
 
 permissions:
@@ -35,17 +33,16 @@ permissions:
 
 env:
   IMAGE_PREFIX: ghcr.io/findmalek/skiffr
-  SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+  SHA: ${{ github.sha }}
 
 jobs:
   plan:
     name: plan
-    if: >-
-      github.repository == 'FindMalek/skiffr' && (
-        (github.event_name == 'workflow_dispatch' && (inputs.dry_run || github.ref == 'refs/heads/main')) ||
-        (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' &&
-          github.event.workflow_run.head_repository.full_name == github.repository)
-      )
+    # a real release only from main, a dry run may rehearse any branch
+    if: github.repository == 'FindMalek/skiffr' && (inputs.dry_run || github.ref == 'refs/heads/main')
+    permissions:
+      contents: read
+      actions: read
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
@@ -61,26 +58,24 @@ jobs:
       - id: decide
         env:
           GH_TOKEN: ${{ github.token }}
-          EVENT: ${{ github.event_name }}
           BUMP: ${{ inputs.bump || 'auto' }}
-          DRY: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+          DRY: ${{ inputs.dry_run }}
         run: |
           set -euo pipefail
           echo "dry=$DRY" >> "$GITHUB_OUTPUT"
-          if [ "$EVENT" = workflow_run ]; then
-            # a newer commit on main will carry these changes, and an older release must never follow a newer one
-            tip=$(git ls-remote origin refs/heads/main | cut -f1)
-            if [ "$tip" != "$SHA" ]; then
-              echo "release=false" >> "$GITHUB_OUTPUT"
-              echo "main moved on to $tip, this run leaves the release to it" | tee -a "$GITHUB_STEP_SUMMARY"
-              exit 0
-            fi
-          fi
           # a published release of the planned version means it is done, a draft (an interrupted run) is built again
           check=--check-release
           if [ "$DRY" = true ]; then check=; fi
           # shellcheck disable=SC2086
-          node scripts/release/plan.mjs --sha "$SHA" --bump "$BUMP" --notes-out RELEASE_NOTES.md $check | tee plan.json
+          node scripts/release/plan.mjs --sha "$SHA" --bump "$BUMP" --notes-out RELEASE_NOTES.md --check-ci $check | tee plan.json
+          # nothing red or untested is released: the newest ci run of a push to main for this commit must be green
+          if [ "$(jq -r .ci plan.json)" != true ]; then
+            if [ "$DRY" != true ]; then
+              echo "::error::no green ci run of a push to main for $SHA. Wait for ci on the latest main commit, or fix it, then run again"
+              exit 1
+            fi
+            echo "warning: no green ci run for $SHA, a real release would be refused" | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
           if [ "$(jq -r .release plan.json)" != true ]; then
             echo "nothing to release: $(jq -r .reason plan.json)" | tee -a "$GITHUB_STEP_SUMMARY"
             if [ "$DRY" = true ]; then

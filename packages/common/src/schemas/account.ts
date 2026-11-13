@@ -16,6 +16,9 @@ export const adminUserSchema = z.object({
   name: z.string(),
   email: z.string(),
   role: z.string().nullable(),
+  emailVerified: z.boolean(),
+  /** Banned now: a ban that has expired does not count. */
+  banned: z.boolean(),
   createdAt: z.date(),
 })
 
@@ -70,5 +73,6 @@ export const accountDeleteOutputSchema = z.object({
 export const okSchema = z.object({ ok: z.literal(true) })
 
 export type Me = z.infer<typeof meSchema>
+export type AdminUser = z.infer<typeof adminUserSchema>
 export type AiUsage = z.infer<typeof aiUsageSchema>
 export type AccountExport = z.infer<typeof accountExportSchema>

@@ -20,7 +20,7 @@
 
 skiffr is an open-source Chrome extension for job applications. It spots an application form, asks, fills it from your own profile and answer bank, and never submits anything for you. A dashboard keeps your profile, answers and a queue of jobs to apply to. You host the api and the database yourself: your profile, answers, queue and tokens live in your own Postgres, and only a small listed slice goes to a model provider, and only if you set a key.
 
-> **Early development.** Releases are published automatically from `main`, but there is no Chrome Web Store listing yet: you load the extension by hand (see [quick start](#quick-start)). The extension learns from your edits, with the limits listed under [how it works](#how-it-works).
+> **Early development.** Releases are cut by the maintainer when a milestone is done, but there is no Chrome Web Store listing yet: you load the extension by hand (see [quick start](#quick-start)). The extension learns from your edits, with the limits listed under [how it works](#how-it-works).
 
 <p align="center">
   <img alt="The toast asking to autofill an application" width="49%" src="https://raw.githubusercontent.com/FindMalek/skiffr/pr-screenshots/59/57-toast-ask.png" />
@@ -194,7 +194,7 @@ docker compose down      # stop, data stays
 docker compose down -v   # stop and delete all data
 ```
 
-Every merge to `main` that changes behavior publishes a new release, with the docker images and the extension zip. `--autoupdate` pulls new images by itself once a day, and a pinned version (`SKIFFR_VERSION=v0.1.0` in `.env`) rolls you back. See [updates](apps/docs/content/docs/deploy.mdx) and [how releases work](apps/docs/content/docs/releasing.mdx). A Chrome Web Store listing, which would update the extension by itself, is tracked in [#26](https://github.com/FindMalek/skiffr/issues/26).
+A release, with the docker images and the extension zip, is cut when a milestone is done, not on every merge. `--autoupdate` pulls new images by itself once a day, and a pinned version (`SKIFFR_VERSION=v0.1.0` in `.env`) rolls you back. See [updates](apps/docs/content/docs/deploy.mdx) and [how releases work](apps/docs/content/docs/releasing.mdx). A Chrome Web Store listing, which would update the extension by itself, is tracked in [#26](https://github.com/FindMalek/skiffr/issues/26).
 
 ### Develop from source
 

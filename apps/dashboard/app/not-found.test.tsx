@@ -66,3 +66,12 @@ test("a non admin opening the users page gets a 404, any other failure still sur
   api.users = () => Promise.reject(new Error("db down"))
   await expect(UsersPage()).rejects.toThrow("db down")
 })
+
+test("an admin gets the table under an Admin / Users breadcrumb", async () => {
+  const ana = { id: "a", name: "Ana", email: "ana@test.dev", role: "admin", emailVerified: true, banned: false }
+  api.users = () => Promise.resolve({ total: 1, users: [{ ...ana, createdAt: new Date(0) }] })
+  await show(UsersPage())
+  expect(host.querySelectorAll("h1")).toHaveLength(1)
+  expect(host.querySelector("nav[aria-label=breadcrumb]")?.textContent).toBe("AdminUsers")
+  expect(host.querySelectorAll("tbody tr")).toHaveLength(1)
+})

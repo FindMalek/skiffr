@@ -221,8 +221,14 @@ Gmail and Careers pages stay two routes because the Gmail OAuth return path is f
 (`RETURN_PATHS` in `packages/orpc/src/lib/gmail/state.ts` and the redirect URI registered with Google); merging them
 into one page means moving both.
 
-Not in the product nav: the Notes example resource of the starting template, the "REST + RPC / Docs" tile and a
-template "Overview" page. Home is called "Today" so the label says what the page is for.
+Home is called "Today" so the label says what the page is for. The starting template's example resource, its "REST +
+RPC / Docs" tile and its "Overview" page are gone, not hidden.
+
+Users (`/users`, `Admin / Users` breadcrumb, where Admin is plain text because it has no page): one table from `md`, a
+list below it, 10 per page, a search on name and email, a role badge (`StatusBadge`, neutral: the role is not a status),
+`Banned` (danger) and `Unverified` (warning) badges, and the joined time as `RelativeTime`. The api returns the newest 100
+accounts and the total, so paging and search are client side and the page says when there are more accounts than it
+holds. A non admin gets the not found page (`FORBIDDEN` becomes `notFound()`), never an empty table.
 
 ### 3.1 Shell
 
@@ -300,7 +306,7 @@ Map (one list, all pages use it; the `?` dialog is generated from it):
 ### 4.1 Page header
 
 ```
-[breadcrumb: Settings / Extension]            (only when nested; a `nav` "breadcrumb", the last item is the page)
+[breadcrumb: Settings / Extension]            (only when nested; a `nav` "breadcrumb", the last item is the page, a group with no page is plain text)
 h1 Title                                      [primary action]
 one line description, muted, max 70ch         [secondary actions]
 ```

@@ -15,7 +15,7 @@ export type Crumb = { label: string; href?: Route }
 /**
  * The one place a page title is rendered. The shell bar above holds the trigger, search and user menu, so the title
  * appears once, as the `h1` (focusable: the route-change focus lands here). `breadcrumb` is only for nested pages and
- * ends with the current page.
+ * ends with the current page. A group with no page of its own (Admin) has no `href` and is plain text.
  */
 export function PageHeader({
   title,
@@ -37,10 +37,12 @@ export function PageHeader({
               <Fragment key={crumb.label}>
                 {index > 0 && <BreadcrumbSeparator />}
                 <BreadcrumbItem>
-                  {crumb.href && index < breadcrumb.length - 1 ? (
+                  {index === breadcrumb.length - 1 ? (
+                    <BreadcrumbPage>{crumb.label}</BreadcrumbPage>
+                  ) : crumb.href ? (
                     <BreadcrumbLink render={<Link href={crumb.href} />}>{crumb.label}</BreadcrumbLink>
                   ) : (
-                    <BreadcrumbPage>{crumb.label}</BreadcrumbPage>
+                    <span>{crumb.label}</span>
                   )}
                 </BreadcrumbItem>
               </Fragment>
