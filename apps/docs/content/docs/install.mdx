@@ -116,33 +116,7 @@ Do not delete the folder: Chrome reads the extension from it. Chrome shows skiff
 ## Connect it and apply
 
 1. Open the dashboard and sign in.
-2. Save your profile. The profile editor in the dashboard is not built yet (Settings, Profile is a placeholder, tracked in [issue 159](https://github.com/FindMalek/skiffr/issues/159)), so until it is, save it once through the api. Put your data in `profile.json` (every key is in [the profile schema](https://github.com/FindMalek/skiffr/blob/main/packages/common/src/schemas/profile.ts)):
-
-   ```json
-   {
-     "data": {
-       "identity": { "firstName": "Ada", "lastName": "Lovelace", "email": "ada@example.com", "phone": "+441234567890" },
-       "location": { "city": "London", "country": "United Kingdom" },
-       "links": { "linkedin": "https://www.linkedin.com/in/ada" }
-     }
-   }
-   ```
-
-   Then sign in and send it (set `D` to your dashboard url: `http://localhost:3002` on your own server). The password is typed at a prompt and never appears in the command line or in `ps`:
-
-   ```bash
-   D=https://dashboard.skiffr.findmalek.engineer
-   umask 077; J=$(mktemp); trap 'rm -f "$J"' EXIT
-   printf 'email: '; read -r E
-   printf 'password: '; read -rs P; echo
-   jq -n --arg e "$E" --arg p "$P" '{email:$e,password:$p}' | curl -fsS -c "$J" -o /dev/null -H 'content-type: application/json' -H "origin: $D" -d @- $D/api/auth/sign-in/email
-   curl -fsS -b "$J" -o /dev/null -w 'profile saved: http %{http_code}\n' -X PUT -H 'content-type: application/json' -H "origin: $D" -H 'x-csrf-token: orpc' -d @profile.json $D/api/v1/profile
-   unset P
-   ```
-
-   (`jq` is needed for the first call: it builds the JSON safely, so quotes and backslashes in the password just work.)
-
-   It prints `profile saved: http 200`. The call replaces the whole profile, so send everything each time. Without a profile a fill stops with "No profile saved yet. Fill in your profile in the dashboard first."
+2. Save your profile. Open **Settings**, then **Profile**, fill in at least your name, email and location, and press **Save profile**. The page shows what is sent to the model and what is never filled. Without a profile a fill stops with "No profile saved yet. Fill in your profile in the dashboard first."
 3. In the dashboard sidebar open **Extension**. Type a name for the machine in **Name** (for example "Chrome on my laptop"), pick **Expires** (30 days, 90 days, 1 year or Never) and press **Create token**. The token starts with `skp_` and is shown once: press **Copy** and then **I have copied it**. The page also prints the API url to paste.
 4. Open the extension options: right-click the skiffr icon and choose **Options** (or `chrome://extensions`, Details, Extension options). It opens in a tab. Set **API url** (the field starts with `http://localhost:3001`, replace it: `https://api.skiffr.findmalek.engineer` on the hosted instance, the printed url on your own server), paste the token in **Token** and press **Test connection**. It saves what you typed, then shows **Connected as** and your name. **Save** only saves.
 5. Open a job application form. A toast at the bottom right asks "Autofill this application?" with **Yes**, **No** and **Don't ask on this site**. Press **Yes**. `Ctrl+Shift+F` (`Cmd+Shift+F` on macOS) fills the current page without the toast.
@@ -154,7 +128,7 @@ Review what was filled: fields the model is unsure about are outlined in amber. 
 - [ ] `https://api.skiffr.findmalek.engineer/health` (your own server: `http://localhost:3001/health`) answers `{"ok":true,"db":true,...}`
 - [ ] `/version` on the same host shows the server version
 - [ ] the dashboard loads and you are signed in
-- [ ] the profile call printed `profile saved: http 200`
+- [ ] Settings, Profile says your profile is saved
 - [ ] the extension options say "Connected as" and your name, with no "update" warning
 - [ ] on a form, the toast appears, and after **Yes** it says how many fields were filled and how many are outlined
 - [ ] you pressed submit on one real application yourself
@@ -188,7 +162,7 @@ The server holds your data, the extension only holds a token, so any number of m
 | **Test connection** says "The token was rejected. It may be revoked or expired" | create a new token in the dashboard under **Extension** and paste it again. Tokens made with an expiry run out, and a revoked token never works again |
 | **Test connection** says "The API had a problem" | the server answered with an error, your token may be fine. Try again in a moment, on your own server read `docker compose logs api` |
 | the toast says "skiffr had a problem. Try again in a moment." with **Retry** | the most likely cause today is that the server has no AI key. On your own server `docker compose logs api` shows `ai.mapFields` with `SERVICE_UNAVAILABLE`: set the key, see [AI key](#ai-key). On the hosted instance tell the maintainer |
-| the toast says "No profile saved yet. Fill in your profile in the dashboard first." | save the profile through the api, step 2 of [connect it](#connect-it-and-apply) |
+| the toast says "No profile saved yet. Fill in your profile in the dashboard first." | save it in Settings, Profile, step 2 of [connect it](#connect-it-and-apply) |
 | the toast says "The daily AI limit on this server is used up. It resets at midnight UTC." | wait, or on your own server raise the limit, see [environment](/docs/environment) |
 | the toast says "skiffr is not connected yet" or "no longer accepts this connection" | open the extension options and add the api url and a valid token |
 | the toast never appears | reload the page after loading the extension. It only shows on pages it takes for an application form: try `Ctrl+Shift+F`. Check the card at `chrome://extensions` is on and has no errors |
