@@ -1,5 +1,5 @@
 import { isProcedure } from "@orpc/server"
-import { getObservability, statusClass } from "@skiffr/observability"
+import { getObservability, type Level, statusClass } from "@skiffr/observability"
 import { appRouter } from "@skiffr/orpc"
 
 const segments = (path: string) => path.split("/").filter(Boolean)
@@ -45,9 +45,17 @@ export function routeOf(pathname: string): string {
   return restTemplateOf(pathname) ?? "other"
 }
 
+/** Routes counted in the metrics but never shipped as log records: the container healthcheck would bury every other line. */
+const UNLOGGED_ROUTES: ReadonlySet<string> = new Set(["/health"])
+
+const severityOf = (status: number): Level => (status >= 500 ? "error" : status >= 400 ? "warn" : "info")
+
 const METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"])
 
-/** One structured line and two metrics per request: method, route, status and time. No query, header, body, cookie, address or user. */
+/**
+ * One log line and two metrics per request: method, route, status and time. No query, header, body, cookie, address or
+ * user. The line reads `GET /v1/answers/:id 200 14ms`, built from the route template and never from the url.
+ */
 export function recordRequest(request: Request, response: Response, startedAt: number): void {
   const obs = getObservability()
   const duration = Math.round(performance.now() - startedAt)
@@ -61,7 +69,13 @@ export function recordRequest(request: Request, response: Response, startedAt: n
     duration_ms: duration,
     request_id: response.headers.get("x-request-id") ?? undefined,
   }
-  obs.logEvent(response.status >= 500 ? "error" : "info", "http.request", attrs)
+  if (!UNLOGGED_ROUTES.has(route))
+    obs.logEvent(
+      severityOf(response.status),
+      "http.request",
+      attrs,
+      `${method} ${route} ${response.status} ${duration}ms`,
+    )
   const labels = { "http.method": method, "http.route": route, "http.status_class": attrs["http.status_class"] }
   obs.count("skiffr.http.requests", 1, labels)
   obs.observe("skiffr.http.duration_ms", duration, labels)
