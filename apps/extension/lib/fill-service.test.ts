@@ -1,6 +1,6 @@
 import { describe, expect, spyOn, test } from "bun:test"
 import { ORPCError } from "@orpc/client"
-import { AI_BUDGET_EXHAUSTED, type FieldMapping } from "@skiffr/common"
+import { AI_BUDGET_EXHAUSTED, type FieldMapping, type ModelMapping } from "@skiffr/common"
 import { NotConfiguredError } from "./api"
 import { FILL_CONFIDENCE_MIN, FILL_CONFIDENCE_REVIEW, PROFILE_TTL_MS } from "./fill-config"
 import { createFillService } from "./fill-service"
@@ -30,7 +30,7 @@ function request(fields: FillField[]): FillRequestMessage {
 function setup(
   opts: {
     matches?: (ids: string[]) => Match[]
-    map?: (ids: string[]) => FieldMapping[]
+    map?: (ids: string[]) => (FieldMapping | ModelMapping)[]
     lookup?: () => Promise<unknown>
     mapFields?: () => Promise<unknown>
     profile?: () => Promise<unknown>
@@ -64,7 +64,8 @@ function setup(
         const ids = input.fields.map((f) => f.id)
         seen.map.push(ids)
         if (opts.mapFields) return opts.mapFields() as never
-        return { mappings: opts.map?.(ids) ?? [] }
+        const mappings = (opts.map?.(ids) ?? []).map((m) => ({ sensitive: false, category: null, ...m }))
+        return { mappings }
       },
     },
     profile: {
@@ -89,6 +90,26 @@ const profileMap = (id: string, key: string, confidence = 0.95): FieldMapping =>
   key,
   confidence,
   reason: "",
+})
+
+describe("the server's sensitive verdict", () => {
+  test("a field the server withheld is never filled or suggested, whatever its mapping or a saved similar answer says", async () => {
+    const { service } = setup({
+      matches: (ids) => ids.map((fieldId) => ({ fieldId, source: "similar" as const, value: "Old", autofill: false })),
+      map: (ids) =>
+        ids.map((id) =>
+          id === "a"
+            ? { ...profileMap(id, "identity.firstName"), sensitive: true, category: "religion" as const }
+            : profileMap(id, "identity.lastName"),
+        ),
+    })
+    const out = await service.run(request([field("a", "Zodiac sign"), field("b", "Family name")]))
+    if (!out.ok) throw new Error("expected ok")
+    expect(out.mapping.map((m) => m.id)).toEqual(["b"])
+    expect(out.suggestions).toEqual([])
+    expect(out.values).toEqual({ "identity.lastName": "Silva" })
+    expect(out.summary).toMatchObject({ profile: 1, skipped: 1, suggested: 0 })
+  })
 })
 
 describe("merge and precedence", () => {

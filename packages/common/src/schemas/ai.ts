@@ -74,7 +74,35 @@ export const fieldMappingSchema = z.discriminatedUnion("action", [
   z.object({ id: z.string(), action: z.literal("skip"), confidence, reason }),
 ])
 
-export const mapFieldsOutputSchema = z.object({ mappings: z.array(fieldMappingSchema) })
+export const SENSITIVE_CATEGORIES = [
+  "consent",
+  "contact_permission",
+  "signature",
+  "gender",
+  "race_ethnicity",
+  "age_birth",
+  "nationality",
+  "disability",
+  "veteran",
+  "religion",
+  "orientation",
+  "marital_family",
+  "union",
+  "criminal",
+  "health",
+  "secret",
+  "payment",
+  "gov_id",
+  "other",
+] as const
+
+export const sensitiveCategorySchema = z.enum(SENSITIVE_CATEGORIES)
+
+/** The server's verdict next to a mapping: a sensitive field is never filled, suggested or learned, whatever else it says. */
+export const sensitiveVerdictSchema = z.object({ sensitive: z.boolean(), category: sensitiveCategorySchema.nullable() })
+
+export const modelMappingSchema = fieldMappingSchema.and(sensitiveVerdictSchema)
+export const mapFieldsOutputSchema = z.object({ mappings: z.array(modelMappingSchema) })
 export const draftAnswerOutputSchema = z.discriminatedUnion("ok", [
   z.object({ ok: z.literal(true), text: z.string() }),
   z.object({ ok: z.literal(false), reason: z.enum(["empty", "not_enough_info"]) }),
@@ -83,4 +111,7 @@ export const draftAnswerOutputSchema = z.discriminatedUnion("ok", [
 export type FieldDescriptor = z.infer<typeof fieldDescriptorSchema>
 export type Correction = z.infer<typeof correctionSchema>
 export type FieldMapping = z.infer<typeof fieldMappingSchema>
+export type ModelMapping = z.infer<typeof modelMappingSchema>
+export type SensitiveCategory = z.infer<typeof sensitiveCategorySchema>
+export type SensitiveVerdict = z.infer<typeof sensitiveVerdictSchema>
 export type DraftAnswerResult = z.infer<typeof draftAnswerOutputSchema>

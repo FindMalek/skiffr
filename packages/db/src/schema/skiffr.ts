@@ -386,3 +386,15 @@ export const aiUsageGlobal = pgTable("ai_usage_global", {
   day: date("day", { mode: "string" }).primaryKey(),
   calls: integer("calls").notNull().default(0),
 })
+
+/**
+ * Questions the model called sensitive, by a hash of the normalized label and options. No text is stored and the row
+ * belongs to no user: the same question on any form gets the same answer without another model call, and the learning
+ * routes can tell they must not keep what is typed into it. Rows of an older policy version are ignored.
+ */
+export const sensitiveVerdict = pgTable("sensitive_verdict", {
+  key: text("key").primaryKey(),
+  category: text("category").notNull(),
+  policyVersion: integer("policy_version").notNull(),
+  createdAt: createdAt(),
+})

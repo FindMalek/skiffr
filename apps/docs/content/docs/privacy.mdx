@@ -21,7 +21,7 @@ web page -> extension -> your api -> your Postgres
 | To | What | When |
 | --- | --- | --- |
 | your api | field labels, names, placeholders, types and option texts of the form, your token. After a fill, also the filled and final values of the fields you edit (the extension cuts values at 301 characters, the api accepts up to 2000) | when you fill, and when you submit or leave the page |
-| language model provider | the same field descriptors, your profile key names, and the values of an allowlist of profile keys | when a field needs mapping or an answer is drafted |
+| language model provider | the same field descriptors, your profile key names, and the values of an allowlist of profile keys. Fields the content script or the api's word lists hold back are not sent. The model also says whether a field is sensitive, see [sensitive fields](/docs/sensitive-fields) | when a field needs mapping or an answer is drafted |
 | embeddings provider | the normalized question label | only with `OPENAI_API_KEY`, and only for learning |
 | nobody | form submissions | never |
 
@@ -51,7 +51,7 @@ The provider keeps what its own terms say. Leave the keys unset to send nothing:
 
 For every filled field the api keeps one event: the raw field label, the filled value and the final value, up to 2000 characters each, plus the site, the control type and an outcome (accepted, corrected, cleared). Answers you correct become learned answers, with an embedding of the question label only.
 
-- fields with sensitive labels or autocomplete tokens, and values that look like a card number (Luhn), an IBAN or a US social security number, are never stored or filled
+- fields with sensitive labels or autocomplete tokens, and values that look like a card number (Luhn), an IBAN or a US social security number, are never stored or filled. The content script carries a short floor of word lists, the api the longer ones plus the model's verdict, see [sensitive fields](/docs/sensitive-fields). A question the model called sensitive is remembered as a hash of its text, never as text
 - events older than 90 days are deleted, but only inside the calls that record events or list suggestions, and 500 rows at a time. On a quiet account old events can stay until the next call
 - events, answers and tokens are removed with the user row (`on delete cascade`). The dashboard has no self-service account deletion yet, so today that is an admin or database operation
 

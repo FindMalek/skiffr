@@ -1,1 +1,1 @@
-{ "extends": "@skiffr/config/bun.json", "include": ["src"] }
+{ "extends": "@skiffr/config/bun.json", "include": ["src", "eval"] }

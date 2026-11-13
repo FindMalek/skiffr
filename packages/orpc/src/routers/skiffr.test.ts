@@ -5,7 +5,7 @@ import { vector } from "@electric-sql/pglite-pgvector"
 import { call, createRouterClient } from "@orpc/server"
 import { mockModel } from "@skiffr/ai/testing"
 import type { Session } from "@skiffr/auth"
-import { answer, answerColumns, apiToken, type Db, findSimilarAnswers, user } from "@skiffr/db"
+import { answer, answerColumns, apiToken, type Db, findSimilarAnswers, sensitiveVerdict, user } from "@skiffr/db"
 import * as schema from "@skiffr/db/schema"
 import { createTestDb, strictDateSerializers } from "@skiffr/db/test-db"
 import { APICallError } from "ai"
@@ -261,7 +261,16 @@ test("a stored embedding round-trips, nearest answers come back by cosine distan
 
 const mapReply = JSON.stringify({
   mappings: [
-    { id: "f1", action: "profile", key: "fields.notice period", value: null, confidence: 0.9, reason: "notice" },
+    {
+      id: "f1",
+      sensitive: false,
+      category: null,
+      action: "profile",
+      key: "fields.notice period",
+      value: null,
+      confidence: 0.9,
+      reason: "notice",
+    },
   ],
 })
 const withModel = (userId: string, model: ReturnType<typeof mockModel> | null) => ({
@@ -275,8 +284,77 @@ test("ai.mapFields maps against the caller's own saved profile", async () => {
     withModel("ben", mockModel(mapReply)),
   )
   expect(mappings).toEqual([
-    { id: "f1", action: "profile", key: "fields.notice period", confidence: 0.9, reason: "notice" },
+    {
+      id: "f1",
+      action: "profile",
+      key: "fields.notice period",
+      confidence: 0.9,
+      reason: "notice",
+      sensitive: false,
+      category: null,
+    },
   ])
+})
+
+test("ai.mapFields remembers a sensitive verdict as a hash, and the next call withholds that question before any model call", async () => {
+  const flagged = JSON.stringify({
+    mappings: [
+      {
+        id: "f1",
+        sensitive: true,
+        category: "religion",
+        action: "skip",
+        key: null,
+        value: null,
+        confidence: 1,
+        reason: "",
+      },
+    ],
+  })
+  await call(
+    appRouter.ai.mapFields,
+    { fields: [{ id: "f1", label: "Zodiac sign" }] },
+    withModel("ben", mockModel(flagged)),
+  )
+  const rows = await db.select().from(sensitiveVerdict)
+  expect(rows).toHaveLength(1)
+  expect(rows[0]).toMatchObject({ category: "religion", policyVersion: 1 })
+  expect(JSON.stringify(rows)).not.toMatch(/zodiac/i)
+
+  const next = mockModel(mapReply)
+  const { mappings } = await call(
+    appRouter.ai.mapFields,
+    {
+      fields: [
+        { id: "g1", label: "ZODIAC  sign!" },
+        { id: "f1", label: "Notice period" },
+      ],
+    },
+    withModel("ben", next),
+  )
+  expect(mappings[0]).toMatchObject({ id: "g1", action: "skip", sensitive: true, category: "religion" })
+  expect(mappings[1]).toMatchObject({ id: "f1", sensitive: false })
+  expect(JSON.stringify(next.doGenerateCalls[0]?.prompt)).not.toMatch(/zodiac/i)
+  await db.delete(sensitiveVerdict)
+})
+
+test("ai.mapFields does not remember a verdict that is missing or says not sensitive", async () => {
+  const mixed = JSON.stringify({
+    mappings: [
+      { id: "f1", sensitive: false, category: null, action: "skip", key: null, value: null, confidence: 1, reason: "" },
+    ],
+  })
+  await call(
+    appRouter.ai.mapFields,
+    {
+      fields: [
+        { id: "f1", label: "Colour" },
+        { id: "f2", label: "Lucky number" },
+      ],
+    },
+    withModel("ben", mockModel(mixed)),
+  )
+  expect(await db.select().from(sensitiveVerdict)).toHaveLength(0)
 })
 
 test("ai.draftAnswer returns the draft, or an explicit not-ok state", async () => {
@@ -344,8 +422,8 @@ test("a prompt that is too large for the model is a clean 400 and the model is n
   const model = mockModel(mapReply)
   const fields = Array.from({ length: 5 }, (_, i) => ({
     id: `f${i}`,
-    label: "<".repeat(300),
-    options: Array(50).fill("<".repeat(100)),
+    label: "a<".repeat(150),
+    options: Array(50).fill("a<".repeat(100)),
   }))
   await expect(call(appRouter.ai.mapFields, { fields }, withModel("ben", model))).rejects.toMatchObject({
     code: "BAD_REQUEST",

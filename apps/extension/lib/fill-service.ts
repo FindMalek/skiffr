@@ -10,6 +10,7 @@ import {
   LEARNING_REQUEST_CHARS_MAX,
   type LearningField,
   learningFieldSchema,
+  type ModelMapping,
 } from "@skiffr/common"
 import { flattenProfile } from "@skiffr/common/utils"
 import type { AppRouterClient } from "@skiffr/orpc/client"
@@ -102,6 +103,15 @@ function chunk<T>(items: T[], max: number, chars: number, size: (item: T) => num
   if (current.length > 0) chunks.push(current)
   return chunks
 }
+
+const withheld = ({ id, category }: ModelMapping): ModelMapping => ({
+  id,
+  action: "skip",
+  confidence: 0,
+  reason: "sensitive question",
+  sensitive: true,
+  category,
+})
 
 const learningSize = (f: LearningField) =>
   [f.id, f.label, f.type, f.autocomplete, ...f.options].reduce<number>((sum, text) => sum + (text?.length ?? 0), 0)
@@ -229,21 +239,24 @@ export function createFillService({
   async function mapAll(
     ctx: Run,
     fields: FillField[],
-    onBatch: (batch: FieldMapping[]) => void,
-  ): Promise<{ mappings: FieldMapping[]; problem?: unknown }> {
+    onBatch: (batch: ModelMapping[]) => void,
+  ): Promise<{ mappings: ModelMapping[]; problem?: unknown }> {
     const descriptors: FieldDescriptor[] = []
     for (const field of fields) {
       const parsed = fieldDescriptorSchema.safeParse(field)
       if (parsed.success) descriptors.push(parsed.data)
     }
     const known = new Set(descriptors.map((d) => d.id))
-    const mappings: FieldMapping[] = []
+    const mappings: ModelMapping[] = []
     for (const batch of batchDescriptors(descriptors)) {
       try {
         const out = await api(ctx, RETRY_PAID, CALL_TIMEOUT_MS.mapFields, (client, signal) =>
           client.ai.mapFields({ fields: batch.slice(0, AI_FIELDS_MAX) }, { signal }),
         )
-        const kept = out.mappings.filter((mapping) => known.has(mapping.id))
+        // a sensitive verdict wins over whatever else the entry says: it can only ever be a skip here
+        const kept = out.mappings
+          .filter((mapping) => known.has(mapping.id))
+          .map((mapping): ModelMapping => (mapping.sensitive ? withheld(mapping) : mapping))
         mappings.push(...kept)
         onBatch(kept)
       } catch (error) {
@@ -289,7 +302,7 @@ export function createFillService({
     }
 
     const needsModel = fields.filter((field) => typeof learned.get(field.id) !== "object")
-    let mappings: FieldMapping[] = []
+    let mappings: ModelMapping[] = []
     if (needsModel.length > 0) {
       try {
         const done = await mapAll(ctx, needsModel, startProfile)
@@ -340,6 +353,11 @@ export function createFillService({
         continue
       }
       const ai = aiById.get(field.id)
+      if (ai?.sensitive) {
+        // no fill, no suggestion from a similar answer: the person answers it themselves
+        summary.skipped++
+        continue
+      }
       let filled = false
       if (ai && ai.action !== "skip" && ai.confidence >= FILL_CONFIDENCE_MIN) {
         if (ai.action === "generate" && ai.value.trim()) {

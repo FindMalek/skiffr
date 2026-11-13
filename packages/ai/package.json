@@ -10,7 +10,8 @@
   },
   "scripts": {
     "check-types": "tsc --noEmit",
-    "test": "bun test"
+    "test": "bun test",
+    "eval:sensitive": "bun eval/run.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "catalog:",

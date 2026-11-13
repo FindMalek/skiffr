@@ -6,7 +6,18 @@ import { call, ORPCError } from "@orpc/server"
 import { mockEmbeddingModel } from "@skiffr/ai/testing"
 import type { Session } from "@skiffr/auth"
 import { EMBEDDING_DIMENSIONS } from "@skiffr/common/constants"
-import { answer, application, type Db, fieldEvent, job, profile, recordBatch, siteProfile, user } from "@skiffr/db"
+import {
+  answer,
+  application,
+  type Db,
+  fieldEvent,
+  job,
+  profile,
+  recordBatch,
+  sensitiveVerdict,
+  siteProfile,
+  user,
+} from "@skiffr/db"
 import * as schema from "@skiffr/db/schema"
 import { createTestDb, strictDateSerializers } from "@skiffr/db/test-db"
 import { APICallError } from "ai"
@@ -14,6 +25,7 @@ import { and, eq, sql } from "drizzle-orm"
 import { drizzle } from "drizzle-orm/pglite"
 import { migrate } from "drizzle-orm/pglite/migrator"
 import type { Context } from "../context"
+import { verdictKey } from "../lib/sensitive-verdicts"
 import { appRouter } from "./index"
 
 const DAY = 86_400_000
@@ -630,6 +642,27 @@ test("manual answers are embedded too, so they match by similarity", async () =>
   expect(unused.doEmbedCalls).toHaveLength(0)
 })
 
+test("a question the model called sensitive is neither learned nor looked up, unless the verdict is expired or from an older policy", async () => {
+  const as = await newUser()
+  const key = verdictKey({ label: "Zodiac sign" }) as string
+  await db.insert(sensitiveVerdict).values({ key, category: "religion", policyVersion: 1 })
+  try {
+    await db
+      .insert(answer)
+      .values({ userId: as().id, normalizedLabel: "zodiac sign", rawLabel: "Zodiac sign", value: "Leo" })
+    const result = await record(as, [event("Zodiac sign", "", "Leo"), event("Lucky colour", "", "green")])
+    expect(result).toMatchObject({ recorded: 1, skipped: 1 })
+    const { matches } = await lookup(as, [field("a", "Zodiac sign"), field("b", "Lucky colour")])
+    expect(matches.map((m) => m.source)).toEqual(["none", "exact"])
+
+    await db.update(sensitiveVerdict).set({ policyVersion: 0 })
+    const { matches: after } = await lookup(as, [field("a", "Zodiac sign")])
+    expect(after[0]?.source).toBe("label")
+  } finally {
+    await db.delete(sensitiveVerdict)
+  }
+})
+
 test("a failing database write is logged by class and code only, never with the labels or values it carried", async () => {
   const as = await newUser()
   const pii = "zebra-label zebra-value"
@@ -759,11 +792,14 @@ test("a failing write logs frames, constraint and table names and safe messages,
       detail: secret,
       params: [secret],
     })
+  let selects = 0
   const broken = {
     transaction: async () => {
       throw boom()
     },
+    // the first read (the remembered verdicts of the record call) works, the next ones fail
     select: () => {
+      if (selects++ === 0) return { from: () => ({ where: async () => [] }) }
       throw new ORPCError("INTERNAL_SERVER_ERROR", { message: secret })
     },
   } as unknown as Db

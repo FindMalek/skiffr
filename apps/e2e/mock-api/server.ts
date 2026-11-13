@@ -10,6 +10,7 @@ import {
   type FieldMapping,
   lookupInputSchema,
   lookupOutputSchema,
+  type ModelMapping,
   mapFieldsInputSchema,
   mapFieldsOutputSchema,
   profileDataSchema,
@@ -20,7 +21,8 @@ import type { z } from "zod"
 
 export const MOCK_TOKEN = "skp_e2e_fake_token_not_a_secret"
 
-export type MapFieldsHandler = (fields: FieldDescriptor[]) => FieldMapping[]
+/** A mapping without a verdict is "not sensitive": say `sensitive: true` to play the server withholding a field. */
+export type MapFieldsHandler = (fields: FieldDescriptor[]) => (FieldMapping | ModelMapping)[]
 
 export type LookupMatch =
   | { fieldId: string; source: "none" }
@@ -184,7 +186,8 @@ export async function startMockApi(): Promise<MockApi> {
     if (method === "POST" && path === "/rpc/profile/get") return applicantProfileSchema.parse(PROFILE)
     if (method === "POST" && path === "/rpc/ai/mapFields") {
       const input = parseInput(mapFieldsInputSchema, body)
-      return mapFieldsOutputSchema.parse({ mappings: mapFields(input.fields) })
+      const mappings = mapFields(input.fields).map((mapping) => ({ sensitive: false, category: null, ...mapping }))
+      return mapFieldsOutputSchema.parse({ mappings })
     }
     if (method === "POST" && path === "/rpc/ai/draftAnswer") {
       parseInput(draftAnswerInputSchema, body)
