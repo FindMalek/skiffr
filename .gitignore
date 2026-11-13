@@ -20,3 +20,8 @@ next-env.d.ts
 .wxt/
 playwright-report/
 test-results/
+
+# read-only smoke output
+apps/e2e/smoke/results/
+apps/e2e/smoke/.build-*/
+seed-links.json

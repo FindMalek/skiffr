@@ -25,6 +25,13 @@ test("the floor catches the main wording of the five listed languages, english a
   expect(precision(floor.overall)).toBeGreaterThanOrEqual(0.97)
 })
 
+test("the first pass languages (it, pt, nl, tr, pl) are covered by the floor and better by the server lists", () => {
+  for (const lang of ["it", "pt", "nl", "tr", "pl"]) {
+    expect(recall(floor.byLang[lang] as never), lang).toBeGreaterThanOrEqual(0.45)
+    expect(recall(server.byLang[lang] as never), lang).toBeGreaterThanOrEqual(0.5)
+  }
+})
+
 test("the server lists add to the floor and catch more of the listed languages", () => {
   expect(recall(server.mainstream)).toBeGreaterThanOrEqual(0.82)
   expect(recall(server.mainstream)).toBeGreaterThan(recall(floor.mainstream))

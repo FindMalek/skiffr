@@ -8,6 +8,7 @@ import {
   type SensitiveCategory,
 } from "@skiffr/common/schemas"
 import { profile } from "@skiffr/db"
+import { getObservability } from "@skiffr/observability"
 import { eq } from "drizzle-orm"
 import type { Context } from "../context"
 import { logBestEffort } from "../lib/learning"
@@ -31,6 +32,7 @@ export async function guarded<T>(route: string, run: () => Promise<T>): Promise<
     if (!(error instanceof AiModelError) || error.kind === "budget") throw error
     const { name, kind, status, modelId, requestId } = error
     console.error(`[${route}]`, { name, kind, status, modelId, requestId })
+    getObservability().captureError(error, { route, model: modelId, error_kind: kind, request_id: requestId })
     throw new ORPCError("SERVICE_UNAVAILABLE", { message: "The AI is unavailable, try again." })
   }
 }

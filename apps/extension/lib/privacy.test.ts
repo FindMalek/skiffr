@@ -361,3 +361,32 @@ describe("round three: permissions, signatures and the long tail", () => {
     expect(labels(document)).toEqual(["Notice period"])
   })
 })
+
+describe("permission wording: what concerns the work or the person stays fillable, what concerns others does not", () => {
+  const row = (id: string, text: string) =>
+    `<label for="${id}">${text}</label><select id="${id}"><option value="">Select</option><option>Yes</option><option>No</option></select>`
+
+  test("permission to work or relocate and being contacted are read", () => {
+    const { document } = mount(`<form>
+      ${row("a", "Do you have permission to work in the UK?")}
+      ${row("b", "Do you need permission to relocate?")}
+      ${row("c", "Can we contact you by phone?")}
+      ${row("d", "Allow us to call you?")}
+    </form>`)
+    expect(labels(document)).toHaveLength(4)
+  })
+
+  test("an employer, references, kept data, signatures and yes or no categories are not", () => {
+    const { document } = mount(`<form>
+      ${row("a", "Contact current employer?")}
+      ${row("b", "Can we contact your references?")}
+      ${row("c", "Do you give permission to keep your data?")}
+      ${row("d", "Are you Asian?")}
+      ${row("e", "Are you over 21?")}
+      ${row("f", "Sign below")}
+      ${row("g", "هل نستطيع التواصل مع مرجعيك؟")}
+      ${row("k", "Notice period")}
+    </form>`)
+    expect(labels(document)).toEqual(["Notice period"])
+  })
+})

@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http"
 import type { AddressInfo } from "node:net"
+import { EXTENSION_MIN_VERSION } from "@skiffr/common/constants"
 import {
   type ApplicantProfile,
   applicantProfileSchema,
@@ -56,6 +57,8 @@ export interface RecordedRequest {
   method: string
   path: string
   authorization: string | undefined
+  /** The `x-skiffr-client` header the extension sent. */
+  client: string | undefined
   body: unknown
 }
 
@@ -77,7 +80,7 @@ export interface MockApi {
   onMapFields: (handler: MapFieldsHandler) => void
   /** Replace the canned `learning.lookup` answer (no saved answers by default). */
   onLookup: (handler: LookupHandler) => void
-  /** Make the next request fail with this status (oRPC error body), then go back to normal. */
+  /** Make the next request fail with this status (oRPC error body), then go back to normal. `extension.whoami` is skipped: the worker's heartbeat sends it on its own. */
   failNext: (status: number, code?: string) => void
   reset: () => void
   stop: () => Promise<void>
@@ -181,7 +184,11 @@ export async function startMockApi(): Promise<MockApi> {
   // oRPC's wire format: POST /rpc/<router>/<procedure> with `{ json: input }`, answered with `{ json: output }`
   const route = (method: string, path: string, body: unknown): unknown => {
     if (method === "POST" && path === "/rpc/extension/whoami") {
-      return { user: { id: "user-e2e", name: "Ana Silva", email: "ana.silva@example.com" } }
+      return {
+        user: { id: "user-e2e", name: "Ana Silva", email: "ana.silva@example.com" },
+        token: { name: "e2e", prefix: "skp_e2e", last4: "oken", expiresAt: null },
+        minExtensionVersion: EXTENSION_MIN_VERSION,
+      }
     }
     if (method === "POST" && path === "/rpc/profile/get") return applicantProfileSchema.parse(PROFILE)
     if (method === "POST" && path === "/rpc/ai/mapFields") {
@@ -234,7 +241,7 @@ export async function startMockApi(): Promise<MockApi> {
   const server: Server = createServer((req, res) => {
     void (async () => {
       res.setHeader("access-control-allow-origin", "*")
-      res.setHeader("access-control-allow-headers", "authorization, content-type, x-csrf-token")
+      res.setHeader("access-control-allow-headers", "authorization, content-type, x-csrf-token, x-skiffr-client")
       res.setHeader("access-control-allow-methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
       if (req.method === "OPTIONS") return void res.writeHead(204).end()
       try {
@@ -242,9 +249,16 @@ export async function startMockApi(): Promise<MockApi> {
         const path = new URL(req.url ?? "/", "http://mock.local").pathname
         const body = ((await readJson(req)) as { json?: unknown } | undefined)?.json
         const authorization = req.headers.authorization
-        requests.push({ method, path, authorization, body })
+        requests.push({
+          method,
+          path,
+          authorization,
+          client: req.headers["x-skiffr-client"] as string | undefined,
+          body,
+        })
         if (path === "/rpc/jobs/list" && queueDelayMs > 0) await new Promise((r) => setTimeout(r, queueDelayMs))
-        if (failure) {
+        // the worker's heartbeat whoami must not eat a failure meant for the call a test is about
+        if (failure && path !== "/rpc/extension/whoami") {
           const { status, code } = failure
           failure = null
           throw new HttpError(status, code, "mock: forced failure")

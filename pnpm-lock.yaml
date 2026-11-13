@@ -187,12 +187,18 @@ importers:
       '@skiffr/auth':
         specifier: workspace:*
         version: link:../../packages/auth
+      '@skiffr/common':
+        specifier: workspace:*
+        version: link:../../packages/common
       '@skiffr/db':
         specifier: workspace:*
         version: link:../../packages/db
       '@skiffr/env':
         specifier: workspace:*
         version: link:../../packages/env
+      '@skiffr/observability':
+        specifier: workspace:*
+        version: link:../../packages/observability
       '@skiffr/orpc':
         specifier: workspace:*
         version: link:../../packages/orpc
@@ -230,6 +236,9 @@ importers:
       '@orpc/tanstack-query':
         specifier: 'catalog:'
         version: 1.15.7(@opentelemetry/api@1.10.0)(@orpc/client@1.15.7(@opentelemetry/api@1.10.0))(@tanstack/query-core@5.104.3)
+      '@skiffr/ai':
+        specifier: workspace:*
+        version: link:../../packages/ai
       '@skiffr/auth':
         specifier: workspace:*
         version: link:../../packages/auth
@@ -239,6 +248,9 @@ importers:
       '@skiffr/env':
         specifier: workspace:*
         version: link:../../packages/env
+      '@skiffr/observability':
+        specifier: workspace:*
+        version: link:../../packages/observability
       '@skiffr/orpc':
         specifier: workspace:*
         version: link:../../packages/orpc
@@ -303,6 +315,9 @@ importers:
       '@next/env':
         specifier: 'catalog:'
         version: 16.4.3
+      '@skiffr/observability':
+        specifier: workspace:*
+        version: link:../../packages/observability
       '@skiffr/ui':
         specifier: workspace:*
         version: link:../../packages/ui
@@ -450,6 +465,9 @@ importers:
       '@skiffr/env':
         specifier: workspace:*
         version: link:../../packages/env
+      '@skiffr/observability':
+        specifier: workspace:*
+        version: link:../../packages/observability
       '@skiffr/orpc':
         specifier: workspace:*
         version: link:../../packages/orpc
@@ -615,6 +633,18 @@ importers:
         specifier: 'catalog:'
         version: 5.9.3
 
+  packages/observability:
+    devDependencies:
+      '@skiffr/config':
+        specifier: workspace:*
+        version: link:../config
+      '@types/bun':
+        specifier: 'catalog:'
+        version: 1.4.3
+      typescript:
+        specifier: 'catalog:'
+        version: 5.9.3
+
   packages/orpc:
     dependencies:
       '@orpc/client':
@@ -638,6 +668,9 @@ importers:
       '@skiffr/db':
         specifier: workspace:*
         version: link:../db
+      '@skiffr/observability':
+        specifier: workspace:*
+        version: link:../observability
       '@skiffr/storage':
         specifier: workspace:*
         version: link:../storage
@@ -699,6 +732,9 @@ importers:
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
+      cmdk:
+        specifier: 1.1.1
+        version: 1.1.1(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       cn:
         specifier: ^0.4.0
         version: 0.4.0
@@ -727,12 +763,18 @@ importers:
         specifier: 'catalog:'
         version: 4.6.7
     devDependencies:
+      '@happy-dom/global-registrator':
+        specifier: 21.0.4
+        version: 21.0.4
       '@skiffr/config':
         specifier: workspace:*
         version: link:../config
       '@tailwindcss/postcss':
         specifier: 'catalog:'
         version: 4.3.3
+      '@types/bun':
+        specifier: 'catalog:'
+        version: 1.4.3
       '@types/node':
         specifier: 'catalog:'
         version: 24.19.2
@@ -742,6 +784,9 @@ importers:
       '@types/react-dom':
         specifier: 'catalog:'
         version: 19.3.0(@types/react@19.3.0)
+      happy-dom:
+        specifier: 21.0.4
+        version: 21.0.4
       tailwindcss:
         specifier: 'catalog:'
         version: 4.3.3
@@ -3270,6 +3315,12 @@ packages:
   clsx@2.1.1:
     resolution: {integrity: sha512-eYm0QWBtUrBWZWG0d386OGAw16Z995PiOVo2B7bjWSbHedGl5e0ZWaq65kOGgUSNesEIDkB9ISbTg/JK9dhCZA==}
     engines: {node: '>=6'}
+
+  cmdk@1.1.1:
+    resolution: {integrity: sha512-Vsv7kFaXm+ptHDMZ7izaRsP70GgrW9NBNGswt9OZaVBLlE0SNpDq8eu/VGXyF9r7M0azK3Wy7OlYXsuyYLFzHg==}
+    peerDependencies:
+      react: ^18 || ^19 || ^19.0.0-rc
+      react-dom: ^18 || ^19 || ^19.0.0-rc
 
   cn@0.2.6:
     resolution: {integrity: sha512-+i4L0zUGgRcEnhsxueVrP7iBGxBx5iD0WOTYg1MwFEu2ZyCmH5Ov2V1cul2Ht5UchRQQgftCf4be/RxspuW6QQ==}
@@ -8068,6 +8119,18 @@ snapshots:
       wrap-ansi: 7.0.0
 
   clsx@2.1.1: {}
+
+  cmdk@1.1.1(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0):
+    dependencies:
+      '@radix-ui/react-compose-refs': 1.1.5(@types/react@19.3.0)(react@19.3.0)
+      '@radix-ui/react-dialog': 1.3.1(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      '@radix-ui/react-id': 1.1.4(@types/react@19.3.0)(react@19.3.0)
+      '@radix-ui/react-primitive': 2.2.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      react: 19.3.0
+      react-dom: 19.3.0(react@19.3.0)
+    transitivePeerDependencies:
+      - '@types/react'
+      - '@types/react-dom'
 
   cn@0.2.6: {}
 

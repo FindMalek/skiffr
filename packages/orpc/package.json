@@ -16,7 +16,9 @@
     "./gmail-mock": "./src/lib/gmail/mock-google.ts",
     "./watch": "./src/lib/watch/index.ts",
     "./cv": "./src/lib/cv/index.ts",
-    "./cv-test": "./src/lib/cv/test-support.ts"
+    "./cv-test": "./src/lib/cv/test-support.ts",
+    "./learning": "./src/lib/learning.ts",
+    "./site-profile": "./src/lib/site-profile.ts"
   },
   "scripts": {
     "check-types": "tsc --noEmit",
@@ -35,7 +37,8 @@
     "htmlparser2": "catalog:",
     "zod": "catalog:",
     "@skiffr/storage": "workspace:*",
-    "ai": "catalog:"
+    "ai": "catalog:",
+    "@skiffr/observability": "workspace:*"
   },
   "peerDependencies": {
     "react": "catalog:"

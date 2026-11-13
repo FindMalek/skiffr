@@ -55,6 +55,10 @@ export const TOKEN_ACTIVE_MAX = 20
 /** Revoked and expired tokens stay listed this long. */
 export const TOKEN_HISTORY_DAYS = 30
 export const TOKEN_LIST_MAX = 100
+/** Oldest extension version this api still serves. Raise it when a change would break older extensions. */
+export const EXTENSION_MIN_VERSION = "0.0.1"
+/** An extension that has not been seen for this long reads as stale in the dashboard. */
+export const EXTENSION_STALE_HOURS = 24
 export const EMBEDDING_DIMENSIONS = 1536
 export const EMBEDDING_TEXTS_MAX = 100
 export const EMBEDDING_TEXT_MAX = 300
@@ -135,3 +139,7 @@ export const CV_REJECTIONS = [
   "invented_fact",
   "invented_skill",
 ] as const
+/** The activity feed looks back this many days at most, so one request never scans a whole history. */
+export const ACTIVITY_WINDOW_DAYS = 30
+export const ACTIVITY_LIMIT_DEFAULT = 30
+export const ACTIVITY_LIMIT_MAX = 100

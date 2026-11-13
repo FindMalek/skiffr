@@ -26,7 +26,7 @@ export async function localEmbedder(): Promise<Embedder> {
         { pooling: "mean", normalize: true },
       )
       const size = result.dims[1] ?? 0
-      batch.forEach((_, j) => out.push(Array.from(result.data.slice(j * size, (j + 1) * size))))
+      for (let j = 0; j < batch.length; j++) out.push(Array.from(result.data.slice(j * size, (j + 1) * size)))
     }
     return out
   }

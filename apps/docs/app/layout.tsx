@@ -2,6 +2,7 @@ import "./globals.css"
 import { cn } from "@skiffr/ui/lib/utils"
 import { RootProvider } from "fumadocs-ui/provider/next"
 import type { Metadata } from "next"
+import Script from "next/script"
 import { SITE } from "@/lib/site"
 import { fontVariables } from "./fonts"
 
@@ -16,6 +17,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" suppressHydrationWarning className={cn("antialiased", fontVariables, "font-sans")}>
       <body className="flex min-h-screen flex-col">
+        <Script src="/analytics.js" strategy="afterInteractive" />
         <RootProvider>{children}</RootProvider>
       </body>
     </html>

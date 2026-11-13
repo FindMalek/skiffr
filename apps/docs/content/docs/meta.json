@@ -4,16 +4,21 @@
     "setup",
     "extension",
     "snapshots",
+    "smoke",
     "dashboard",
     "environment",
     "structure",
     "scripts",
+    "seeding",
     "deploy",
+    "previews",
     "learning",
     "gmail",
     "sources",
     "cv-tailoring",
     "sensitive-fields",
-    "privacy"
+    "observability",
+    "privacy",
+    "roadmap"
   ]
 }

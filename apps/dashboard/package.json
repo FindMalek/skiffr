@@ -11,6 +11,7 @@
     "test": "bun test --isolate"
   },
   "dependencies": {
+    "@skiffr/ai": "workspace:*",
     "@skiffr/common": "workspace:*",
     "@skiffr/env": "workspace:*",
     "@skiffr/orpc": "workspace:*",
@@ -25,7 +26,8 @@
     "server-only": "catalog:",
     "@skiffr/auth": "workspace:*",
     "sonner": "catalog:",
-    "@orpc/tanstack-query": "catalog:"
+    "@orpc/tanstack-query": "catalog:",
+    "@skiffr/observability": "workspace:*"
   },
   "devDependencies": {
     "@happy-dom/global-registrator": "21.0.4",
