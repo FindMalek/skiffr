@@ -1,0 +1,179 @@
+#!/bin/sh
+# skiffr helper, installed next to docker-compose.yml by install.sh. Run it from anywhere: ./skiffr <command>
+#
+#   status             what runs, which version, and whether a newer release exists
+#   update [--version vX.Y.Z] [--no-backup]   back up the database, fetch the compose file and images of the latest (or a given) release, restart
+#   logs [service]     follow the logs
+#   backup [dir]       dump the database to <dir>/skiffr-<time>.sql.gz (default ./backups)
+#   version            the running version
+set -eu
+
+REPO=${SKIFFR_REPO:-FindMalek/skiffr}
+BASE_URL=${SKIFFR_BASE_URL:-}
+
+self=$(cd "$(dirname "$0")" && pwd)
+if [ -f "$self/docker-compose.yml" ]; then root=$self; else root=$(cd "$self/.." && pwd); fi
+[ -f "$root/docker-compose.yml" ] || { echo "error: docker-compose.yml not found next to this script" >&2; exit 1; }
+cd "$root"
+umask 077
+
+say() { printf '%s\n' "$*"; }
+die() { printf 'error: %s\n' "$*" >&2; exit 1; }
+have() { command -v "$1" >/dev/null 2>&1; }
+
+env_get() {
+  if [ -f .env ]; then sed -n "s/^$1=//p" .env | tail -n 1; fi
+}
+
+env_set() {
+  K=$1 V=$2 awk 'BEGIN { k = ENVIRON["K"] "="; v = ENVIRON["V"] }
+    index($0, k) == 1 { if (!done) print k v; done = 1; next }
+    { print }
+    END { if (!done) print k v }' .env >.env.tmp
+  mv .env.tmp .env
+  chmod 600 .env
+}
+
+sha256_of() {
+  if have sha256sum; then sha256sum "$1" | cut -d ' ' -f 1
+  elif have shasum; then shasum -a 256 "$1" | cut -d ' ' -f 1
+  elif have openssl; then openssl dgst -sha256 "$1" | sed 's/^.*= //'
+  else die "need sha256sum, shasum or openssl"
+  fi
+}
+
+# Remote downloads are https only. A test or mirror BASE_URL may be file:// or http.
+curl_remote() {
+  if [ -z "$BASE_URL" ]; then curl --proto '=https' --tlsv1.2 "$@"; else curl "$@"; fi
+}
+
+valid_version() {
+  case $1 in
+    '' | *[!0-9A-Za-z.-]*) return 1 ;;
+  esac
+  printf '%s\n' "$1" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'
+}
+
+latest_tag() {
+  url=$(curl_remote -fsSL -o /dev/null -w '%{url_effective}' "https://github.com/$REPO/releases/latest") || return 1
+  tag=${url##*/}
+  case $tag in
+    v[0-9]*.[0-9]*.[0-9]*) printf '%s\n' "$tag" ;;
+    *) return 1 ;;
+  esac
+}
+
+running_version() {
+  curl --noproxy '*' -fsS -m 5 "http://127.0.0.1:$(env_get SKIFFR_API_PORT)/version" 2>/dev/null | sed -n 's/.*"version":"\([^"]*\)".*/\1/p'
+}
+
+case ${COMPOSE_FILE:-$(env_get COMPOSE_FILE)} in
+  *docker-compose.build.yml*) from_source=1 ;;
+  *) from_source=0 ;;
+esac
+
+cmd_status() {
+  docker compose ps </dev/null
+  say ""
+  now=$(running_version || true)
+  if [ -n "$now" ]; then say "running   v$now"; else say "running   unknown (is the api up?)"; fi
+  say "images    SKIFFR_VERSION=$(env_get SKIFFR_VERSION)"
+  if latest=$(latest_tag 2>/dev/null); then
+    say "latest    $latest"
+    if [ -n "$now" ] && [ "v$now" != "$latest" ] && [ "$from_source" -eq 0 ]; then say "A different release is out. Update with: ./skiffr update"; fi
+  fi
+}
+
+cmd_update() {
+  target='' backup=1
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --version) [ $# -ge 2 ] || die "--version needs a value"; target=$2; shift 2 ;;
+      --version=*) target=${1#*=}; shift ;;
+      --no-backup) backup=0; shift ;;
+      *) die "unknown option $1" ;;
+    esac
+  done
+  case $target in
+    '' | v[0-9]*) ;;
+    [0-9]*) target=v$target ;;
+  esac
+  if [ -n "$target" ] && ! valid_version "$target"; then die "version must look like v0.1.0"; fi
+  # migrations run when the new api starts and cannot be undone: keep a dump first
+  if [ "$backup" -eq 1 ]; then
+    say "Backing up the database first (skip with --no-backup)"
+    cmd_backup || die "the backup failed, nothing was updated. Fix it, or run again with --no-backup"
+  fi
+  # a clone of the repo owns docker-compose.yml: update the checkout, not a downloaded copy
+  if [ "$from_source" -eq 1 ] || [ -d .git ]; then
+    say "This is a clone of the repo: pulling it, then updating the containers"
+    git pull --ff-only
+    if [ "$from_source" -eq 1 ]; then
+      docker compose up -d --build --wait --wait-timeout 900 </dev/null
+    else
+      docker compose pull </dev/null
+      docker compose up -d --wait --wait-timeout 300 </dev/null
+    fi
+    return 0
+  fi
+  have curl || die "curl is needed"
+  if [ -z "$target" ]; then
+    tag=$(latest_tag) || die "could not find the latest release on github"
+  else
+    tag=$target
+  fi
+
+  tmp=$(mktemp -d)
+  trap 'rm -rf "$tmp"' EXIT
+  if [ -n "$BASE_URL" ]; then base=$BASE_URL; else base="https://github.com/$REPO/releases/download/$tag"; fi
+  say "Fetching skiffr $tag"
+  curl_remote -fsSL --retry 3 -o "$tmp/SHA256SUMS" "$base/SHA256SUMS" || die "could not download the checksums of $tag"
+  for name in docker-compose.yml skiffr; do
+    curl_remote -fsSL --retry 3 -o "$tmp/$name" "$base/$name" || die "could not download $name of $tag"
+    want=$(awk -v f="$name" '$2 == f { print $1 }' "$tmp/SHA256SUMS")
+    if [ -z "$want" ] || [ "$(sha256_of "$tmp/$name")" != "$want" ]; then
+      die "checksum of $name does not match the $tag release, nothing was changed"
+    fi
+  done
+
+  cp docker-compose.yml docker-compose.yml.bak
+  cp "$tmp/docker-compose.yml" docker-compose.yml
+  if [ -n "$target" ]; then
+    env_set SKIFFR_VERSION "$tag"
+  elif [ "$(env_get SKIFFR_VERSION)" != latest ]; then
+    env_set SKIFFR_VERSION "$tag"
+  fi
+  docker compose pull </dev/null
+  docker compose up -d --wait --wait-timeout 300 </dev/null
+  # replace the helper last: the shell keeps reading the old file it has open
+  cp "$tmp/skiffr" "$self/skiffr.new" && chmod 755 "$self/skiffr.new" && mv "$self/skiffr.new" "$self/skiffr"
+  now=$(running_version || true)
+  say "skiffr ${now:+v$now }is up to date. Reload the extension too: download it again from the api /downloads page."
+}
+
+cmd_backup() {
+  dir=${1:-backups}
+  mkdir -p "$dir"
+  file="$dir/skiffr-$(date +%Y%m%d-%H%M%S).sql.gz"
+  raw="$file.tmp"
+  if ! docker compose exec -T db pg_dump -U skiffr -d skiffr </dev/null >"$raw" || [ ! -s "$raw" ]; then
+    rm -f "$raw"
+    die "the dump failed or is empty, is the db container running? (docker compose ps)"
+  fi
+  gzip -c "$raw" >"$file"
+  rm -f "$raw"
+  chmod 600 "$file"
+  say "Backup written to $file. Keep .env with it: CV_ENCRYPTION_KEY and BETTER_AUTH_SECRET are not in the dump."
+}
+
+command=${1:-help}
+[ $# -gt 0 ] && shift
+case $command in
+  status) cmd_status ;;
+  update) cmd_update "$@" ;;
+  logs) docker compose logs -f --tail 100 "$@" ;;
+  backup) cmd_backup "$@" ;;
+  version) v=$(running_version || true); say "${v:-$(env_get SKIFFR_VERSION)}" ;;
+  help | -h | --help) sed -n '2,/^set -eu/p' "$0" | sed -n '/^#/p' | sed 's/^# \{0,1\}//' ;;
+  *) die "unknown command $command (try ./skiffr help)" ;;
+esac

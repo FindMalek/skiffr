@@ -1,6 +1,8 @@
 import { ORPCError, os } from "@orpc/server"
 import type { Session } from "@skiffr/auth"
+import { user as userTable } from "@skiffr/db"
 import { getObservability } from "@skiffr/observability"
+import { eq } from "drizzle-orm"
 import type { Context } from "./context"
 import { budgetExhausted, budgetedModels, isBudgetSpent } from "./lib/ai-usage"
 import { safeErrorFields } from "./lib/errors"
@@ -97,6 +99,8 @@ export const CLASS_OVERRIDES: Readonly<Record<string, LimitClass>> = {
   "gmail.syncNow": "expensive",
   "jobSources.runNow": "expensive",
   "me.avatar": "upload",
+  "account.export": "sensitive",
+  "account.delete": "sensitive",
 }
 
 /** Every other procedure is a read when it is a GET and a write otherwise, so a new one is limited without being listed. */
@@ -144,8 +148,12 @@ const meterAi = o.middleware(async ({ context, next }) => {
 
 export const protectedProcedure = publicProcedure.use(requireSession).use(limitRate).use(meterAi)
 
+/** The role comes from the database, not the session: a cached session keeps the role (and the account) it had. */
 const requireAdmin = o.middleware(async ({ context, next }) => {
-  if (context.session?.user.role !== "admin") throw new ORPCError("FORBIDDEN", { message: "Admins only." })
+  const [row] = context.session
+    ? await context.db.select({ role: userTable.role }).from(userTable).where(eq(userTable.id, context.session.user.id))
+    : []
+  if (row?.role !== "admin") throw new ORPCError("FORBIDDEN", { message: "Admins only." })
   return next()
 })
 

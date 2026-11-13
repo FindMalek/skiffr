@@ -12,6 +12,7 @@ import { type Handler, withExtensionCors } from "./cors"
 import { GMAIL_ROUTES, handleGmail } from "./gmail"
 import { withSecurityHeaders } from "./headers"
 import { recordRequest } from "./telemetry"
+import { VERSION } from "./version"
 
 export type { Handler } from "./cors"
 
@@ -31,9 +32,13 @@ async function retryAfterOf(response: Response): Promise<string | null> {
   return typeof seconds === "number" && Number.isFinite(seconds) ? String(Math.max(1, Math.ceil(seconds))) : null
 }
 
-async function withRequestId(response: Response, requestId: string): Promise<Response> {
+/** A full dump of the user's data: no cache or proxy may keep it. */
+const EXPORT_PATH = /\/account\/export$/
+
+async function withRequestId(response: Response, requestId: string, pathname: string): Promise<Response> {
   const headers = new Headers(response.headers)
   headers.set("x-request-id", requestId)
+  if (EXPORT_PATH.test(pathname)) headers.set("cache-control", "no-store")
   const wait = await retryAfterOf(response)
   if (wait) headers.set("retry-after", wait)
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
@@ -50,10 +55,19 @@ type Interceptors = NonNullable<NonNullable<ConstructorParameters<typeof RPCHand
  *   /gmail/connect, /gmail/callback  the Google consent for the Gmail job import (cookie session only, reached through the dashboard proxy)
  *   /telegram/webhook  Telegram bot updates (secret header checked)
  *   /health       for Dokploy and uptime checks
+ *   /version      release version and commit of this build, plus an update hint when UPDATE_CHECK is on
+ *   /downloads    the extension zip that matches this build
  */
 export function createServer(
   services: Services & { auth: Auth },
-  opts: { publicUrl: string; dashboardUrl?: string; extensionOrigins?: string[]; clientIp?: ClientIpConfig },
+  opts: {
+    publicUrl: string
+    dashboardUrl?: string
+    extensionOrigins?: string[]
+    clientIp?: ClientIpConfig
+    version?: () => Promise<Record<string, unknown>>
+    downloads?: (pathname: string) => Promise<Response | null>
+  },
 ) {
   const clientIp = opts.clientIp ?? DEFAULT_CLIENT_IP
   const peers = new WeakMap<Request, string>()
@@ -71,7 +85,7 @@ export function createServer(
         docsTitle: "Skiffr API",
         schemaConverters: [new ZodToJsonSchemaConverter()],
         specGenerateOptions: {
-          info: { title: "Skiffr API", version: "0.1.0" },
+          info: { title: "Skiffr API", version: VERSION },
           servers: [{ url: `${opts.publicUrl}/v1` }],
         },
       }),
@@ -106,6 +120,11 @@ export function createServer(
       getObservability().gauge("skiffr.db.up", db ? 1 : 0)
       return Response.json({ ok: db, db, env: services.config.deployEnv }, { status: db ? 200 : 503 })
     }
+    if (pathname === "/version" && opts.version) {
+      return Response.json(await opts.version(), { headers: { "cache-control": "no-store" } })
+    }
+    const download = await opts.downloads?.(pathname)
+    if (download) return download
     if (pathname.startsWith("/files/")) {
       if (!services.storage) return Response.json({ message: "Storage is not configured." }, { status: 404 })
       const location = services.storage.url(decodeURIComponent(pathname.slice("/files/".length)))
@@ -118,9 +137,9 @@ export function createServer(
       prefix: "/rpc",
       context,
     })
-    if (viaRpc.matched) return await withRequestId(viaRpc.response, requestId)
+    if (viaRpc.matched) return await withRequestId(viaRpc.response, requestId, pathname)
     const viaRest = await rest.handle(request, { prefix: "/v1", context })
-    if (viaRest.matched) return await withRequestId(viaRest.response, requestId)
+    if (viaRest.matched) return await withRequestId(viaRest.response, requestId, pathname)
     return Response.json({ message: "Not found." }, { status: 404 })
   }
 

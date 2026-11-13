@@ -12,6 +12,7 @@
     "snapshot": "pnpm --filter e2e snapshot",
     "check-types": "turbo check-types",
     "test": "turbo test",
+    "test:release": "node --test \"scripts/release/*.test.mjs\"",
     "lint": "biome ci . && oxlint",
     "check": "biome check --write .",
     "agents": "npx --yes @intellectronica/ruler@0.3.46 apply",

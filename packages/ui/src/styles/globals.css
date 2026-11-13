@@ -1,3 +1,4 @@
+/* biome-ignore-all lint/complexity/noImportantStyles: the reduced-motion reset must beat component utilities */
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
@@ -6,6 +7,12 @@
 @import "./viz.css";
 
 @custom-variant dark (&:is(.dark *));
+@custom-variant coarse (@media (pointer: coarse));
+
+/* The only easing curve (DESIGN.md 2.6). Tailwind's `ease-out` utility and `var(--ease-out)` both resolve to it. */
+@theme {
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
+}
 @source "../../../apps/**/*.{ts,tsx}";
 @source "../**/*.{ts,tsx}";
 
@@ -20,6 +27,9 @@
   --color-sidebar-primary: var(--sidebar-primary);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar: var(--sidebar);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-border-strong: var(--border-strong);
   --color-chart-5: var(--chart-5);
   --color-chart-4: var(--chart-4);
   --color-chart-3: var(--chart-3);
@@ -55,10 +65,18 @@
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border;
+  }
+  html {
+    scroll-padding-top: 4.5rem;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-sm text-foreground;
+  }
+  /* One focus style for every interactive element: solid 2px, offset 2. Components must not set outline-none. */
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
   }
   /* A mono font's ligatures turn `http://` into `http: //`. */
   code,
@@ -67,6 +85,92 @@
     font-variant-ligatures: none;
   }
 }
+
+/* Reduced motion, once for the whole app: no transform, no draw-in, durations 0 except 100ms opacity fades. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    --tw-enter-translate-x: 0 !important;
+    --tw-enter-translate-y: 0 !important;
+    --tw-enter-scale: 1 !important;
+    --tw-enter-rotate: 0 !important;
+    --tw-exit-translate-x: 0 !important;
+    --tw-exit-translate-y: 0 !important;
+    --tw-exit-scale: 1 !important;
+    --tw-exit-rotate: 0 !important;
+    animation-duration: 0.01ms !important;
+    animation-delay: 0s !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-property: opacity !important;
+    transition-duration: 100ms !important;
+    transition-delay: 0s !important;
+  }
+  [class*="animate-in"],
+  [class*="animate-out"] {
+    animation-duration: 100ms !important;
+  }
+  [data-starting-style],
+  [data-ending-style] {
+    transform: none !important;
+  }
+  /* Skeletons are static blocks, spinners are static icons next to a text label. */
+  .animate-skeleton,
+  .animate-spin {
+    animation: none !important;
+  }
+}
+
+/* Layering scale (DESIGN.md 2.7). A select or menu opened from a dialog mounts later in the DOM, so it stacks above
+   the dialog at the same z. */
+@utility z-sticky {
+  z-index: 20;
+}
+@utility z-bar {
+  z-index: 30;
+}
+@utility z-action {
+  z-index: 35;
+}
+@utility z-overlay {
+  z-index: 50;
+}
+@utility z-tooltip {
+  z-index: 60;
+}
+@utility z-toast {
+  z-index: 100;
+}
+@utility z-skip {
+  z-index: 110;
+}
+
+/* prefers-contrast: more. Structure edges become control edges and secondary text gets darker. */
+@media (prefers-contrast: more) {
+  :root,
+  .dark {
+    --border: var(--border-strong);
+    --sidebar-border: var(--border-strong);
+    --muted-foreground: color-mix(in oklch, var(--foreground) 85%, var(--background));
+  }
+}
+
+/* Coarse pointers (touch): controls grow to 44px. Components read these through h-(--control-h). */
+:root {
+  --control-h: --spacing(9);
+  --control-h-sm: --spacing(8);
+  --control-h-xs: --spacing(6);
+}
+
+@media (pointer: coarse) {
+  :root {
+    --control-h: --spacing(11);
+    --control-h-sm: --spacing(11);
+    --control-h-xs: --spacing(8);
+  }
+}
+
 /* Landing backdrop: a soft glow in the preset's primary color over a dotted screen, fading into the background. */
 @utility bg-glow {
   background: radial-gradient(
@@ -91,6 +195,20 @@
   100% {
     opacity: 0;
   }
+}
+
+/* Skeletons are static `bg-border` blocks with at most a slow 1.6s fade between 1 and 0.6, no pulse and no shimmer. */
+@keyframes skeleton-fade {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0.6;
+  }
+}
+
+@utility animate-skeleton {
+  animation: skeleton-fade 1.6s var(--ease-out) infinite alternate;
 }
 
 @utility animate-caret {

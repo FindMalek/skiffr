@@ -1,15 +1,18 @@
 {
   "pages": [
+    "install",
     "index",
     "setup",
     "extension",
     "snapshots",
+    "smoke",
     "dashboard",
     "environment",
     "structure",
     "scripts",
     "seeding",
     "deploy",
+    "releasing",
     "previews",
     "learning",
     "gmail",
