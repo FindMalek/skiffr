@@ -1,6 +1,6 @@
 import { describe, expect, spyOn, test } from "bun:test"
 import { ORPCError } from "@orpc/client"
-import { AI_BUDGET_EXHAUSTED, type FieldMapping } from "@skiffr/common"
+import { AI_BUDGET_EXHAUSTED, type FieldMapping, type ModelMapping } from "@skiffr/common"
 import { NotConfiguredError } from "./api"
 import { FILL_CONFIDENCE_MIN, FILL_CONFIDENCE_REVIEW, PROFILE_TTL_MS } from "./fill-config"
 import { createFillService } from "./fill-service"
@@ -30,7 +30,10 @@ function request(fields: FillField[]): FillRequestMessage {
 function setup(
   opts: {
     matches?: (ids: string[]) => Match[]
-    map?: (ids: string[]) => FieldMapping[]
+    map?: (ids: string[]) => (FieldMapping | ModelMapping)[]
+    /** The mappings exactly as an api sends them, no verdict added; `legacy` leaves out the `sensitiveGuard` marker. */
+    raw?: (ids: string[]) => object[]
+    legacy?: boolean
     lookup?: () => Promise<unknown>
     mapFields?: () => Promise<unknown>
     profile?: () => Promise<unknown>
@@ -64,7 +67,10 @@ function setup(
         const ids = input.fields.map((f) => f.id)
         seen.map.push(ids)
         if (opts.mapFields) return opts.mapFields() as never
-        return { mappings: opts.map?.(ids) ?? [] }
+        const mappings = opts.raw
+          ? opts.raw(ids)
+          : (opts.map?.(ids) ?? []).map((m) => ({ sensitive: false, category: null, ...m }))
+        return opts.legacy ? { mappings } : { mappings, sensitiveGuard: 1 }
       },
     },
     profile: {
@@ -89,6 +95,74 @@ const profileMap = (id: string, key: string, confidence = 0.95): FieldMapping =>
   key,
   confidence,
   reason: "",
+})
+
+describe("the server's sensitive verdict", () => {
+  const plain = (id: string) => ({ id, action: "profile", key: "identity.firstName", confidence: 0.95, reason: "" })
+
+  test("an api that judges every field: only an explicit false lets a mapping through", async () => {
+    for (const [verdict, filled] of [
+      [{}, false],
+      [{ sensitive: null }, false],
+      [{ sensitive: "false" }, false],
+      [{ sensitive: 0 }, false],
+      [{ sensitive: true }, false],
+      [{ sensitive: false, category: null }, true],
+    ] as const) {
+      const { service } = setup({ raw: (ids) => ids.map((id) => ({ ...plain(id), ...verdict })) })
+      const out = await service.run(request([field("a", "Zodiac sign")]))
+      if (!out.ok) throw new Error("expected ok")
+      expect(out.mapping.length > 0, JSON.stringify(verdict)).toBe(filled)
+      expect(out.values, JSON.stringify(verdict)).toEqual(filled ? { "identity.firstName": "Ana" } : {})
+    }
+  })
+
+  test("an older api without the marker gets one console hint, not one per fill", async () => {
+    const warn = spyOn(console, "warn").mockImplementation(() => {})
+    try {
+      const { service } = setup({ legacy: true, raw: (ids) => ids.map((id) => plain(id)) })
+      await service.run(request([field("a", "Colour")]))
+      await service.run(request([field("a", "Colour")]))
+      expect(warn).toHaveBeenCalledTimes(1)
+      expect(String(warn.mock.calls[0]?.[0])).not.toContain("Colour")
+      const current = setup({ raw: (ids) => ids.map((id) => ({ ...plain(id), sensitive: false, category: null })) })
+      warn.mockClear()
+      await current.service.run(request([field("a", "Colour")]))
+      expect(warn).not.toHaveBeenCalled()
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  test("an older api without the marker keeps filling, and still honors a true", async () => {
+    const open = setup({ legacy: true, raw: (ids) => ids.map((id) => plain(id)) })
+    const filled = await open.service.run(request([field("a", "Colour")]))
+    if (!filled.ok) throw new Error("expected ok")
+    expect(filled.mapping.map((m) => m.id)).toEqual(["a"])
+
+    const flagged = setup({ legacy: true, raw: (ids) => ids.map((id) => ({ ...plain(id), sensitive: true })) })
+    const held = await flagged.service.run(request([field("a", "Colour")]))
+    if (!held.ok) throw new Error("expected ok")
+    expect(held.mapping).toEqual([])
+  })
+
+  test("a field the server withheld is never filled or suggested, whatever its mapping or a saved similar answer says", async () => {
+    const { service } = setup({
+      matches: (ids) => ids.map((fieldId) => ({ fieldId, source: "similar" as const, value: "Old", autofill: false })),
+      map: (ids) =>
+        ids.map((id) =>
+          id === "a"
+            ? { ...profileMap(id, "identity.firstName"), sensitive: true, category: "religion" as const }
+            : profileMap(id, "identity.lastName"),
+        ),
+    })
+    const out = await service.run(request([field("a", "Zodiac sign"), field("b", "Family name")]))
+    if (!out.ok) throw new Error("expected ok")
+    expect(out.mapping.map((m) => m.id)).toEqual(["b"])
+    expect(out.suggestions).toEqual([])
+    expect(out.values).toEqual({ "identity.lastName": "Silva" })
+    expect(out.summary).toMatchObject({ profile: 1, skipped: 1, suggested: 0 })
+  })
 })
 
 describe("merge and precedence", () => {

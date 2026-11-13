@@ -5,7 +5,16 @@ import { vector } from "@electric-sql/pglite-pgvector"
 import { call, createRouterClient } from "@orpc/server"
 import { mockModel } from "@skiffr/ai/testing"
 import type { Session } from "@skiffr/auth"
-import { answer, answerColumns, apiToken, type Db, findSimilarAnswers, user } from "@skiffr/db"
+import {
+  aiUsage,
+  answer,
+  answerColumns,
+  apiToken,
+  type Db,
+  findSimilarAnswers,
+  sensitiveVerdict,
+  user,
+} from "@skiffr/db"
 import * as schema from "@skiffr/db/schema"
 import { createTestDb, strictDateSerializers } from "@skiffr/db/test-db"
 import { APICallError } from "ai"
@@ -14,6 +23,7 @@ import { drizzle } from "drizzle-orm/pglite"
 import { migrate } from "drizzle-orm/pglite/migrator"
 import { type Context, createContext } from "../context"
 import { errorMessage } from "../errors"
+import { resetVerdictPrune } from "../lib/sensitive-verdicts"
 import { hashToken } from "../lib/tokens"
 import { TOKEN_PROCEDURES } from "../procedures"
 import { appRouter } from "./index"
@@ -261,7 +271,16 @@ test("a stored embedding round-trips, nearest answers come back by cosine distan
 
 const mapReply = JSON.stringify({
   mappings: [
-    { id: "f1", action: "profile", key: "fields.notice period", value: null, confidence: 0.9, reason: "notice" },
+    {
+      id: "f0",
+      sensitive: false,
+      category: null,
+      action: "profile",
+      key: "fields.notice period",
+      value: null,
+      confidence: 0.9,
+      reason: "notice",
+    },
   ],
 })
 const withModel = (userId: string, model: ReturnType<typeof mockModel> | null) => ({
@@ -275,8 +294,223 @@ test("ai.mapFields maps against the caller's own saved profile", async () => {
     withModel("ben", mockModel(mapReply)),
   )
   expect(mappings).toEqual([
-    { id: "f1", action: "profile", key: "fields.notice period", confidence: 0.9, reason: "notice" },
+    {
+      id: "f1",
+      action: "profile",
+      key: "fields.notice period",
+      confidence: 0.9,
+      reason: "notice",
+      sensitive: false,
+      category: null,
+    },
   ])
+})
+
+test("ai.mapFields remembers a sensitive verdict as a hash, and the next call withholds that question before any model call", async () => {
+  const flagged = JSON.stringify({
+    mappings: [
+      {
+        id: "f0",
+        sensitive: true,
+        category: "religion",
+        action: "skip",
+        key: null,
+        value: null,
+        confidence: 1,
+        reason: "",
+      },
+    ],
+  })
+  await call(
+    appRouter.ai.mapFields,
+    { fields: [{ id: "f1", label: "Zodiac sign" }] },
+    withModel("ben", mockModel(flagged)),
+  )
+  const rows = await db.select().from(sensitiveVerdict)
+  expect(rows).toHaveLength(1)
+  expect(rows[0]).toMatchObject({ category: "religion", policyVersion: 1 })
+  expect(JSON.stringify(rows)).not.toMatch(/zodiac/i)
+
+  const next = mockModel(mapReply)
+  const { mappings } = await call(
+    appRouter.ai.mapFields,
+    {
+      fields: [
+        { id: "g1", label: "ZODIAC  sign!" },
+        { id: "f1", label: "Notice period" },
+      ],
+    },
+    withModel("ben", next),
+  )
+  expect(mappings[0]).toMatchObject({ id: "g1", action: "skip", sensitive: true, category: "religion" })
+  expect(mappings[1]).toMatchObject({ id: "f1", sensitive: false })
+  expect(JSON.stringify(next.doGenerateCalls[0]?.prompt)).not.toMatch(/zodiac/i)
+  await db.delete(sensitiveVerdict)
+})
+
+/** The model answers to its own ids, f0, f1 and so on, in the order of the fields it was shown. */
+const flagAll = (count: number, category = "religion") =>
+  mockModel(
+    JSON.stringify({
+      mappings: Array.from({ length: count }, (_, i) => ({
+        id: `f${i}`,
+        sensitive: true,
+        category,
+        action: "skip",
+        key: null,
+        value: null,
+        confidence: 1,
+        reason: "",
+      })),
+    }),
+  )
+const labelled = (from: number, count: number) =>
+  Array.from({ length: count }, (_, i) => ({ id: `z${from + i}`, label: `Zodiac sign ${from + i}` }))
+
+test("ai.mapFields says it judged every field, so an extension can fail closed", async () => {
+  const out = await call(
+    appRouter.ai.mapFields,
+    { fields: [{ id: "f1", label: "Notice period" }] },
+    withModel("ben", mockModel(mapReply)),
+  )
+  expect(out.sensitiveGuard).toBe(1)
+})
+
+test("a verdict the model may have drawn from the placeholder, aria label or name is not remembered for the label", async () => {
+  try {
+    const poison = flagAll(3)
+    await call(
+      appRouter.ai.mapFields,
+      {
+        fields: [
+          { id: "f1", label: "Years of experience", placeholder: "horoscope zodiac sign" },
+          { id: "f2", label: "Years of experience", ariaLabel: "zodiac" },
+          { id: "f3", label: "Years of experience", name: "zodiac" },
+        ],
+      },
+      withModel("ben", poison),
+    )
+    expect(await db.select().from(sensitiveVerdict)).toHaveLength(0)
+
+    const next = mockModel(mapReply)
+    const { mappings } = await call(
+      appRouter.ai.mapFields,
+      { fields: [{ id: "f1", label: "Years of experience" }] },
+      withModel("ben", next),
+    )
+    expect(mappings[0]).toMatchObject({ sensitive: false })
+    expect(next.doGenerateCalls).toHaveLength(1)
+
+    // the same texts next to the label, or a placeholder that only repeats it, are the label's own verdict
+    await call(
+      appRouter.ai.mapFields,
+      { fields: [{ id: "f1", label: "Zodiac sign", placeholder: "zodiac  SIGN" }] },
+      withModel("ben", flagAll(1)),
+    )
+    expect(await db.select().from(sensitiveVerdict)).toHaveLength(1)
+  } finally {
+    await db.delete(sensitiveVerdict)
+  }
+})
+
+test("a hostile type or id cannot put a verdict under an ordinary label", async () => {
+  try {
+    const typed = flagAll(1)
+    await call(
+      appRouter.ai.mapFields,
+      { fields: [{ id: "f_ok", label: "Years of experience", type: "horoscope zodiac" }] },
+      withModel("ben", typed),
+    )
+    expect(await db.select().from(sensitiveVerdict)).toHaveLength(0)
+
+    // the model is never shown the id or an unknown type, so neither can steer a verdict it gives
+    const spy = flagAll(1)
+    const out = await call(
+      appRouter.ai.mapFields,
+      { fields: [{ id: "zodiac horoscope sign", label: "Years of experience", type: "horoscope zodiac" }] },
+      withModel("ben", spy),
+    )
+    expect(JSON.stringify(spy.doGenerateCalls[0]?.prompt)).not.toMatch(/zodiac|horoscope/)
+    expect(out.mappings[0]?.id).toBe("zodiac horoscope sign")
+
+    // a plain field with a known type is remembered
+    await call(
+      appRouter.ai.mapFields,
+      { fields: [{ id: "f_ok", label: "Zodiac sign", type: "text" }] },
+      withModel("ben", flagAll(1)),
+    )
+    expect(await db.select().from(sensitiveVerdict)).toHaveLength(1)
+  } finally {
+    await db.delete(sensitiveVerdict)
+    await db.delete(aiUsage)
+  }
+})
+
+test("a call adds at most 20 verdict rows and a user at most 200 a day", async () => {
+  await db.delete(aiUsage)
+  try {
+    const call60 = labelled(0, 60)
+    await call(appRouter.ai.mapFields, { fields: call60 }, withModel("ben", flagAll(60)))
+    expect(await db.select().from(sensitiveVerdict)).toHaveLength(20)
+
+    for (let batch = 1; batch < 12; batch++) {
+      const fields = labelled(batch * 100, 20)
+      await call(appRouter.ai.mapFields, { fields }, withModel("ben", flagAll(20)))
+    }
+    // 20 + 9 x 20 = 200: the 11th and 12th call add nothing
+    expect(await db.select().from(sensitiveVerdict)).toHaveLength(200)
+    const [usage] = await db.select().from(aiUsage).where(eq(aiUsage.userId, "ben"))
+    expect(usage?.verdicts).toBe(200)
+  } finally {
+    await db.delete(sensitiveVerdict)
+    await db.delete(aiUsage)
+  }
+})
+
+test("writing a verdict deletes rows past their 90 days, at most once an hour", async () => {
+  resetVerdictPrune()
+  try {
+    const old = new Date(Date.now() - 100 * 24 * 60 * 60 * 1000)
+    await db.insert(sensitiveVerdict).values([
+      { key: "old-1", category: "religion", policyVersion: 1, createdAt: old },
+      { key: "old-2", category: "religion", policyVersion: 1, createdAt: old },
+    ])
+    await call(appRouter.ai.mapFields, { fields: [{ id: "f1", label: "Zodiac sign" }] }, withModel("ben", flagAll(1)))
+    const keys = (await db.select().from(sensitiveVerdict)).map((row) => row.key)
+    expect(keys).toHaveLength(1)
+    expect(keys).not.toContain("old-1")
+
+    // a second write within the hour leaves the next expired row alone
+    await db.insert(sensitiveVerdict).values({ key: "old-3", category: "religion", policyVersion: 1, createdAt: old })
+    await call(
+      appRouter.ai.mapFields,
+      { fields: [{ id: "f1", label: "Zodiac sign two" }] },
+      withModel("ben", flagAll(1)),
+    )
+    expect((await db.select().from(sensitiveVerdict)).map((row) => row.key)).toContain("old-3")
+  } finally {
+    await db.delete(sensitiveVerdict)
+    await db.delete(aiUsage)
+  }
+})
+
+test("ai.mapFields does not remember a verdict that is missing or says not sensitive", async () => {
+  const mixed = JSON.stringify({
+    mappings: [
+      { id: "f1", sensitive: false, category: null, action: "skip", key: null, value: null, confidence: 1, reason: "" },
+    ],
+  })
+  await call(
+    appRouter.ai.mapFields,
+    {
+      fields: [
+        { id: "f1", label: "Colour" },
+        { id: "f2", label: "Lucky number" },
+      ],
+    },
+    withModel("ben", mockModel(mixed)),
+  )
+  expect(await db.select().from(sensitiveVerdict)).toHaveLength(0)
 })
 
 test("ai.draftAnswer returns the draft, or an explicit not-ok state", async () => {
@@ -344,8 +578,8 @@ test("a prompt that is too large for the model is a clean 400 and the model is n
   const model = mockModel(mapReply)
   const fields = Array.from({ length: 5 }, (_, i) => ({
     id: `f${i}`,
-    label: "<".repeat(300),
-    options: Array(50).fill("<".repeat(100)),
+    label: "a<".repeat(150),
+    options: Array(50).fill("a<".repeat(100)),
   }))
   await expect(call(appRouter.ai.mapFields, { fields }, withModel("ben", model))).rejects.toMatchObject({
     code: "BAD_REQUEST",

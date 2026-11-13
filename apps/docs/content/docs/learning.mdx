@@ -74,7 +74,7 @@ After a skiffr fill the extension watches the form. It sends one batch of events
 
 - when you submit the form, when you leave the page or the tab goes to the background, or after 5 minutes without an edit
 - at most 3 batches per session, a later one only carries what changed
-- sensitive fields and values are filtered in the content script and again in the worker, so they are never sent
+- sensitive fields and values are filtered in the content script, again in the worker and again in the api (by label, answers and autocomplete hint), so they are never kept. What the content script does not know, the api does, see [sensitive fields](/docs/sensitive-fields)
 
 Limits today:
 

@@ -61,7 +61,8 @@ test("an error built from form values reports its class and ids, and none of the
     flushMs: 0,
   })
   observability.captureError(hostile(), dirty)
-  observability.logEvent("error", "failed", dirty)
+  observability.logEvent("error", "failed", dirty, `GET /v1/answers/${SECRETS[1]}?q=${SECRETS[2]} 500 9ms`)
+  observability.logEvent("error", "failed", dirty, SECRETS.join(" "))
   observability.count("skiffr.test", 1, dirty)
   observability.track("ai_budget_exhausted", { ...dirty, limit: "daily" })
   await observability.traceAi({ operation: "chat", model: "openai/gpt-oss-120b" }, async (span) => {
@@ -77,6 +78,7 @@ test("an error built from form values reports its class and ids, and none of the
   expect(everything).not.toContain("authorization")
   expect(everything).toContain("answers.update")
   expect(everything).toContain("ValidationError")
+  expect(everything).toContain("error internal: ValidationError")
 })
 
 test("no key on the allowlist can carry personal data", () => {

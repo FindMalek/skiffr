@@ -7,7 +7,7 @@ The extension is a Manifest V3 Chrome extension. There is no Chrome Web Store li
 
 ## Install
 
-The easy way, step by step with pictures of the clicks in words, is in [install](/docs/install): download the zip from your own server at `<api>/downloads` (the version matches your server), unzip it, and load the folder at `chrome://extensions` with Developer mode on. The zip is also attached to every [GitHub release](https://github.com/FindMalek/skiffr/releases) as `skiffr-extension-vX.Y.Z.zip`. An unpacked extension is not updated by Chrome: after a server update download it again, replace the files and press reload on its card.
+The easy way, step by step with pictures of the clicks in words, is in [install](/docs/install): download `skiffr-extension-vX.Y.Z.zip` from the [latest GitHub release](https://github.com/FindMalek/skiffr/releases/latest), unzip it, and load the folder at `chrome://extensions` with Developer mode on. Your own server also serves the matching zip at `<api>/downloads`, the hosted instance does not. An unpacked extension is not updated by Chrome: after a server update download it again, replace the files and press reload on its card.
 
 Or build it from the repo:
 
@@ -21,11 +21,11 @@ Or take a CI build: every pull request uploads `extension-chrome-pr-<number>` an
 
 ## Connect it
 
-1. In the dashboard open **Extension** and create a token
-2. In the extension options set the api url (`http://localhost:3001` locally) and paste the token
-3. Press test connection
+1. In the dashboard open **Extension**, name the token after the machine and press **Create token**
+2. In the extension options (right click the icon, **Options**) set **API url** (`http://localhost:3001` locally, `https://api.skiffr.findmalek.engineer` on the hosted instance) and paste the token in **Token**
+3. Press **Test connection**: it says "Connected as" and your name
 
-Save your profile in the dashboard first: a fill without one stops with a message.
+Save your profile first: a fill without one stops with "No profile saved yet". The dashboard has no profile editor yet, so it is saved through the api, see [install](/docs/install#connect-it-and-apply).
 
 ## Use it
 
@@ -37,7 +37,7 @@ On an application form (Greenhouse, Lever, Ashby, Workable, Workday and other co
 
 `Ctrl+Shift+F` (`Cmd+Shift+F` on macOS) fills the current page without the toast. Remap it at `chrome://extensions/shortcuts`.
 
-For each field the extension takes the first answer it has: what you filled on this very form before, then a saved answer for the same question, then a language model that maps the field to a key of your profile (needs a provider key, see [environment](/docs/environment)). Fields the model is unsure about are filled and outlined in amber. An answer from a similar question is never filled by itself, the empty field is outlined as a suggestion. When it is done the toast says how many fields were filled and how many are outlined.
+For each field the extension takes the first answer it has: what you filled on this very form before, then a saved answer for the same question, then a language model that maps the field to a key of your profile. The model needs a provider key on the server, see [environment](/docs/environment): without one a fill fails with "skiffr had a problem. Try again in a moment." Fields the model is unsure about are filled and outlined in amber. An answer from a similar question is never filled by itself, the empty field is outlined as a suggestion. When it is done the toast says how many fields were filled and how many are outlined.
 
 It never submits a form, never clicks submit, next or apply buttons, and never touches password or hidden inputs. You review the form and press the button.
 

@@ -12,3 +12,16 @@ test("the extension imports @skiffr/ai only through ./learnable, never its root"
   }
   expect(offenders).toEqual([])
 })
+
+test("the extension never imports the server word lists, so they stay out of the bundle", async () => {
+  const root = new URL("..", import.meta.url).pathname
+  const offenders: string[] = []
+  for (const pattern of ["lib/**/*.{ts,tsx}", "entrypoints/**/*.{ts,tsx}"]) {
+    for await (const file of new Glob(pattern).scan({ cwd: root })) {
+      if (file.endsWith(".test.ts")) continue
+      const source = await Bun.file(`${root}${file}`).text()
+      if (/learnable-extended|ai\/src\/index|sensitive-verdicts/.test(source)) offenders.push(file)
+    }
+  }
+  expect(offenders).toEqual([])
+})

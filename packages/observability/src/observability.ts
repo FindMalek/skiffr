@@ -1,7 +1,7 @@
 import { safeErrorFields } from "./errors"
 import { createErrorReporter, type ErrorReporter, type Fetch } from "./glitchtip"
 import { OtlpExporter, parseHeaders } from "./otlp"
-import { type Allowlist, type Attrs, allowlisted, isSafeName, scrubAttrs } from "./scrub"
+import { type Allowlist, type Attrs, allowlisted, isSafeLine, isSafeName, scrubAttrs } from "./scrub"
 
 export type Level = "info" | "warn" | "error"
 
@@ -35,7 +35,8 @@ export interface AiSpan {
 
 export interface Observability {
   captureError(error: unknown, context?: Record<string, unknown>): void
-  logEvent(level: Level, event: string, attrs?: Record<string, unknown>): void
+  /** `message` is the line shown in the log list. It must be built from scrubbed values; one that is not a plain line is replaced by `event`. */
+  logEvent(level: Level, event: string, attrs?: Record<string, unknown>, message?: string): void
   track(name: EventName, props?: Record<string, unknown>): void
   count(name: string, value?: number, attrs?: Record<string, unknown>): void
   gauge(name: string, value: number, attrs?: Record<string, unknown>): void
@@ -168,10 +169,26 @@ export function createObservability(config: ObservabilityConfig): Observability 
   return {
     captureError(error, context) {
       reporter?.capture(error, { deploy_env: config.environment, ...context })
+      if (!otlp) return
+      const errorClass = errorClassOf(error) ?? "Error"
+      const attrs = scrubAttrs({ deploy_env: config.environment, ...context, error_class: errorClass, event: "error" })
+      otlp.log({
+        at: now(),
+        level: "error",
+        event: "error",
+        message: `error ${attrs.error_kind ?? "internal"}: ${errorClass}`,
+        attrs,
+      })
     },
-    logEvent(level, event, attrs) {
+    logEvent(level, event, attrs, message) {
       if (!otlp || !isSafeName(event)) return
-      otlp.log({ at: now(), level, event, attrs: scrubAttrs({ deploy_env: config.environment, ...attrs }) })
+      otlp.log({
+        at: now(),
+        level,
+        event,
+        message: isSafeLine(message) ? message : undefined,
+        attrs: scrubAttrs({ deploy_env: config.environment, ...attrs, event }),
+      })
     },
     track(name, props) {
       const allow = EVENTS[name] as Allowlist | undefined

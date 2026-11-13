@@ -1,5 +1,5 @@
 import { ORPCError } from "@orpc/server"
-import { embedTexts, isLearnableField, isSensitiveValue } from "@skiffr/ai"
+import { embedTexts, isLearnableQuestion, isSensitiveValue } from "@skiffr/ai"
 import {
   CLEARED_STOP_MIN,
   FIELD_EVENT_PURGE_BATCH,
@@ -54,6 +54,7 @@ import {
   usableValue,
 } from "../lib/learning"
 import { mine, orNotFound } from "../lib/owned"
+import { flaggedKeys, verdictKey } from "../lib/sensitive-verdicts"
 import {
   applyEvents,
   entryIsFresh,
@@ -258,10 +259,11 @@ export const learningRouter = {
     .output(lookupOutputSchema)
     .handler(async ({ context, input }) => {
       const userId = context.user.id
+      const flagged = await guardLearningDb("lookup", () => flaggedKeys(context.db, context.now(), input.fields))
       const fields = input.fields.map((field) => ({
         field,
         ...fingerprintOf(field),
-        learnable: isLearnableField(field),
+        learnable: isLearnableQuestion(field) && !flagged.has(verdictKey(field) ?? ""),
       }))
       const usable = fields.filter((f) => f.learnable && f.normalizedLabel)
       const keys = usable.map((f) => f.fieldKey)
@@ -418,10 +420,12 @@ export const learningRouter = {
         orNotFound(owned, "Application")
       }
 
+      const flagged = await guardLearningDb("record", () => flaggedKeys(context.db, context.now(), input.events))
+      const learnable = (event: (typeof input.events)[number]) =>
+        isLearnableQuestion(event) && !flagged.has(verdictKey(event) ?? "")
       const events = input.events
         .filter(
-          (event) =>
-            isLearnableField(event) && !isSensitiveValue(event.filledValue) && !isSensitiveValue(event.finalValue),
+          (event) => learnable(event) && !isSensitiveValue(event.filledValue) && !isSensitiveValue(event.finalValue),
         )
         .flatMap((event) => {
           const filled = event.filledValue.trim()
@@ -443,7 +447,7 @@ export const learningRouter = {
       }
       // The form is every learnable field the batch reports, filled or not, so it matches what lookup sends. A client can't choose the signature.
       const formKeys = formFieldKeys(
-        input.events.filter(isLearnableField).flatMap((event) => {
+        input.events.filter(learnable).flatMap((event) => {
           const { normalizedLabel, fieldKey } = fingerprintOf(event)
           return normalizedLabel ? [fieldKey] : []
         }),
