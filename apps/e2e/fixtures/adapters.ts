@@ -31,7 +31,7 @@ export async function openAdapterPage(
   context: BrowserContext,
   server: Pick<FixtureServer, "origin" | "secureOrigin">,
   name: AdapterName,
-  generic = false,
+  { generic = false, keepConsent = false }: { generic?: boolean; keepConsent?: boolean } = {},
 ): Promise<{ page: Page; toast: ToastDriver }> {
   const page = await context.newPage()
   await page.goto(adapterUrl(server, name, generic))
@@ -39,7 +39,7 @@ export async function openAdapterPage(
   // the fixture keeps the banner in the bottom left corner, clear of the toast in the bottom right, which a slow runner may show before this click
   // the page is static markup, so the banner is there at load: a person accepts or declines it before filling, and it covers the foot of the form until then
   const decline = page.locator("[data-ui=cookie-consent-decline]")
-  if ((await decline.count()) > 0) {
+  if (!keepConsent && (await decline.count()) > 0) {
     await decline.click()
     await expect(decline).toHaveCount(0)
   }

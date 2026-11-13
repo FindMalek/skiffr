@@ -2,9 +2,14 @@ import { hasLayout, isRendered, parentOf, view } from "./dom"
 
 type NodeInfo = { hides: boolean; clips: boolean }
 
-export type VisibilityCtx = { info: Map<HTMLElement, NodeInfo>; chain: Map<HTMLElement, boolean> }
+export type VisibilityCtx = {
+  info: Map<HTMLElement, NodeInfo>
+  chain: Map<HTMLElement, boolean>
+  /** Whether a hit that is in front of a field is a cookie dialog or its backdrop. */
+  consent: Map<Element, boolean>
+}
 
-export const newVisibilityCtx = (): VisibilityCtx => ({ info: new Map(), chain: new Map() })
+export const newVisibilityCtx = (): VisibilityCtx => ({ info: new Map(), chain: new Map(), consent: new Map() })
 
 type Native = { checkVisibility?: (options?: Record<string, boolean>) => boolean }
 
@@ -89,11 +94,84 @@ function reachable(el: HTMLElement, rect: DOMRect, ctx: VisibilityCtx, layout: b
   return right - left >= 1 && bottom - top >= 1 ? new win.DOMRect(left, top, right - left, bottom - top) : null
 }
 
-function accepts(hit: Element | null, el: HTMLElement): boolean {
-  if (!hit) return false
-  if (hit === el || el.contains(hit)) return true
+const DIALOG = "[role=dialog],[role=alertdialog],dialog"
+const CONSENT_WORDS = /cookie|consent|gdpr|onetrust|cookiebot|trustarc|didomi|usercentrics|quantcast/i
+const ANSWERS = "button,[role=button],input[type=button],input[type=submit]"
+const DIMS_MIN = 0.9
+const DRAWN_MIN = 0.5
+
+function namesConsent(dialog: Element): boolean {
+  const names = ["id", "class", "aria-label", "data-ui", "data-testid"].map((name) => dialog.getAttribute(name) ?? "")
+  return CONSENT_WORDS.test(names.join(" "))
+}
+
+/** How much of the page shows through the element and its ancestors. */
+function opacityOf(el: HTMLElement): number {
+  let seen = 1
+  for (let node: HTMLElement | null = el; node && seen >= DRAWN_MIN; node = parentOf(node)) {
+    seen *= Number.parseFloat(view(node).getComputedStyle(node).opacity || "1")
+  }
+  return seen
+}
+
+const isFixed = (el: Element) => view(el as HTMLElement).getComputedStyle(el).position === "fixed"
+
+/** A drawn, fixed box over nearly the whole viewport that takes the pointer: what dims a page behind a modal. */
+function dimsPage(el: Element): boolean {
+  const node = el as HTMLElement
+  const style = view(node).getComputedStyle(node)
+  if (style.position !== "fixed" || style.pointerEvents === "none" || style.visibility === "hidden") return false
+  if (style.display === "none" || opacityOf(node) < DRAWN_MIN) return false
+  const win = view(node)
+  const box = node.getBoundingClientRect()
+  return box.width >= win.innerWidth * DIMS_MIN && box.height >= win.innerHeight * DIMS_MIN
+}
+
+const empty = (el: Element) => !el.textContent?.trim() && !el.querySelector(`input,textarea,select,a,${ANSWERS}`)
+
+/**
+ * A cookie dialog dims the page until it is answered, and Workable's covers the first screen of the form. The fields
+ * under it are the ones the person sees once they answer it. The page names its own dialog, so the name is not enough:
+ * the dialog is fixed, has a button, and a fixed box over the viewport that is drawn dims the page next to it.
+ */
+function consentCover(hit: Element): boolean {
+  const own = hit.closest(DIALOG)
+  if (own) {
+    if (!namesConsent(own) || !isFixed(own) || !own.querySelector(ANSWERS)) return false
+    return Array.from(own.parentElement?.children ?? []).some((sibling) => sibling !== own && dimsPage(sibling))
+  }
+  if (!dimsPage(hit) || !empty(hit)) return false
+  const dialogs = Array.from(hit.parentElement?.children ?? []).filter((sibling) => sibling.matches(DIALOG))
+  return dialogs.some((dialog) => namesConsent(dialog) && isFixed(dialog) && dialog.querySelector(ANSWERS) !== null)
+}
+
+function isConsentCover(hit: Element, ctx: VisibilityCtx): boolean {
+  let known = ctx.consent.get(hit)
+  if (known === undefined) {
+    known = consentCover(hit)
+    ctx.consent.set(hit, known)
+  }
+  return known
+}
+
+/** What a box in front of the field means for the person: it is the field or its label, a cookie layer to look through, or in the way. */
+function verdict(hit: Element, el: HTMLElement, ctx: VisibilityCtx): "field" | "consent" | "blocks" {
+  if (hit === el || el.contains(hit)) return "field"
   const label = hit.closest("label")
-  if (label && (label.contains(el) || (el.id !== "" && label.getAttribute("for") === el.id))) return true
+  if (label && (label.contains(el) || (el.id !== "" && label.getAttribute("for") === el.id))) return "field"
+  return isConsentCover(hit, ctx) ? "consent" : "blocks"
+}
+
+/** The top box decides, unless it is a cookie layer: then everything under the point is read, so a plain cover below it still counts. */
+function reaches(root: Document | ShadowRoot, x: number, y: number, el: HTMLElement, ctx: VisibilityCtx): boolean {
+  const top = root.elementFromPoint(x, y)
+  if (!top) return false
+  const first = verdict(top, el, ctx)
+  if (first !== "consent") return first === "field"
+  for (const hit of root.elementsFromPoint?.(x, y) ?? []) {
+    const seen = verdict(hit, el, ctx)
+    if (seen !== "consent") return seen === "field"
+  }
   return false
 }
 
@@ -105,7 +183,7 @@ function covered(el: HTMLElement, rect: DOMRect, ctx: VisibilityCtx): boolean {
   const seen = reachable(el, rect, ctx, true)
   if (!seen) return false
   for (const [fx, fy] of SAMPLES) {
-    if (accepts(root.elementFromPoint(seen.left + seen.width * fx, seen.top + seen.height * fy), el)) return false
+    if (reaches(root, seen.left + seen.width * fx, seen.top + seen.height * fy, el, ctx)) return false
   }
   return true
 }
