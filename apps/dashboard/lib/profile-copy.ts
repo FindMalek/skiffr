@@ -46,7 +46,8 @@ export const NEVER_FILLED: readonly { title: string; detail: string }[] = [
   { title: "Pronouns", detail: "Never filled, even if one was saved earlier." },
   { title: "Consent and signatures", detail: "Terms, privacy and marketing consent, certifications and signatures." },
   {
-    title: "Salary history",
-    detail: "Questions that say salary history. Current or previous pay is not covered yet, so check those fields.",
+    title: "Current and previous pay",
+    detail:
+      "Questions about current or previous pay, such as current salary, last salary or salary history. Expected and desired salary are still filled.",
   },
 ]

@@ -1,5 +1,12 @@
 import { expect, test } from "bun:test"
-import { isDemographicOptions, isLearnableField, isSensitiveQuestion, isSensitiveSection } from "./learnable-extended"
+import { isLearnableField as floorLearnable, isSensitiveQuestion as floorSensitive } from "./learnable"
+import {
+  isDemographicOptions,
+  isLearnableField,
+  isLearnableQuestion,
+  isSensitiveQuestion,
+  isSensitiveSection,
+} from "./learnable-extended"
 
 const blocked = (label: string) => isSensitiveQuestion({ label }) && !isLearnableField({ label, type: "text" })
 const readable = (label: string) => !isSensitiveQuestion({ label }) && isLearnableField({ label, type: "text" })
@@ -453,5 +460,108 @@ test("empty sections after a bare label cannot push it out of the tails", () => 
     `Payment details: Code${": .".repeat(30)}`,
   ]) {
     expect(isLearnableField({ label, type: "text" }), label).toBe(false)
+  }
+})
+
+/** Blocked as a question, never learned, and not readable on the extension side either (`learnable.ts` is what it ships). */
+const salaryBlocked = (label: string) =>
+  isSensitiveQuestion({ label }) &&
+  !isLearnableField({ label, type: "number" }) &&
+  !isLearnableQuestion({ label, type: "number" }) &&
+  floorSensitive({ label }) &&
+  !floorLearnable({ label, type: "number" })
+
+test("current salary in english is blocked", () => {
+  for (const label of [
+    "Current salary",
+    "Your current salary?",
+    "Current base salary",
+    "What is your current annual salary?",
+  ])
+    expect(salaryBlocked(label), label).toBe(true)
+})
+
+test("previous and last salary, and present or prior pay, are blocked", () => {
+  for (const label of [
+    "Previous salary",
+    "Previous base salary",
+    "Last salary",
+    "What was your last salary?",
+    "Present or prior compensation",
+    "Present or previous compensation",
+  ])
+    expect(salaryBlocked(label), label).toBe(true)
+})
+
+test("salary history and pay history in english are blocked", () => {
+  for (const label of ["Salary history", "Pay history", "Compensation history", "Current pay", "Currently earning"])
+    expect(salaryBlocked(label), label).toBe(true)
+})
+
+test("current and previous pay in french are blocked", () => {
+  for (const label of [
+    "Quel est votre salaire actuel ?",
+    "Salaire précédent",
+    "Dernier salaire",
+    "Historique salarial",
+  ])
+    expect(salaryBlocked(label), label).toBe(true)
+})
+
+test("current and previous pay in german, compounds included, are blocked", () => {
+  for (const label of [
+    "Aktuelles Gehalt",
+    "Was war Ihr letztes Gehalt?",
+    "Ihr bisheriges Jahresgehalt",
+    "Ihr aktuelles Bruttogehalt",
+    "Gehaltsverlauf",
+  ])
+    expect(salaryBlocked(label), label).toBe(true)
+})
+
+test("current and previous pay in spanish are blocked", () => {
+  for (const label of ["Salario actual", "¿Cuál es su último salario?", "Historial salarial", "Sueldo anterior"])
+    expect(salaryBlocked(label), label).toBe(true)
+})
+
+test("current and previous pay in arabic are blocked", () => {
+  for (const label of ["ما هو راتبك الحالي؟", "الراتب السابق", "آخر راتب", "سجل الرواتب", "الراتب الحالي او السابق"])
+    expect(salaryBlocked(label), label).toBe(true)
+})
+
+test("current and previous pay in italian, portuguese and dutch are blocked", () => {
+  for (const label of [
+    "Stipendio attuale",
+    "Qual è la sua RAL attuale?",
+    "Storico salariale",
+    "Salário atual",
+    "Salário anterior",
+    "Histórico salarial",
+    "Huidig salaris",
+    "Wat was je laatste salaris?",
+    "Salarisgeschiedenis",
+  ])
+    expect(salaryBlocked(label), label).toBe(true)
+})
+
+test("expected, desired and minimum pay, ranges, notice and currency stay fillable", () => {
+  for (const label of [
+    "Expected salary",
+    "Desired salary",
+    "Salary expectations",
+    "Minimum salary",
+    "Salary range",
+    "Expected salary range",
+    "Compensation expectations",
+    "Notice period",
+    "Salary currency",
+    "Current employer",
+    "Current job title",
+    "Gehaltsvorstellung",
+    "Salaire souhaité",
+    "Salario deseado",
+  ]) {
+    expect(readable(label), label).toBe(true)
+    expect(floorLearnable({ label, type: "number" }), label).toBe(true)
   }
 })
