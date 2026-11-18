@@ -3,7 +3,24 @@ title: Releasing
 description: How a release is cut, how versions are chosen and how to roll back.
 ---
 
-Releases are automatic. Every push to `main` whose `ci` run is green goes through `.github/workflows/release.yml`. Nobody tags by hand and nothing red is ever released.
+A release is cut on purpose, not on every merge. Merging to `main` publishes nothing. When a milestone is done (v0.6, v0.7, v0.8, v0.9, v1.0 on GitHub), the maintainer runs `.github/workflows/release.yml` by hand and it publishes everything that landed since the last release as one version. Nobody tags by hand, and the workflow refuses to release a commit whose `ci` run on `main` is not green.
+
+## How to cut a release
+
+1. Check that every issue of the milestone is closed and that `ci` is green on the latest commit of `main`.
+2. Actions, release, Run workflow, branch `main`. Leave `dry_run` on and run it first. It plans the version, builds the extension and all eight images and pushes nothing. Read the plan and the release notes in the run summary: the version, and the features, fixes and other changes listed since the previous tag.
+3. Happy with it: run the workflow again with `dry_run` off. It publishes the images and the release.
+
+The `bump` input picks the version:
+
+| `bump` | Result from `0.5.0` | When |
+| --- | --- | --- |
+| `auto` | decided by the commit titles, see below | the default: a milestone with a `feat` in it becomes a minor |
+| `minor` | `0.6.0` | cut the next milestone whatever the titles say, for example when only fixes landed |
+| `patch` | `0.5.1` | a small fix release between milestones |
+| `major` | a minor while the major version is `0` (`0.6.0`), `2.0.0` from `1.x` | the version rules never jump from `0.x` to `1.0.0` by themselves: that takes a change to `scripts/release/lib.mjs` |
+
+An explicit bump still needs commits since the last tag, and `dry_run` on does not need green `ci` (it only warns), a real run does.
 
 ## What a release contains
 
@@ -13,7 +30,7 @@ Releases are automatic. Every push to `main` whose `ci` run is green goes throug
 | `skiffr-extension-vX.Y.Z.zip` | the GitHub release, and baked into the api image at `/downloads` |
 | `docker-compose.yml`, `install.sh`, `skiffr` (the helper) | the GitHub release |
 | `SHA256SUMS` | the GitHub release. `install.sh` and `./skiffr update` check the compose file and the helper against it. It guards against a truncated or corrupted download, not against a compromised release, since the sums come from the same place as the files |
-| release notes | the squash titles since the last release, grouped by type, each with its pull request link |
+| release notes | a line naming the previous release, then the squash titles since it grouped as features, fixes and other changes (performance, refactors, dependency bumps and untyped titles), each with its pull request link. docs, ci and chore commits go last under Maintenance |
 
 The version is written into the `package.json` of every app at build time from the tag, which is the single source: the extension manifest, `GET /version` on the api and the image labels all carry it. A `vX.Y.Z` image tag is never moved to a different build: if it already exists the run only continues when it was built from the same commit, otherwise it stops.
 
@@ -30,21 +47,26 @@ From the commit titles on `main` since the last `vX.Y.Z` tag. While the major ve
 | a title that does not follow `type(scope): subject` | patch, listed under Other changes |
 | `docs`, `ci`, `test`, `chore`, `build`, `style` | nothing |
 
-When only the last group landed there is no release, so a docs fix does not make everyone update. The first release is `v0.1.0`. A push to `main` that is not the newest commit by the time the workflow runs is skipped, the newer commit carries its changes.
+When only the last group landed there is no release, so a docs fix does not make everyone update (a forced `bump` overrides that). The first release is `v0.1.0`. The workflow releases the commit it is run on, the latest of `main`, so a version always carries every change merged before it.
 
-## Forcing, rehearsing, rolling back
+## Rehearsing, rolling back
 
-- **Rehearse:** Actions, release, Run workflow. `dry_run` is on by default: it plans the version, builds the extension and all eight images and pushes nothing. The plan and the notes are in the run summary.
-- **Force a release** (for example after a docs-only history): run the workflow with `dry_run` off and a `bump` of `patch`, `minor` or `major`. It still needs commits since the last tag.
+- **Rehearse:** `dry_run` is on by default. It plans the version, builds the extension and all eight images and pushes nothing. The plan and the notes are in the run summary. A dry run may use any branch, a real run only `main`.
+- **Only green commits:** a real run looks up the `ci` run of the push to `main` for the commit it releases and stops with an error when there is none, it is still running or it failed. Wait for `ci` and run again.
+- **Force a version** (for example after a docs-only history): run with `dry_run` off and a `bump` of `patch`, `minor` or `major`. It still needs commits since the last tag.
 - **Rerun** is safe. The release is created as a draft, every asset is uploaded, and only then it is published as the latest one, so `install.sh` never sees a half uploaded release. A version that is already published is skipped. A run that died before that leaves a draft or untagged images: run it again, it replaces the draft's assets and publishes it, and the existing `vX.Y.Z` images are reused when they come from the same commit.
 - **Roll a self-hosted server back:** `SKIFFR_VERSION=v0.1.2` in `.env`, then `docker compose up -d`, or `./skiffr update --version v0.1.2`. Migrations are meant to only add (a rule for reviewers, not enforced yet), so the older code runs on the newer schema.
-- **Undo a bad release:** fix forward with a `fix` commit, that releases a new patch. Do not delete tags or move image tags.
+- **Undo a bad release:** fix forward with a `fix` commit, then cut a patch release (`bump` patch). Do not delete tags or move image tags.
 
 ## Checks before the first run in a fork or a new repo
 
 - the workflow only runs on `FindMalek/skiffr`, change the repository check in `release.yml` and the `IMAGE_PREFIX` for a fork
 - ghcr packages are private after their first push: open each of the four packages, Package settings, and make them public so self hosters can pull. The workflow checks an anonymous pull and stops before publishing the release when one fails, so make them public and run it again
 - it needs no secret beyond the automatic `GITHUB_TOKEN`, with `contents: write` only in the publish job and `packages: write` only in the image jobs
+
+## How update checks see a release
+
+Nothing changes for users. `./skiffr status`, `./skiffr update`, `install.sh` and the api's `UPDATE_CHECK` only read the latest published GitHub release. The release is a draft until every asset is uploaded and published last, so between releases they simply see no new version, and `latest` image tags move only when you cut one. `autoupdate` self hosters get one update per milestone instead of one per merge.
 
 The Chrome Web Store listing, which would also update the extension itself, is a separate piece of work ([issue 26](https://github.com/FindMalek/skiffr/issues/26)).
 

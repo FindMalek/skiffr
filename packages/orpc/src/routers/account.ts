@@ -189,11 +189,25 @@ export const adminRouter = {
     )
     .handler(async ({ context }) => {
       const [total] = await context.db.select({ n: count() }).from(user)
-      const users = await context.db
-        .select({ id: user.id, name: user.name, email: user.email, role: user.role, createdAt: user.createdAt })
+      const rows = await context.db
+        .select({
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          emailVerified: user.emailVerified,
+          banned: user.banned,
+          banExpires: user.banExpires,
+          createdAt: user.createdAt,
+        })
         .from(user)
         .orderBy(desc(user.createdAt))
         .limit(ADMIN_LIST_LIMIT)
+      const now = Date.now()
+      const users = rows.map(({ banExpires, banned, ...rest }) => ({
+        ...rest,
+        banned: banned === true && (!banExpires || banExpires.getTime() > now),
+      }))
       return { total: total?.n ?? 0, users }
     }),
 }

@@ -616,6 +616,24 @@ test("a deleted user's cached session can't update, upload (no file is left) or 
   expect([...storage.keys]).toEqual([])
 })
 
+test("the admin user list marks unverified and currently banned accounts, not an expired ban", async () => {
+  const boss = await signUp("list-boss", "admin")
+  const banned = await signUp("list-banned")
+  const lapsed = await signUp("list-lapsed")
+  await db.update(user).set({ banned: true }).where(eq(user.id, banned.id))
+  await db
+    .update(user)
+    .set({ banned: true, banExpires: new Date(Date.now() - 60_000), emailVerified: true })
+    .where(eq(user.id, lapsed.id))
+  const { users } = await (await api({ ...boss, cookie: await signIn(boss.email) })).admin.users()
+  const flags = (id: string) => {
+    const row = users.find((u) => u.id === id)
+    return { banned: row?.banned, emailVerified: row?.emailVerified }
+  }
+  expect(flags(banned.id)).toEqual({ banned: true, emailVerified: false })
+  expect(flags(lapsed.id)).toEqual({ banned: false, emailVerified: true })
+})
+
 test("an upload that lands while the account is being deleted leaves no file behind", async () => {
   const gus = await signUp("upload-gus")
   const storage = memoryStorage([])
