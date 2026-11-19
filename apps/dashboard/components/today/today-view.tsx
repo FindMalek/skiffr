@@ -1,3 +1,4 @@
+import type { ActivityEvent, Job, JobCounts } from "@skiffr/common/schemas"
 import { Button } from "@skiffr/ui/components/button"
 import { Section } from "@skiffr/ui/components/section"
 import { StatusBadge } from "@skiffr/ui/components/status-badge"
@@ -5,37 +6,49 @@ import { TriangleAlertIcon } from "lucide-react"
 import Link from "next/link"
 import type { ReactNode } from "react"
 import { RelativeTime } from "@/components/time"
-import { describeActivity, profileProgress, queueLine, reviewLine, setupItems, type TodayData } from "@/lib/today"
+import { rate } from "@/lib/stats"
+import {
+  type AttentionItem,
+  deltaText,
+  describeActivity,
+  type Loaded,
+  queueLine,
+  type SetupItem,
+  sourceLabel,
+} from "@/lib/today"
 
-/** The sections always render, so the skeleton and the page take the same space. Only the copy changes. */
-export function TodayView({ data, retry }: { data: TodayData; retry: ReactNode }) {
-  return (
-    <div className="flex flex-col gap-8 p-4 md:p-6 max-w-6xl">
-      <UpNext queue={data.queue} retry={retry} />
-      <Setup data={data} retry={retry} />
-      <Review review={data.review} retry={retry} />
-      <Activity activity={data.activity} retry={retry} />
-    </div>
-  )
+/** Every section is its own streamed server component, so this is the only wrapper a section needs. */
+export function TodayLayout({ children }: { children: ReactNode }) {
+  return <div className="flex max-w-6xl flex-col gap-8 p-4 md:p-6">{children}</div>
 }
 
-function UpNext({ queue, retry }: { queue: TodayData["queue"]; retry: ReactNode }) {
+export function UpNextView({
+  next,
+  counts,
+  retry,
+}: {
+  next: Loaded<Job | null>
+  counts: Loaded<JobCounts>
+  retry: ReactNode
+}) {
   return (
     <Section title="Up next" description="The job to open now. The queue holds the rest, in order.">
-      {!queue.ok ? (
+      {!next.ok ? (
         <ErrorBox what="your queue" retry={retry} />
-      ) : queue.value.next ? (
+      ) : next.value ? (
         <div className="flex flex-col gap-4 border p-4 md:p-6">
           <div className="flex min-w-0 flex-col gap-1">
-            <p className="text-muted-foreground text-xs tabular-nums">{queueLine(queue.value.counts.status)}</p>
-            <p className="break-words font-medium">{queue.value.next.title}</p>
+            {counts.ok && (
+              <p className="text-muted-foreground text-xs tabular-nums">{queueLine(counts.value.status)}</p>
+            )}
+            <p className="break-words font-medium">{next.value.title}</p>
             <p className="text-muted-foreground text-sm">
-              {queue.value.next.company} · <span className="font-mono text-xs">{queue.value.next.source}</span> · queued{" "}
-              <RelativeTime value={queue.value.next.queuedAt} />
+              {next.value.company} · {sourceLabel(next.value.source)} · queued{" "}
+              <RelativeTime value={next.value.queuedAt} />
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button render={<a href={queue.value.next.url} target="_blank" rel="noreferrer" />} nativeButton={false}>
+            <Button render={<a href={next.value.url} target="_blank" rel="noreferrer" />} nativeButton={false}>
               Open job<span className="sr-only"> in a new tab</span>
             </Button>
             <Button variant="outline" render={<Link href="/queue" />} nativeButton={false}>
@@ -58,21 +71,16 @@ function UpNext({ queue, retry }: { queue: TodayData["queue"]; retry: ReactNode 
   )
 }
 
-function Setup({ data, retry }: { data: TodayData; retry: ReactNode }) {
-  const { profile, extension } = data
-  const incomplete = setupItems({
-    profile: profile.ok ? profileProgress(profile.value) : undefined,
-    extension: extension.ok ? extension.value : undefined,
-  }).filter((item) => !item.done)
-  const failed = [profile.ok ? null : "your profile", extension.ok ? null : "the extension status"].filter(
-    (what): what is string => what !== null,
-  )
+/** Renders nothing once every check is done, so a finished account has no checklist left on the page. */
+export function SetupView({ items, failed, retry }: { items: SetupItem[]; failed: string[]; retry: ReactNode }) {
+  const incomplete = items.filter((item) => !item.done)
+  if (incomplete.length === 0 && failed.length === 0) return null
   return (
-    <Section title="Set up" description="The profile and the extension are what skiffr fills forms with.">
+    <Section title="Set up" description="The first steps for skiffr to fill and learn from your applications.">
       {failed.map((what) => (
         <ErrorBox key={what} what={what} retry={retry} />
       ))}
-      {incomplete.length > 0 ? (
+      {incomplete.length > 0 && (
         <ul className="divide-y border">
           {incomplete.map((item) => (
             <li key={item.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 px-4 py-3">
@@ -96,33 +104,73 @@ function Setup({ data, retry }: { data: TodayData; retry: ReactNode }) {
             </li>
           ))}
         </ul>
-      ) : (
-        failed.length === 0 && <p className="text-sm">Profile and extension are set up.</p>
       )}
     </Section>
   )
 }
 
-function Review({ review, retry }: { review: TodayData["review"]; retry: ReactNode }) {
+export function WeekView({
+  applications,
+  autofill,
+  retry,
+}: {
+  applications: Loaded<{ thisWeek: number; previous: number }>
+  autofill: Loaded<{ fields: number; accepted: number }>
+  retry: ReactNode
+}) {
   return (
-    <Section title="Answers" description="Answers that need a decision from you.">
-      {!review.ok ? (
-        <ErrorBox what="your answers" retry={retry} />
+    <Section title="This week" description="The last 7 days, against the 7 days before them where it is counted.">
+      {!applications.ok || !autofill.ok ? (
+        <ErrorBox what="this week" retry={retry} />
       ) : (
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-sm tabular-nums">{reviewLine(review.value)}</p>
-          {review.value > 0 && (
-            <Button variant="outline" size="sm" render={<Link href="/answers" />} nativeButton={false}>
-              Review answers
-            </Button>
-          )}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="flex flex-col gap-1 border p-4 md:p-6">
+            <p className="text-muted-foreground text-xs">Applications</p>
+            <p className="font-heading font-semibold text-3xl tabular-nums">{applications.value.thisWeek}</p>
+            <p className="text-muted-foreground text-xs tabular-nums">
+              {deltaText(applications.value.thisWeek, applications.value.previous)}
+            </p>
+          </div>
+          <div className="flex flex-col gap-1 border p-4 md:p-6">
+            <p className="text-muted-foreground text-xs">Fields skiffr filled</p>
+            <p className="font-heading font-semibold text-3xl tabular-nums">{autofill.value.fields}</p>
+            <p className="text-muted-foreground text-xs tabular-nums">
+              {rate(autofill.value.accepted, autofill.value.fields) === null
+                ? "Not enough fields yet to show a rate"
+                : `${Math.round((autofill.value.accepted / autofill.value.fields) * 100)}% left as filled`}
+            </p>
+          </div>
         </div>
       )}
     </Section>
   )
 }
 
-function Activity({ activity, retry }: { activity: TodayData["activity"]; retry: ReactNode }) {
+export function AttentionView({ items, retry }: { items: Loaded<AttentionItem[]>; retry: ReactNode }) {
+  return (
+    <Section title="Needs attention" description="Things that stop skiffr working until you act.">
+      {!items.ok ? (
+        <ErrorBox what="what needs attention" retry={retry} />
+      ) : items.value.length === 0 ? (
+        <p className="text-sm">Nothing needs attention.</p>
+      ) : (
+        <ul className="divide-y border">
+          {items.value.map((item) => (
+            <li key={item.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
+              <StatusBadge tone="warning">Needs attention</StatusBadge>
+              <span className="min-w-0 flex-1 text-sm">{item.text}</span>
+              <Button variant="outline" size="sm" render={<Link href={item.href} />} nativeButton={false}>
+                Fix it
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Section>
+  )
+}
+
+export function ActivityView({ activity, retry }: { activity: Loaded<ActivityEvent[]>; retry: ReactNode }) {
   return (
     <Section title="Recent activity" description="What happened in your account in the last 30 days, newest first.">
       {!activity.ok ? (
@@ -151,7 +199,7 @@ function Activity({ activity, retry }: { activity: TodayData["activity"]; retry:
   )
 }
 
-function EmptyBox({ title, text, action }: { title: string; text: string; action?: ReactNode }) {
+export function EmptyBox({ title, text, action }: { title: string; text: string; action?: ReactNode }) {
   return (
     <div className="flex flex-col gap-3 border p-4 md:p-6">
       <p className="font-medium">{title}</p>
@@ -161,10 +209,10 @@ function EmptyBox({ title, text, action }: { title: string; text: string; action
   )
 }
 
-function ErrorBox({ what, retry }: { what: string; retry: ReactNode }) {
+export function ErrorBox({ what, retry }: { what: string; retry: ReactNode }) {
   return (
     <div className="flex flex-col gap-3 border p-4 md:p-6">
-      <p className="flex items-center gap-2 font-medium text-sm">
+      <p role="alert" className="flex items-center gap-2 font-medium text-sm">
         <TriangleAlertIcon aria-hidden="true" className="size-4 text-destructive" />
         Could not load {what}.
       </p>
@@ -176,29 +224,91 @@ function ErrorBox({ what, retry }: { what: string; retry: ReactNode }) {
   )
 }
 
-/** Same blocks and heights as `TodayView`, for `loading.tsx`. Static blocks, no shimmer (DESIGN 2.6). */
-export function TodaySkeleton() {
+/**
+ * Fallbacks for each streamed section. Block heights follow one row of the real list, so a section that resolves
+ * changes its height as little as the data allows. The rows themselves differ per account, so some shift remains.
+ */
+export function SectionSkeleton({
+  title,
+  description,
+  children,
+}: {
+  title: string
+  description: string
+  children: ReactNode
+}) {
   return (
-    <div aria-busy="true" className="flex flex-col gap-8 p-4 md:p-6 max-w-6xl">
-      <Section title="Up next" description="The job to open now. The queue holds the rest, in order.">
-        <div className="h-28 border bg-border" />
-      </Section>
-      <Section title="Set up" description="The profile and the extension are what skiffr fills forms with.">
-        <div className="flex flex-col border">
-          <div className="h-14 border-b bg-border" />
-          <div className="h-14 bg-border" />
-        </div>
-      </Section>
-      <Section title="Answers" description="Answers that need a decision from you.">
-        <div className="h-5 w-48 bg-border" />
-      </Section>
-      <Section title="Recent activity" description="What happened in your account in the last 30 days, newest first.">
-        <div className="flex flex-col border">
-          <div className="h-10 border-b bg-border" />
-          <div className="h-10 border-b bg-border" />
-          <div className="h-10 bg-border" />
-        </div>
-      </Section>
+    <div aria-busy="true" className="flex min-w-0 flex-col gap-4">
+      <div className="flex flex-col gap-1">
+        <h2 className="font-heading font-semibold text-base">{title}</h2>
+        <p className="max-w-prose text-muted-foreground text-sm">{description}</p>
+      </div>
+      {children}
     </div>
+  )
+}
+
+export function UpNextSkeleton() {
+  return (
+    <SectionSkeleton title="Up next" description="The job to open now. The queue holds the rest, in order.">
+      <div className="h-[132px] border bg-border" />
+    </SectionSkeleton>
+  )
+}
+
+export function SetupSkeleton() {
+  return (
+    <SectionSkeleton title="Set up" description="The first steps for skiffr to fill and learn from your applications.">
+      <div className="flex flex-col border">
+        <div className="h-[60px] border-b bg-border" />
+        <div className="h-[60px] border-b bg-border" />
+        <div className="h-[60px] bg-border" />
+      </div>
+    </SectionSkeleton>
+  )
+}
+
+export function WeekSkeleton() {
+  return (
+    <SectionSkeleton
+      title="This week"
+      description="The last 7 days, against the 7 days before them where it is counted."
+    >
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="h-[116px] border bg-border" />
+        <div className="h-[116px] border bg-border" />
+      </div>
+    </SectionSkeleton>
+  )
+}
+
+export function AttentionSkeleton() {
+  return (
+    <SectionSkeleton title="Needs attention" description="Things that stop skiffr working until you act.">
+      <div className="h-[20px] w-64 bg-border" />
+    </SectionSkeleton>
+  )
+}
+
+export function ReviewSkeleton() {
+  return (
+    <SectionSkeleton title="Answers" description="Answers that need a decision from you.">
+      <div className="h-[36px] w-72 bg-border" />
+    </SectionSkeleton>
+  )
+}
+
+export function ActivitySkeleton() {
+  return (
+    <SectionSkeleton
+      title="Recent activity"
+      description="What happened in your account in the last 30 days, newest first."
+    >
+      <div className="flex flex-col border">
+        <div className="h-[44px] border-b bg-border" />
+        <div className="h-[44px] border-b bg-border" />
+        <div className="h-[44px] bg-border" />
+      </div>
+    </SectionSkeleton>
   )
 }
