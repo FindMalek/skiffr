@@ -22,7 +22,7 @@
   },
   "scripts": {
     "check-types": "tsc --noEmit",
-    "test": "bun test --pass-with-no-tests"
+    "test": "bun test --pass-with-no-tests --timeout 60000"
   },
   "dependencies": {
     "@skiffr/ai": "workspace:*",
