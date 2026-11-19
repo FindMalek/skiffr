@@ -66,7 +66,7 @@ export function PaletteProvider({ isAdmin, children }: { isAdmin: boolean; child
 
 const noSubscription = () => () => {}
 
-function useIsApple(): boolean {
+export function useIsApple(): boolean {
   return useSyncExternalStore(
     noSubscription,
     () => /Mac|iPhone|iPad/.test(navigator.userAgent),

@@ -14,10 +14,12 @@ import {
   DropdownMenuTrigger,
 } from "@skiffr/ui/components/dropdown-menu"
 import { useIsMobile } from "@skiffr/ui/hooks/use-mobile"
-import { LogOutIcon, PaletteIcon, SettingsIcon } from "lucide-react"
+import { KeyboardIcon, LogOutIcon, PaletteIcon, SettingsIcon } from "lucide-react"
 import Link from "next/link"
 import { useTheme } from "next-themes"
 import { toast } from "sonner"
+import { useShortcutsEnabled } from "@/lib/shortcuts-setting"
+import { ShortcutKeys, useShortcutsHelp } from "./shortcuts"
 
 export interface ShellUser {
   name: string
@@ -36,6 +38,8 @@ const THEMES = [
 export function UserMenu({ me }: { me: ShellUser }) {
   const { theme, setTheme } = useTheme()
   const isMobile = useIsMobile()
+  const help = useShortcutsHelp()
+  const shortcuts = useShortcutsEnabled()
   // The auth client is only needed here, so it loads when you press Sign out, not with every page.
   const signOut = async () => {
     try {
@@ -72,6 +76,15 @@ export function UserMenu({ me }: { me: ShellUser }) {
         <DropdownMenuItem render={<Link href="/settings/appearance" />}>
           <PaletteIcon />
           Appearance
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={help.open} aria-keyshortcuts={shortcuts ? "?" : undefined}>
+          <KeyboardIcon />
+          Keyboard shortcuts
+          {shortcuts && (
+            <span aria-hidden="true" className="ml-auto max-md:hidden">
+              <ShortcutKeys keys={["?"]} />
+            </span>
+          )}
         </DropdownMenuItem>
         {isMobile && (
           <>
