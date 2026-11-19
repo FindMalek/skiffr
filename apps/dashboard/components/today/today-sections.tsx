@@ -1,14 +1,18 @@
 import { Section } from "@skiffr/ui/components/section"
+import { cache } from "react"
 import { RetryButton } from "@/components/settings/retry-button"
 import { call } from "@/lib/api"
 import { type AttentionItem, attentionItems, type Loaded, profileProgress, setupItems, weekCompare } from "@/lib/today"
 import { ReviewLine } from "./review-line"
-import { ActivityView, AttentionView, ErrorBox, SetupView, UpNextView, WeekView } from "./today-view"
+import { ActivityView, AttentionView, ErrorBox, SetupView, SLOT, UpNextView, WeekView } from "./today-view"
 
 /**
  * Each section is its own server component with its own queries, streamed behind its own Suspense boundary. One slow
  * or failed query holds back only its section.
  */
+
+/** Set up and Up next both need the job counts: one request per page load, shared through React's per-request cache. */
+const jobCounts = cache(() => call((api) => api.jobs.counts()))
 
 async function settle<T>(load: () => Promise<T>): Promise<Loaded<T>> {
   try {
@@ -35,7 +39,7 @@ export async function SetupSection() {
     settle(() => call((api) => api.profile.get())),
     settle(() => call((api) => api.extension.status())),
     settle(async () => {
-      const { status } = await call((api) => api.jobs.counts())
+      const { status } = await jobCounts()
       return status.queued + status.applied + status.skipped
     }),
     settle(async () => (await call((api) => api.applications.list({ limit: 1 }))).length),
@@ -61,10 +65,7 @@ export async function SetupSection() {
 }
 
 export async function UpNextSection() {
-  const [next, counts] = await Promise.all([
-    settle(() => call((api) => api.jobs.next())),
-    settle(() => call((api) => api.jobs.counts())),
-  ])
+  const [next, counts] = await Promise.all([settle(() => call((api) => api.jobs.next())), settle(() => jobCounts())])
   return <UpNextView next={next} counts={counts} retry={<RetryButton />} />
 }
 
@@ -102,11 +103,13 @@ export async function ReviewSection() {
   const suggestions = await settle(() => call((api) => api.learning.suggestions()))
   return (
     <Section title="Answers" description="Answers that need a decision from you.">
-      {suggestions.ok ? (
-        <ReviewLine suggestions={suggestions.value} />
-      ) : (
-        <ErrorBox what="your answers" retry={<RetryButton />} />
-      )}
+      <div className={SLOT.answers}>
+        {suggestions.ok ? (
+          <ReviewLine suggestions={suggestions.value} />
+        ) : (
+          <ErrorBox what="your answers" retry={<RetryButton />} />
+        )}
+      </div>
     </Section>
   )
 }

@@ -124,6 +124,22 @@ export function sourceLabel(source: string): string {
   return "Other source"
 }
 
+/** How a job got on the queue, as the end of "2 jobs queued ...". */
+export function queuedVia(source: string): string {
+  if (source === "manual") return "by hand"
+  if (source === "extension") return "from the extension"
+  if (source.startsWith("gmail:")) return "from Gmail alerts"
+  if (source.startsWith("watch:")) return "from a careers page"
+  return "from another source"
+}
+
+/** A sentence for a failed check. Unknown keys get the generic line, never the key itself. */
+export function failedSourceText(source: string): string {
+  if (source.startsWith("gmail:")) return "Gmail alerts failed to check"
+  if (source.startsWith("watch:")) return `Careers page (${source.slice("watch:".length)}) failed to check`
+  return "A job source failed to check"
+}
+
 const STAGE_TEXT = {
   applied: "applied",
   responded: "responded",
@@ -136,7 +152,7 @@ const STAGE_TEXT = {
 export function describeActivity(event: ActivityEvent): string {
   switch (event.kind) {
     case "jobs_queued":
-      return `${plural(event.count, "job")} queued from ${sourceLabel(event.source)}`
+      return `${plural(event.count, "job")} queued ${queuedVia(event.source)}`
     case "job_applied":
       return `Applied to ${event.title} at ${event.company}`
     case "application_stage":
@@ -150,7 +166,7 @@ export function describeActivity(event: ActivityEvent): string {
     case "gmail_failed":
       return event.needsReconnect ? "Gmail needs to be reconnected" : "Gmail sync failed"
     case "source_failed":
-      return `Checking ${sourceLabel(event.source)} failed`
+      return failedSourceText(event.source)
     case "token_expired":
       return `Extension token ${event.name} expired`
   }
@@ -180,6 +196,7 @@ export function weekCompare(perDay: { day: string; count: number }[]): { thisWee
 }
 
 export function deltaText(thisWeek: number, previous: number): string {
+  if (thisWeek === 0 && previous === 0) return "No applications in the last 14 days"
   const delta = thisWeek - previous
   if (delta === 0) return "Same as the 7 days before"
   return `${delta > 0 ? "+" : "-"}${Math.abs(delta)} vs the 7 days before`

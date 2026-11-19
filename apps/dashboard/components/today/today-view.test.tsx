@@ -81,7 +81,7 @@ test("this week shows the change against the week before, and a failed week says
     />,
   )
   expect(html).toContain("+2 vs the 7 days before")
-  expect(html).toContain("75% left as filled")
+  expect(html).toContain("75% kept without edits")
   expect(
     renderToStaticMarkup(
       <WeekView

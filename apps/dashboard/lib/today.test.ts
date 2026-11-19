@@ -62,7 +62,23 @@ test("source keys read as names, the raw key never reaches the page", () => {
     source: "gmail:other",
     count: 2,
   }
-  expect(describeActivity(queued)).toBe("2 jobs queued from Gmail alert")
+  expect(describeActivity(queued)).toBe("2 jobs queued from Gmail alerts")
+  const failed: ActivityEvent = {
+    id: "2",
+    at: new Date("2026-11-18T10:00:00Z"),
+    kind: "source_failed",
+    source: "x:y",
+    code: "boom",
+  }
+  expect(describeActivity(failed)).toBe("A job source failed to check")
+  const byHand: ActivityEvent = {
+    id: "3",
+    at: new Date("2026-11-18T10:00:00Z"),
+    kind: "jobs_queued",
+    source: "manual",
+    count: 1,
+  }
+  expect(describeActivity(byHand)).toBe("1 job queued by hand")
 })
 
 test("activity reads as one plain sentence, with singular and plural counts", () => {
@@ -103,6 +119,7 @@ test("the week compares the last 7 days with the 7 before, by day", () => {
   expect([thisWeek, previous]).toEqual([21, 7])
   expect(deltaText(thisWeek, previous)).toBe("+14 vs the 7 days before")
   expect(deltaText(2, 2)).toBe("Same as the 7 days before")
+  expect(deltaText(0, 0)).toBe("No applications in the last 14 days")
 })
 
 test("attention lists only what is broken now, and says where to fix it", () => {
