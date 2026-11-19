@@ -89,7 +89,7 @@ export function SearchButton() {
         <SearchIcon aria-hidden="true" />
         <span className="max-md:sr-only">Search</span>
       </span>
-      <Kbd aria-hidden="true" className="max-md:hidden">
+      <Kbd aria-hidden="true" className="min-w-[3.4rem] max-md:hidden">
         {apple ? "⌘K" : "Ctrl K"}
       </Kbd>
     </Button>

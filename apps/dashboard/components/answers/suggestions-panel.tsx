@@ -6,45 +6,13 @@ import { Button } from "@skiffr/ui/components/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@skiffr/ui/components/card"
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@skiffr/ui/components/empty"
 import { Skeleton } from "@skiffr/ui/components/skeleton"
-import { useCallback, useMemo, useState, useSyncExternalStore } from "react"
-import { DISMISSED_MAX, dismissalKey, parseDismissed, suggestionCopy } from "@/lib/answers"
+import { useState } from "react"
+import { dismissalKey, suggestionCopy } from "@/lib/answers"
 import { SafeText } from "./safe-text"
 import { type Suggestion, useRowActions, useSuggestions } from "./use-answers"
+import { useDismissed } from "./use-dismissed"
 
-const STORAGE_KEY = "skiffr:answers:dismissed"
 const VISIBLE = 4
-const listeners = new Set<() => void>()
-
-function readDismissed(): string {
-  try {
-    return localStorage.getItem(STORAGE_KEY) ?? "[]"
-  } catch {
-    return "[]"
-  }
-}
-
-/** Dismissing a "make this your default?" card has no server side: it hides the card in this browser while the answer keeps its value. */
-function useDismissed() {
-  const raw = useSyncExternalStore(
-    (listener) => {
-      listeners.add(listener)
-      return () => listeners.delete(listener)
-    },
-    readDismissed,
-    () => "[]",
-  )
-  const dismiss = useCallback((key: string) => {
-    try {
-      const next = [...parseDismissed(readDismissed()), key].slice(-DISMISSED_MAX)
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
-    } catch {
-      // storage blocked: the card comes back on the next visit
-    }
-    for (const listener of listeners) listener()
-  }, [])
-  const dismissed = useMemo(() => new Set(parseDismissed(raw)), [raw])
-  return { dismissed, dismiss }
-}
 
 function SuggestionCard({
   suggestion,
