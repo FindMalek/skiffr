@@ -19,7 +19,9 @@ export function ReviewLine({ suggestions }: { suggestions: Candidate[] }) {
   const count = countOpenReview(suggestions, dismissed)
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <p className="text-sm tabular-nums">{mounted ? reviewLine(count) : "Checking answers."}</p>
+      <p aria-live="polite" className="text-sm tabular-nums">
+        {mounted ? reviewLine(count) : "Checking answers."}
+      </p>
       {mounted && count > 0 && (
         <Button variant="outline" size="sm" render={<Link href="/answers" />} nativeButton={false}>
           Review answers

@@ -22,9 +22,11 @@ import {
  * `SKELETON_HEIGHT` in the PR notes). The real content keeps its natural height, so a section whose data is taller or
  * shorter than this moves the sections below it.
  */
+/** Five checks, the most setup can show: the setup section keeps this height while it is shown, skeleton included. */
+export const SETUP_HEIGHT = "h-[38rem] md:h-[20.375rem]"
+
 export const SKELETON_HEIGHT = {
   upNext: "h-[11.125rem] md:h-[10.375rem]",
-  setup: "h-[30.3125rem] md:h-[16.3125rem]",
   week: "h-[14.75rem] sm:h-[7.875rem]",
   attention: "h-[9.4375rem] md:h-[7.1875rem]",
   answers: "h-[2.5rem]",
@@ -93,7 +95,7 @@ export function SetupView({ items, failed, retry }: { items: SetupItem[]; failed
   if (incomplete.length === 0 && failed.length === 0) return null
   return (
     <Section title="Set up" description="The first steps for skiffr to fill and learn from your applications.">
-      <>
+      <div className={SETUP_HEIGHT}>
         {failed.map((what) => (
           <ErrorBox key={what} what={what} retry={retry} />
         ))}
@@ -122,7 +124,7 @@ export function SetupView({ items, failed, retry }: { items: SetupItem[]; failed
             ))}
           </ul>
         )}
-      </>
+      </div>
     </Section>
   )
 }
@@ -286,7 +288,7 @@ export function SetupSkeleton() {
     <SectionSkeleton
       title="Set up"
       description="The first steps for skiffr to fill and learn from your applications."
-      slot={SKELETON_HEIGHT.setup}
+      slot={SETUP_HEIGHT}
     >
       <div className="h-full border bg-border" />
     </SectionSkeleton>

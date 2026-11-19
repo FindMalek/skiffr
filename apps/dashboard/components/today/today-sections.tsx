@@ -11,10 +11,25 @@ import { ActivityView, AttentionView, ErrorBox, SetupView, UpNextView, WeekView 
  * or failed query holds back only its section.
  */
 
+/**
+ * Pages the answer bank until one answer the user confirmed or rejected turns up, or the bank ends. Only the yes or no
+ * matters here, so it stops at the first hit and never counts past the first page that has one.
+ */
+async function hasReviewedAnswer(): Promise<number> {
+  const PAGE = 100
+  const MAX_PAGES = 20
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const rows = await call((api) => api.answers.list({ limit: PAGE, offset: page * PAGE }))
+    if (rows.some((a) => a.status !== "learned")) return 1
+    if (rows.length < PAGE) break
+  }
+  return 0
+}
+
 /** Set up and Up next both need the job counts: one request per page load, shared through React's per-request cache. */
 const jobCounts = cache(() => call((api) => api.jobs.counts()))
 
-async function settle<T>(load: () => Promise<T>): Promise<Loaded<T>> {
+export async function settle<T>(load: () => Promise<T>): Promise<Loaded<T>> {
   try {
     return { ok: true, value: await load() }
   } catch (error) {
@@ -43,9 +58,7 @@ export async function SetupSection() {
       return status.queued + status.applied + status.skipped
     }),
     settle(async () => (await call((api) => api.applications.list({ limit: 1 }))).length),
-    settle(
-      async () => (await call((api) => api.answers.list({ limit: 100 }))).filter((a) => a.status !== "learned").length,
-    ),
+    settle(() => hasReviewedAnswer()),
   ])
   const failed = [
     profile.ok ? null : "your profile",
