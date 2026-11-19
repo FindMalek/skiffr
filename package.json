@@ -24,8 +24,8 @@
     "db:studio": "turbo db:studio -F @skiffr/db",
     "bump-deps": "pnpm update --recursive --latest",
     "ui:add": "pnpm --filter @skiffr/ui exec shadcn add",
-    "prepare": "lefthook install",
-    "doctor": "react-doctor apps/dashboard --no-supply-chain"
+    "prepare": "(git rev-parse --git-dir >/dev/null 2>&1 && lefthook install) || true",
+    "doctor": "react-doctor apps/dashboard --no-supply-chain --no-telemetry"
   },
   "devDependencies": {
     "@biomejs/biome": "catalog:",
