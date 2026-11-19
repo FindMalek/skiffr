@@ -23,12 +23,16 @@
     "db:seed": "turbo db:seed -F @skiffr/db",
     "db:studio": "turbo db:studio -F @skiffr/db",
     "bump-deps": "pnpm update --recursive --latest",
-    "ui:add": "pnpm --filter @skiffr/ui exec shadcn add"
+    "ui:add": "pnpm --filter @skiffr/ui exec shadcn add",
+    "prepare": "lefthook install",
+    "doctor": "react-doctor apps/dashboard --no-supply-chain"
   },
   "devDependencies": {
     "@biomejs/biome": "catalog:",
     "@shadcn/lint": "catalog:",
+    "lefthook": "2.2.2",
     "oxlint": "catalog:",
+    "react-doctor": "0.9.23",
     "turbo": "catalog:",
     "typescript": "catalog:"
   },

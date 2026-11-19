@@ -1,0 +1,10 @@
+# pre-commit runs on staged files only, so commits stay fast. CI runs the full `pnpm lint`.
+pre-commit:
+  parallel: true
+  commands:
+    biome:
+      glob: "*.{js,jsx,ts,tsx,json,jsonc,css,md,mdx}"
+      run: pnpm exec biome check --files-ignore-unknown=true --no-errors-on-unmatched {staged_files}
+    oxlint:
+      glob: "*.{js,jsx,ts,tsx}"
+      run: pnpm exec oxlint {staged_files}
