@@ -13,7 +13,6 @@ import {
   gmailMessage,
   job,
   jobSource,
-  notes,
   profile,
   siteProfile,
 } from "@skiffr/db"
@@ -62,7 +61,6 @@ export const EXPORTED: Spec[] = [
     order: ["id"],
     single: true,
   },
-  { section: "notes", table: notes, omit: ["userId"], order: ["createdAt", "id"] },
   {
     section: "tokens",
     table: apiToken,

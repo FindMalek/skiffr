@@ -15,7 +15,6 @@ import {
   gmailOauthState,
   job,
   jobSource,
-  notes,
   profile,
   recordBatch,
   session as sessionTable,
@@ -136,7 +135,6 @@ const EXPORT_KEYS: Record<string, string[]> = {
     "url",
   ],
   gmailMessages: ["googleMessageId", "id", "jobsFound", "jobsNew", "modifiedAt", "outcome", "processedAt", "provider"],
-  notes: ["body", "createdAt", "id", "pinned", "title", "updatedAt"],
   tokens: ["createdAt", "expiresAt", "id", "lastUsedAt", "name", "revokedAt"],
   aiUsage: ["calls", "day", "inputTokens", "outputTokens", "verdicts"],
 }
@@ -301,7 +299,6 @@ async function seed(person: Person): Promise<void> {
     .insert(cvConnection)
     .values({ userId: id, baseUrl: "https://rr.test", apiKeyEnc: "api-key-sentinel", keyLast4: "1234" })
   await db.insert(aiUsage).values({ userId: id, day: "2026-11-10", calls: 3 })
-  await db.insert(notes).values({ userId: id, title: secret })
   await db.insert(verification).values([
     { id: crypto.randomUUID(), identifier: person.email, value: "v", expiresAt: new Date(NOW) },
     {
@@ -400,19 +397,19 @@ test("an account above the row or byte limit gets a clear error instead of a doc
   const big = await signUp("export-big")
   const [owner] = await db.select().from(user).where(eq(user.id, big.id))
   await db.execute(
-    sql`insert into notes (user_id, title, body) select ${big.id}, 'n' || g, repeat('x', 10000) from generate_series(1, 2000) g`,
+    sql`insert into answer (user_id, normalized_label, raw_label, value) select ${big.id}, 'n' || g, 'n' || g, repeat('x', 10000) from generate_series(1, 2000) g`,
   )
   const buildWith = (rows: number, bytes: number) => buildExport(db, owner!, NOW, { rows, bytes })
   await expect(buildWith(100, 1e9)).rejects.toMatchObject({
     code: "PAYLOAD_TOO_LARGE",
     message: expect.stringContaining("2000 rows"),
   })
-  // 2000 notes of 10 kB are 20 MB however few rows that is: the stored size is compressed, the document is not.
+  // 2000 answers of 10 kB are 20 MB however few rows that is: the stored size is compressed, the document is not.
   await expect(buildWith(1e9, 10 * 1024 * 1024)).rejects.toMatchObject({
     code: "PAYLOAD_TOO_LARGE",
     message: expect.stringMatching(/about 20 MB; the limits are .* and 10 MB/),
   })
-  expect((await buildWith(1e9, 30 * 1024 * 1024)).notes).toHaveLength(2000)
+  expect((await buildWith(1e9, 30 * 1024 * 1024)).answers).toHaveLength(2000)
 })
 
 test("deleting removes every row of the user in every table, revokes Google, ends sessions and tokens, and leaves others alone", async () => {

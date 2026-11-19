@@ -1,7 +1,6 @@
-import type { notes, user } from "../schema"
+import type { user } from "../schema"
 
 type NewUser = typeof user.$inferInsert
-type NewNote = typeof notes.$inferInsert
 
 const DAY = 864e5
 
@@ -42,25 +41,12 @@ const LAST = [
   "Perlman",
   "Rossum",
 ]
-const TITLES = [
-  "Launch checklist",
-  "Ideas for the landing page",
-  "Pricing thoughts",
-  "Customer interview notes",
-  "Bug: login redirect on Safari",
-  "Weekly review",
-  "Onboarding email copy",
-  "Things to automate",
-  "Reading list",
-  "Q4 goals",
-]
 
 /**
- * Demo data relative to `now`: a dozen users (a couple of admins, some unverified, signed up over three months) and
- * notes for each of them and for the seeded admin, pinned and not, short and long, old and fresh.
+ * Sample users relative to `now`: a dozen (a couple of admins, some unverified, one banned, signed up over three months).
  * When a feature adds a state, add it here and to scenario.test.ts so every preview shows it.
  */
-export function buildScenario(now: Date, opts: { ownerId?: string } = {}, seed = 20261017) {
+export function buildScenario(now: Date, seed = 20261017) {
   const rand = random(seed)
   const pick = <T>(items: readonly T[]): T => items[Math.floor(rand() * items.length)]!
   const daysAgo = (max: number) => new Date(now.getTime() - Math.floor(rand() * max * DAY))
@@ -80,20 +66,5 @@ export function buildScenario(now: Date, opts: { ownerId?: string } = {}, seed =
     }
   })
 
-  const owners = [...users.map((u) => u.id!), ...(opts.ownerId ? [opts.ownerId] : [])]
-  const notesRows: NewNote[] = owners.flatMap((userId) =>
-    Array.from({ length: 2 + Math.floor(rand() * 5) }, (_, j) => {
-      const createdAt = daysAgo(60)
-      return {
-        userId,
-        title: pick(TITLES),
-        body: j % 3 === 0 ? "" : "Write the first version, ship it to a preview, then ask two people what they think.",
-        pinned: j === 0,
-        createdAt,
-        updatedAt: new Date(Math.min(now.getTime(), createdAt.getTime() + Math.floor(rand() * 10) * DAY)),
-      }
-    }),
-  )
-
-  return { users, notes: notesRows }
+  return { users }
 }

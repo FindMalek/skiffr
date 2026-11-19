@@ -8,17 +8,7 @@ export interface SeedLinks {
   users: { demo: Credential; admin: Credential; second: Credential }
   extensionToken: string
   dashboard: Record<
-    | "signIn"
-    | "queue"
-    | "stats"
-    | "statsNinetyDays"
-    | "answers"
-    | "sources"
-    | "cv"
-    | "gmail"
-    | "extension"
-    | "notes"
-    | "users",
+    "signIn" | "queue" | "stats" | "statsNinetyDays" | "answers" | "sources" | "cv" | "gmail" | "extension" | "users",
     string
   >
   playground: { base: string; nextJob: string; jobs: string[] } | null
@@ -76,7 +66,6 @@ export async function readSeedLinks(db: Db, input: LinkInput): Promise<SeedLinks
       cv: `${dash}/settings/cv`,
       gmail: `${dash}/settings/gmail`,
       extension: `${dash}/settings/extension`,
-      notes: `${dash}/notes`,
       users: `${dash}/users`,
     },
     playground,

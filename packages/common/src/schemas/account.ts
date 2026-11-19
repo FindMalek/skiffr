@@ -51,7 +51,6 @@ export const accountExportSchema = z.object({
   siteProfiles: exportRows,
   jobSources: exportRows,
   gmailMessages: exportRows,
-  notes: exportRows,
   tokens: exportRows,
   aiUsage: exportRows,
 })
