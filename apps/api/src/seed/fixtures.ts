@@ -218,6 +218,7 @@ export const ANSWERS: AnswerSpec[] = [
   ),
   a("What is your biggest weakness?", "textarea", "I say yes to too much early on.", "rejected", "ai", 3, 3, 3),
   a("Cover letter", "textarea", "Dear hiring team, I would like to apply for this role.", "rejected", "ai", 4, 4, 3),
+  a("Expected compensation", "text", "Prefer not to say", "rejected", "ai", 2, 2, 2),
   a("Do you have a valid driver's license?", "radio", "Yes", "learned", "autofill", 3, 0, 0, YES_NO),
   a("Time zone", "select", "America/Denver (UTC-7)", "learned", "autofill", 12, 1, 0, [
     "America/New_York (UTC-5)",
