@@ -1,5 +1,12 @@
 import { expect, test } from "bun:test"
-import { isDemographicOptions, isLearnableField, isSensitiveQuestion, isSensitiveSection } from "./learnable-extended"
+import { isLearnableField as floorLearnable, isSensitiveQuestion as floorSensitive } from "./learnable"
+import {
+  isDemographicOptions,
+  isLearnableField,
+  isLearnableQuestion,
+  isSensitiveQuestion,
+  isSensitiveSection,
+} from "./learnable-extended"
 
 const blocked = (label: string) => isSensitiveQuestion({ label }) && !isLearnableField({ label, type: "text" })
 const readable = (label: string) => !isSensitiveQuestion({ label }) && isLearnableField({ label, type: "text" })
@@ -453,5 +460,203 @@ test("empty sections after a bare label cannot push it out of the tails", () => 
     `Payment details: Code${": .".repeat(30)}`,
   ]) {
     expect(isLearnableField({ label, type: "text" }), label).toBe(false)
+  }
+})
+
+/** Blocked as a question, never learned, and not readable on the extension side either (`learnable.ts` is what it ships). */
+const salaryBlocked = (label: string) =>
+  isSensitiveQuestion({ label }) &&
+  !isLearnableField({ label, type: "number" }) &&
+  !isLearnableQuestion({ label, type: "number" }) &&
+  floorSensitive({ label }) &&
+  !floorLearnable({ label, type: "number" })
+
+test("current salary in english is blocked", () => {
+  for (const label of [
+    "Current salary",
+    "Your current salary?",
+    "Current base salary",
+    "What is your current annual salary?",
+  ])
+    expect(salaryBlocked(label), label).toBe(true)
+})
+
+test("previous and last salary, and present or prior pay, are blocked", () => {
+  for (const label of [
+    "Previous salary",
+    "Previous base salary",
+    "Last salary",
+    "What was your last salary?",
+    "Present or prior compensation",
+    "Present or previous compensation",
+  ])
+    expect(salaryBlocked(label), label).toBe(true)
+})
+
+test("salary history and pay history in english are blocked", () => {
+  for (const label of ["Salary history", "Pay history", "Compensation history", "Current pay", "Currently earning"])
+    expect(salaryBlocked(label), label).toBe(true)
+})
+
+test("current and previous pay with a modifier or a synonym are blocked, in the floor and on the server", () => {
+  for (const label of [
+    "Current annual compensation",
+    "Current total compensation",
+    "Current base compensation",
+    "Current annual compensation (gross)",
+    "Current gross annual salary",
+    "Previous annual salary",
+    "Present annual salary",
+    "Most recent salary",
+    "Most recent base pay",
+    "Salary at your current job",
+    "Current CTC",
+    "Current package",
+    "Current total package",
+    "Current hourly rate",
+    "Current hourly wage",
+    "Current wage",
+    "Previous wage",
+    "Previous hourly rate",
+    "Previous employer salary",
+    "Salary (current)",
+    "Bisherige Vergütung",
+    "Aktuelle Vergütung",
+    "Huidig bruto salaris",
+  ])
+    expect(salaryBlocked(label), label).toBe(true)
+})
+
+test("previous, prior, last, most recent and former pay words are blocked, whatever is between", () => {
+  for (const time of ["Previous", "Prior", "Last", "Most recent", "Former"])
+    for (const noun of ["salary", "pay", "compensation", "wage", "earnings"])
+      for (const label of [`${time} ${noun}`, `${time} annual ${noun}`, `${time} base ${noun}`])
+        expect(salaryBlocked(label), label).toBe(true)
+})
+
+test("current pay grade and pay grade are not pay and stay fillable", () => {
+  for (const label of ["Current pay grade", "Pay grade"]) {
+    expect(readable(label), label).toBe(true)
+    expect(floorLearnable({ label, type: "text" }), label).toBe(true)
+  }
+})
+
+test("the question 'What is your current pay?' is blocked on the floor and the server", () => {
+  expect(salaryBlocked("What is your current pay?")).toBe(true)
+})
+
+test("the question 'What is your current salary?' is blocked on the floor and the server", () => {
+  expect(salaryBlocked("What is your current salary?")).toBe(true)
+})
+
+test("the question 'What's your current compensation?' is blocked on the floor and the server", () => {
+  expect(salaryBlocked("What's your current compensation?")).toBe(true)
+})
+
+test("the question 'What is your current base salary?' is blocked on the floor and the server", () => {
+  expect(salaryBlocked("What is your current base salary?")).toBe(true)
+})
+
+test("the question 'What was your last salary?' is blocked on the floor and the server", () => {
+  expect(salaryBlocked("What was your last salary?")).toBe(true)
+})
+
+test("the question 'How much do you currently earn?' is blocked on the floor and the server", () => {
+  expect(salaryBlocked("How much do you currently earn?")).toBe(true)
+})
+
+test("the question 'What are you currently paid?' is blocked on the floor and the server", () => {
+  expect(salaryBlocked("What are you currently paid?")).toBe(true)
+})
+
+test("the noun-first form 'Current pay annual' is blocked on the floor and the server", () => {
+  expect(salaryBlocked("Current pay annual")).toBe(true)
+})
+
+test("the two-modifier form 'Current base annual salary' is blocked on the floor and the server", () => {
+  expect(salaryBlocked("Current base annual salary")).toBe(true)
+})
+
+test("the bracketed form 'Current pay (gross)' is blocked on the floor and the server", () => {
+  expect(salaryBlocked("Current pay (gross)")).toBe(true)
+})
+
+test("the comma form 'Current pay, annual' is blocked on the floor and the server", () => {
+  expect(salaryBlocked("Current pay, annual")).toBe(true)
+})
+
+test("the noun-first form 'Current pay package' is blocked on the floor and the server", () => {
+  expect(salaryBlocked("Current pay package")).toBe(true)
+})
+
+test("current and previous pay in french are blocked", () => {
+  for (const label of [
+    "Quel est votre salaire actuel ?",
+    "Salaire précédent",
+    "Dernier salaire",
+    "Historique salarial",
+  ])
+    expect(salaryBlocked(label), label).toBe(true)
+})
+
+test("current and previous pay in german, compounds included, are blocked", () => {
+  for (const label of [
+    "Aktuelles Gehalt",
+    "Was war Ihr letztes Gehalt?",
+    "Ihr bisheriges Jahresgehalt",
+    "Ihr aktuelles Bruttogehalt",
+    "Gehaltsverlauf",
+  ])
+    expect(salaryBlocked(label), label).toBe(true)
+})
+
+test("current and previous pay in spanish are blocked", () => {
+  for (const label of ["Salario actual", "¿Cuál es su último salario?", "Historial salarial", "Sueldo anterior"])
+    expect(salaryBlocked(label), label).toBe(true)
+})
+
+test("current and previous pay in arabic are blocked", () => {
+  for (const label of ["ما هو راتبك الحالي؟", "الراتب السابق", "آخر راتب", "سجل الرواتب", "الراتب الحالي او السابق"])
+    expect(salaryBlocked(label), label).toBe(true)
+})
+
+test("current and previous pay in italian, portuguese and dutch are blocked", () => {
+  for (const label of [
+    "Stipendio attuale",
+    "Qual è la sua RAL attuale?",
+    "Storico salariale",
+    "Salário atual",
+    "Salário anterior",
+    "Histórico salarial",
+    "Huidig salaris",
+    "Wat was je laatste salaris?",
+    "Salarisgeschiedenis",
+  ])
+    expect(salaryBlocked(label), label).toBe(true)
+})
+
+test("expected, desired and minimum pay, ranges, notice and currency stay fillable", () => {
+  for (const label of [
+    "Expected salary",
+    "Desired salary",
+    "Salary expectations",
+    "Minimum salary",
+    "Salary range",
+    "Expected salary range",
+    "Compensation expectations",
+    "Notice period",
+    "Salary currency",
+    "What are your salary expectations?",
+    "What is your expected salary?",
+    "What is your current pay grade?",
+    "Pay frequency",
+    "Current employer",
+    "Current job title",
+    "Gehaltsvorstellung",
+    "Salaire souhaité",
+    "Salario deseado",
+  ]) {
+    expect(readable(label), label).toBe(true)
+    expect(floorLearnable({ label, type: "number" }), label).toBe(true)
   }
 })

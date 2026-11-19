@@ -5,6 +5,7 @@ import { mergeProps } from "@base-ui/react/merge-props"
 import { useRender } from "@base-ui/react/use-render"
 import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "cn"
+import { isTypingTarget } from "@skiffr/ui/lib/typing-target"
 
 import { useIsMobile } from "@skiffr/ui/hooks/use-mobile"
 import { Button } from "@skiffr/ui/components/button"
@@ -117,7 +118,8 @@ function SidebarProvider({
     const handleKeyDown = (event: KeyboardEvent) => {
       if (
         event.key === SIDEBAR_KEYBOARD_SHORTCUT &&
-        (event.metaKey || event.ctrlKey)
+        (event.metaKey || event.ctrlKey) &&
+        !isTypingTarget(event.target)
       ) {
         event.preventDefault()
         toggleSidebar()
@@ -280,6 +282,7 @@ function SidebarTrigger({
   return (
     <Button
       data-sidebar="trigger"
+      aria-keyshortcuts="Control+B Meta+B"
       aria-expanded={state === "expanded"}
       data-slot="sidebar-trigger"
       variant="ghost"
