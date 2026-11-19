@@ -4,7 +4,7 @@ import { RetryButton } from "@/components/settings/retry-button"
 import { call } from "@/lib/api"
 import { type AttentionItem, attentionItems, type Loaded, profileProgress, setupItems, weekCompare } from "@/lib/today"
 import { ReviewLine } from "./review-line"
-import { ActivityView, AttentionView, ErrorBox, SetupView, SLOT, UpNextView, WeekView } from "./today-view"
+import { ActivityView, AttentionView, ErrorBox, SetupView, UpNextView, WeekView } from "./today-view"
 
 /**
  * Each section is its own server component with its own queries, streamed behind its own Suspense boundary. One slow
@@ -103,13 +103,11 @@ export async function ReviewSection() {
   const suggestions = await settle(() => call((api) => api.learning.suggestions()))
   return (
     <Section title="Answers" description="Answers that need a decision from you.">
-      <div className={SLOT.answers}>
-        {suggestions.ok ? (
-          <ReviewLine suggestions={suggestions.value} />
-        ) : (
-          <ErrorBox what="your answers" retry={<RetryButton />} />
-        )}
-      </div>
+      {suggestions.ok ? (
+        <ReviewLine suggestions={suggestions.value} />
+      ) : (
+        <ErrorBox what="your answers" retry={<RetryButton />} />
+      )}
     </Section>
   )
 }

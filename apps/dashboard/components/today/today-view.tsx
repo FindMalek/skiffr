@@ -18,16 +18,17 @@ import {
 } from "@/lib/today"
 
 /**
- * Reserved body height per section. The skeleton and the content both use it, so a section that resolves keeps the
- * space it had while loading. Content taller than its slot still pushes the sections below it.
+ * Body height of each section's skeleton, set from the measured layout of a typical account (see
+ * `SKELETON_HEIGHT` in the PR notes). The real content keeps its natural height, so a section whose data is taller or
+ * shorter than this moves the sections below it.
  */
-export const SLOT = {
-  upNext: "min-h-[11.5rem]",
-  setup: "min-h-[38rem] md:min-h-[21rem]",
-  week: "min-h-[15.5rem] sm:min-h-[8rem]",
-  attention: "min-h-[3rem]",
-  answers: "min-h-[2.5rem]",
-  activity: "min-h-[11.5rem]",
+export const SKELETON_HEIGHT = {
+  upNext: "h-[11.125rem] md:h-[10.375rem]",
+  setup: "h-[30.3125rem] md:h-[16.3125rem]",
+  week: "h-[14.75rem] sm:h-[7.875rem]",
+  attention: "h-[9.4375rem] md:h-[7.1875rem]",
+  answers: "h-[2.5rem]",
+  activity: "h-[2.875rem]",
 } as const
 
 /** Every section is its own streamed server component, so this is the only wrapper a section needs. */
@@ -46,7 +47,7 @@ export function UpNextView({
 }) {
   return (
     <Section title="Up next" description="The job to open now. The queue holds the rest, in order.">
-      <div className={SLOT.upNext}>
+      <>
         {!next.ok ? (
           <ErrorBox what="your queue" retry={retry} />
         ) : next.value ? (
@@ -81,7 +82,7 @@ export function UpNextView({
             }
           />
         )}
-      </div>
+      </>
     </Section>
   )
 }
@@ -92,7 +93,7 @@ export function SetupView({ items, failed, retry }: { items: SetupItem[]; failed
   if (incomplete.length === 0 && failed.length === 0) return null
   return (
     <Section title="Set up" description="The first steps for skiffr to fill and learn from your applications.">
-      <div className={SLOT.setup}>
+      <>
         {failed.map((what) => (
           <ErrorBox key={what} what={what} retry={retry} />
         ))}
@@ -121,7 +122,7 @@ export function SetupView({ items, failed, retry }: { items: SetupItem[]; failed
             ))}
           </ul>
         )}
-      </div>
+      </>
     </Section>
   )
 }
@@ -137,7 +138,7 @@ export function WeekView({
 }) {
   return (
     <Section title="This week" description="The last 7 days, against the 7 days before them where it is counted.">
-      <div className={SLOT.week}>
+      <>
         {!applications.ok || !autofill.ok ? (
           <ErrorBox what="this week" retry={retry} />
         ) : (
@@ -160,7 +161,7 @@ export function WeekView({
             </div>
           </div>
         )}
-      </div>
+      </>
     </Section>
   )
 }
@@ -168,7 +169,7 @@ export function WeekView({
 export function AttentionView({ items, retry }: { items: Loaded<AttentionItem[]>; retry: ReactNode }) {
   return (
     <Section title="Needs attention" description="Things that stop skiffr working until you act.">
-      <div className={SLOT.attention}>
+      <>
         {!items.ok ? (
           <ErrorBox what="what needs attention" retry={retry} />
         ) : items.value.length === 0 ? (
@@ -186,7 +187,7 @@ export function AttentionView({ items, retry }: { items: Loaded<AttentionItem[]>
             ))}
           </ul>
         )}
-      </div>
+      </>
     </Section>
   )
 }
@@ -194,7 +195,7 @@ export function AttentionView({ items, retry }: { items: Loaded<AttentionItem[]>
 export function ActivityView({ activity, retry }: { activity: Loaded<ActivityEvent[]>; retry: ReactNode }) {
   return (
     <Section title="Recent activity" description="What happened in your account in the last 30 days, newest first.">
-      <div className={SLOT.activity}>
+      <>
         {!activity.ok ? (
           <ErrorBox what="the activity" retry={retry} />
         ) : activity.value.length === 0 ? (
@@ -217,7 +218,7 @@ export function ActivityView({ activity, retry }: { activity: Loaded<ActivityEve
             ))}
           </ul>
         )}
-      </div>
+      </>
     </Section>
   )
 }
@@ -273,7 +274,7 @@ export function UpNextSkeleton() {
     <SectionSkeleton
       title="Up next"
       description="The job to open now. The queue holds the rest, in order."
-      slot={SLOT.upNext}
+      slot={SKELETON_HEIGHT.upNext}
     >
       <div className="h-full border bg-border" />
     </SectionSkeleton>
@@ -285,7 +286,7 @@ export function SetupSkeleton() {
     <SectionSkeleton
       title="Set up"
       description="The first steps for skiffr to fill and learn from your applications."
-      slot={SLOT.setup}
+      slot={SKELETON_HEIGHT.setup}
     >
       <div className="h-full border bg-border" />
     </SectionSkeleton>
@@ -297,7 +298,7 @@ export function WeekSkeleton() {
     <SectionSkeleton
       title="This week"
       description="The last 7 days, against the 7 days before them where it is counted."
-      slot={SLOT.week}
+      slot={SKELETON_HEIGHT.week}
     >
       <div className="grid h-full grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="border bg-border" />
@@ -312,7 +313,7 @@ export function AttentionSkeleton() {
     <SectionSkeleton
       title="Needs attention"
       description="Things that stop skiffr working until you act."
-      slot={SLOT.attention}
+      slot={SKELETON_HEIGHT.attention}
     >
       <div className="h-full bg-border" />
     </SectionSkeleton>
@@ -321,7 +322,11 @@ export function AttentionSkeleton() {
 
 export function ReviewSkeleton() {
   return (
-    <SectionSkeleton title="Answers" description="Answers that need a decision from you." slot={SLOT.answers}>
+    <SectionSkeleton
+      title="Answers"
+      description="Answers that need a decision from you."
+      slot={SKELETON_HEIGHT.answers}
+    >
       <div className="h-full bg-border" />
     </SectionSkeleton>
   )
@@ -332,7 +337,7 @@ export function ActivitySkeleton() {
     <SectionSkeleton
       title="Recent activity"
       description="What happened in your account in the last 30 days, newest first."
-      slot={SLOT.activity}
+      slot={SKELETON_HEIGHT.activity}
     >
       <div className="h-full border bg-border" />
     </SectionSkeleton>
