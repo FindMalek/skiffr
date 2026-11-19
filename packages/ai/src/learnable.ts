@@ -111,6 +111,17 @@ export type WordLists = {
 }
 
 /**
+ * Time words in front of a pay word, with an optional adjective between (`last annual salary`). `current pay` is not built:
+ * `Current pay grade` is not pay, so the bare label is in `bareLabels` and the rest of the phrasings are listed by hand.
+ */
+const PAY_TIMES = ["current", "previous", "prior", "last", "most recent", "former", "present"]
+const PAY_ADJECTIVES = ["", "annual", "base", "gross", "total"]
+const PAY_NOUNS = ["salary", "compensation", "pay", "wage", "package", "ctc", "earnings"]
+const payPhrases = PAY_TIMES.flatMap((time) =>
+  PAY_ADJECTIVES.flatMap((adjective) => PAY_NOUNS.map((noun) => [time, adjective, noun].filter(Boolean).join(" "))),
+).filter((phrase) => phrase !== "current pay")
+
+/**
  * The floor: the part of the guard that ships in the content script. It stays small on purpose and works offline: secrets,
  * payments and ids, birth, the protected categories and consent in the main wording of en fr de es ar and the first
  * pass of it pt nl tr pl. Longer tails of wording are the server's job (`learnable-extended.ts`, then the model verdict
@@ -138,7 +149,7 @@ export const FLOOR: WordLists = {
     "situation familiale|الحاله الاجتماعيه|criminal|casier judiciaire|vorstrafe|vorstrafen",
     "antecedentes penales|السجل الجنايي|السوابق القضاييه|convicted|conviction|felony|health|sante|gesundheit",
     "gesundheitszustand|salud|الحاله الصحيه|medical|political|union membership|trade union",
-    "current salary|current base salary|current annual salary|current gross salary|current total salary|current pay|current base pay",
+    "current salary|current base salary|current annual salary|current gross salary|current total salary|current base pay",
     "current compensation|current earnings|currently earning|currently earn|present salary|present compensation",
     "present or prior compensation|present or previous compensation|previous salary|previous base salary|previous pay",
     "previous compensation|prior salary|prior compensation|last salary|last base salary|last drawn salary|past salary",
@@ -153,6 +164,14 @@ export const FLOOR: WordLists = {
     "salario atual|salario anterior|historico salarial|historico de salarios|remuneracao atual|remuneracao anterior",
     "remuneracao previa|ultima remuneracao|huidig salaris|huidige salaris|vorig salaris|vorige salaris|laatste salaris",
     "eerder salaris",
+    ...payPhrases,
+    "current gross annual salary|current annual gross salary|previous gross annual salary|current hourly rate|current hourly wage",
+    "previous hourly rate|previous hourly wage|current pay rate|previous pay rate|current pay per",
+    "salary at your current job|salary at your previous job|salary at your last job|salary at your present job",
+    "previous employer salary|last employer salary|current employer salary|prior employer salary|former employer salary",
+    "salary current|salary previous|salary prior|salary present",
+    "bisherige Vergütung|aktuelle Vergütung|bisherige Verguetung|aktuelle Verguetung",
+    "huidig bruto salaris|huidige bruto salaris|vorig bruto salaris",
     "terms|privacy|gdpr|cookie|cookies|hereby|opt in|opt out|unsubscribe|newsletter|marketing emails",
     "marketing communications|promotional|i understand|i accept|i confirm|i have read|read and understood",
     "i authorize|i authorise|keep me in the loop|talent community|talent pool|future opportunities",
@@ -198,6 +217,7 @@ export const FLOOR: WordLists = {
   bareLabels: [
     "code|avg|gazi|bic|nir|clabe|card|cc|ccv|date d expiration|fecha de caducidad|fecha de vencimiento",
     "ablaufdatum|gultig bis|expiry|expiry date|expiration|expiration date|exp date|mm yy|mm yyyy",
+    "current pay|your current pay",
   ],
   squashed: [
     "password|passcode|passphrase|motdepasse|contrasena|creditcard|debitcard|cardnumber|cartebancaire",

@@ -48,6 +48,6 @@ export const NEVER_FILLED: readonly { title: string; detail: string }[] = [
   {
     title: "Current and previous pay",
     detail:
-      "Questions about current or previous pay, such as current salary, last salary or salary history. Expected and desired salary are still filled.",
+      "Questions about current, previous, last or most recent pay (salary, pay, compensation, wage or package) and salary history. Expected and desired salary are still filled. Rare phrasings can still slip through to the model's check.",
   },
 ]
