@@ -111,15 +111,50 @@ export type WordLists = {
 }
 
 /**
- * Time words in front of a pay word, with an optional adjective between (`last annual salary`). `current pay` is not built:
- * `Current pay grade` is not pay, so the bare label is in `bareLabels` and the rest of the phrasings are listed by hand.
+ * Time words in front of a pay word: one optional modifier before the noun (`last annual salary`), two (`current base annual
+ * salary`), or the noun first with a modifier or `package` after it (`current pay annual`, `current pay package`). `current pay`
+ * alone is not built: `Current pay grade` is not pay, so the bare label is in `bareLabels`.
  */
 const PAY_TIMES = ["current", "previous", "prior", "last", "most recent", "former", "present"]
-const PAY_ADJECTIVES = ["", "annual", "base", "gross", "total"]
+const PAY_MODIFIERS = ["annual", "base", "gross", "total"]
 const PAY_NOUNS = ["salary", "compensation", "pay", "wage", "package", "ctc", "earnings"]
-const payPhrases = PAY_TIMES.flatMap((time) =>
-  PAY_ADJECTIVES.flatMap((adjective) => PAY_NOUNS.map((noun) => [time, adjective, noun].filter(Boolean).join(" "))),
-).filter((phrase) => phrase !== "current pay")
+const PAY_NOUNS_MODIFIED = ["salary", "compensation", "pay", "wage", "earnings"]
+const payPhrases = PAY_TIMES.flatMap((time) => [
+  ...["", ...PAY_MODIFIERS].flatMap((modifier) => PAY_NOUNS.map((noun) => [time, modifier, noun])),
+  ...PAY_MODIFIERS.flatMap((first, index) =>
+    PAY_MODIFIERS.filter((_, other) => other !== index).flatMap((second) =>
+      PAY_NOUNS_MODIFIED.map((noun) => [time, first, second, noun]),
+    ),
+  ),
+  ...PAY_NOUNS_MODIFIED.flatMap((noun) => [...PAY_MODIFIERS, "package"].map((after) => [time, noun, after])),
+])
+  .map((words) => words.filter(Boolean).join(" "))
+  .filter((phrase) => phrase !== "current pay")
+
+/**
+ * The question frame of the same pay asks: "What is your current pay?", "How much do you currently earn?". The frame only
+ * adds to the phrases above, so `What is your expected salary?` stays readable.
+ */
+const PAY_QUESTION_FRAMES = [
+  "what is your",
+  "what s your",
+  "what was your",
+  "what are you",
+  "how much do you",
+  "how much are you",
+]
+const PAY_QUESTION_ASKS = [
+  "current pay",
+  "current salary",
+  "current compensation",
+  "current base salary",
+  "currently earn",
+  "currently paid",
+]
+const payQuestions = PAY_QUESTION_FRAMES.flatMap((frame) => PAY_QUESTION_ASKS.map((ask) => `${frame} ${ask}`))
+
+/** A pay band, not pay: cut out before the phrases are matched, so `What is your current pay grade?` stays readable. */
+const PAY_GRADE = /\bpay grades?\b/g
 
 /**
  * The floor: the part of the guard that ships in the content script. It stays small on purpose and works offline: secrets,
@@ -165,6 +200,7 @@ export const FLOOR: WordLists = {
     "remuneracao previa|ultima remuneracao|huidig salaris|huidige salaris|vorig salaris|vorige salaris|laatste salaris",
     "eerder salaris",
     ...payPhrases,
+    ...payQuestions,
     "current gross annual salary|current annual gross salary|previous gross annual salary|current hourly rate|current hourly wage",
     "previous hourly rate|previous hourly wage|current pay rate|previous pay rate|current pay per",
     "salary at your current job|salary at your previous job|salary at your last job|salary at your present job",
@@ -471,7 +507,7 @@ export function createGuard(...parts: Partial<WordLists>[]): Guard {
     const owns = ownLabels(field.label)
     if (owns.some((own) => bareLabels().has(own) || barePrivate().has(own) || isBareEdge(own))) return false
     const padded = ` ${label} `
-    if (labelPattern().test(padded) || isPinSecret(padded)) return false
+    if (labelPattern().test(padded.replace(PAY_GRADE, " ")) || isPinSecret(padded)) return false
     if (
       isCitizenshipStatus(label) ||
       isAgeQuestion(label) ||

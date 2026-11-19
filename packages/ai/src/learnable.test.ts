@@ -541,6 +541,54 @@ test("current pay grade and pay grade are not pay and stay fillable", () => {
   }
 })
 
+test("the question 'What is your current pay?' is blocked on the floor and the server", () => {
+  expect(salaryBlocked("What is your current pay?")).toBe(true)
+})
+
+test("the question 'What is your current salary?' is blocked on the floor and the server", () => {
+  expect(salaryBlocked("What is your current salary?")).toBe(true)
+})
+
+test("the question 'What's your current compensation?' is blocked on the floor and the server", () => {
+  expect(salaryBlocked("What's your current compensation?")).toBe(true)
+})
+
+test("the question 'What is your current base salary?' is blocked on the floor and the server", () => {
+  expect(salaryBlocked("What is your current base salary?")).toBe(true)
+})
+
+test("the question 'What was your last salary?' is blocked on the floor and the server", () => {
+  expect(salaryBlocked("What was your last salary?")).toBe(true)
+})
+
+test("the question 'How much do you currently earn?' is blocked on the floor and the server", () => {
+  expect(salaryBlocked("How much do you currently earn?")).toBe(true)
+})
+
+test("the question 'What are you currently paid?' is blocked on the floor and the server", () => {
+  expect(salaryBlocked("What are you currently paid?")).toBe(true)
+})
+
+test("the noun-first form 'Current pay annual' is blocked on the floor and the server", () => {
+  expect(salaryBlocked("Current pay annual")).toBe(true)
+})
+
+test("the two-modifier form 'Current base annual salary' is blocked on the floor and the server", () => {
+  expect(salaryBlocked("Current base annual salary")).toBe(true)
+})
+
+test("the bracketed form 'Current pay (gross)' is blocked on the floor and the server", () => {
+  expect(salaryBlocked("Current pay (gross)")).toBe(true)
+})
+
+test("the comma form 'Current pay, annual' is blocked on the floor and the server", () => {
+  expect(salaryBlocked("Current pay, annual")).toBe(true)
+})
+
+test("the noun-first form 'Current pay package' is blocked on the floor and the server", () => {
+  expect(salaryBlocked("Current pay package")).toBe(true)
+})
+
 test("current and previous pay in french are blocked", () => {
   for (const label of [
     "Quel est votre salaire actuel ?",
@@ -598,6 +646,10 @@ test("expected, desired and minimum pay, ranges, notice and currency stay fillab
     "Compensation expectations",
     "Notice period",
     "Salary currency",
+    "What are your salary expectations?",
+    "What is your expected salary?",
+    "What is your current pay grade?",
+    "Pay frequency",
     "Current employer",
     "Current job title",
     "Gehaltsvorstellung",
