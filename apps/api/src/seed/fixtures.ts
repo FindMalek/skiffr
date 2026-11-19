@@ -170,7 +170,6 @@ export const ANSWERS: AnswerSpec[] = [
   a("When can you start?", "text", "Within 4 weeks of an offer", "confirmed", "manual", 16, 0),
   a("Desired salary", "text", "USD 165,000 per year", "confirmed", "manual", 21, 2),
   a("Salary expectations (USD)", "number", "165000", "learned", "autofill", 9, 3),
-  a("Current compensation", "text", "Prefer not to say", "rejected", "autofill", 6, 4, 3),
   a("Years of experience with TypeScript", "number", "8", "confirmed", "manual", 17, 0),
   a("Years of experience with PostgreSQL", "number", "9", "learned", "autofill", 12, 1),
   a("Years of experience with Go", "number", "4", "learned", "autofill", 7, 1),
@@ -301,7 +300,6 @@ export const SECOND_ANSWERS: AnswerSpec[] = [
   a("GitHub profile", "url", "https://code.example.invalid/riley-morgan", "learned", "import", 3, 0),
   a("Years of experience with Python", "number", "6", "learned", "autofill", 3, 0),
   a("Preferred work arrangement", "select", "Hybrid", "learned", "autofill", 3, 1, 0, ["Remote", "Hybrid", "On-site"]),
-  a("Current compensation", "text", "Prefer not to say", "rejected", "autofill", 2, 2, 3),
 ]
 
 export interface FormField {
