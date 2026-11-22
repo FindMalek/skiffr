@@ -18,8 +18,8 @@ const schema = z.object({
   /** "production", "pr-<n>" for previews, or "local". The preview seed only runs for exactly `local` or `pr-<n>`. */
   DEPLOY_ENV: z.string().default("local"),
   DATABASE_URL: z.string().min(1),
-  /** `demo` seeds the notes example into an empty database, `preview` the full demo dataset (previews and local dev only, see the seeding docs). */
-  SEED: z.enum(["none", "demo", "preview"]).default("demo"),
+  /** `preview` seeds the full demo dataset (previews and local dev only, see the seeding docs), `none` never seeds. */
+  SEED: z.enum(["none", "preview"]).default("none"),
   /** The password of the seeded preview users. Only read for `SEED=preview`; the default is documented and public, so it only works where the seed itself is allowed. */
   SEED_DEMO_PASSWORD: z.string().min(10).max(128).optional(),
   /** `on` wipes the preview users and their data before seeding them again, so the dates move to now. */

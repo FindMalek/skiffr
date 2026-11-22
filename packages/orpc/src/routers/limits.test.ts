@@ -3,7 +3,7 @@ import { createRouterClient } from "@orpc/server"
 import { mockEmbeddingModel, mockModel } from "@skiffr/ai/testing"
 import type { Session } from "@skiffr/auth"
 import { EMBEDDING_DIMENSIONS } from "@skiffr/common/constants"
-import { aiUsage, aiUsageGlobal, answer, type Db, notes } from "@skiffr/db"
+import { aiUsage, aiUsageGlobal, answer, type Db } from "@skiffr/db"
 import { createObservability, getObservability, noopObservability, setObservability } from "@skiffr/observability"
 import { mockCollector } from "@skiffr/observability/testing"
 import { streamText } from "ai"
@@ -94,7 +94,6 @@ const draft = (userId: string, extra?: Extra, input: { question: string } = QUES
 test("every procedure gets a class: model calls and network calls are named, the rest follow the http method", () => {
   expect(limitClassOf("ai.mapFields", "POST")).toBe("ai")
   expect(limitClassOf("cv.preview", "POST")).toBe("ai")
-  expect(limitClassOf("notes.summarize", "POST")).toBe("ai")
   expect(limitClassOf("learning.lookup", "POST")).toBe("embed")
   expect(limitClassOf("answers.create", "POST")).toBe("embed")
   expect(limitClassOf("me.avatar", "POST")).toBe("upload")
@@ -280,17 +279,6 @@ test("usage is today's spend of the signed-in user against the limits, for a ses
   await expect(api("ana", { ...extra, token: true }).me.usage()).rejects.toMatchObject({
     code: "FORBIDDEN",
   })
-})
-
-test("a call to a model that is not wrapped by the ai package (a note summary) stops at the budget too", async () => {
-  const [note] = await db.insert(notes).values({ userId: "ana", title: "t", body: "b" }).returning()
-  const model = mockModel("Short.")
-  const extra = { model, aiBudget: { dailyCalls: 1, dailyTokens: 0 } }
-  await api("ana", extra).notes.summarize({ id: note!.id })
-  await expect(api("ana", extra).notes.summarize({ id: note!.id })).rejects.toMatchObject({
-    code: "AI_BUDGET_EXHAUSTED",
-  })
-  expect(model.doGenerateCalls).toHaveLength(1)
 })
 
 test("neither the errors nor the logs carry what the user sent", async () => {

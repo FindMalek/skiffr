@@ -20,7 +20,6 @@
     "db:down": "docker compose --env-file .env -f docker/docker-compose.yml down",
     "db:generate": "turbo db:generate -F @skiffr/db",
     "db:migrate": "turbo db:migrate -F @skiffr/db",
-    "db:seed": "turbo db:seed -F @skiffr/db",
     "db:studio": "turbo db:studio -F @skiffr/db",
     "bump-deps": "pnpm update --recursive --latest",
     "ui:add": "pnpm --filter @skiffr/ui exec shadcn add"

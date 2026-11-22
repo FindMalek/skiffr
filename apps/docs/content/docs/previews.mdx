@@ -33,7 +33,7 @@ Nothing from production is shared. Previews get no model key, no Google client a
 
 ## The seeder
 
-The preview api seeds its empty database on start. It sets `SEED=preview` when `packages/env/src/api.ts` accepts that value, and `SEED=demo` until then. The contract for the seeder is: `SEED=preview` seeds a realistic, deterministic dataset into an empty database only, never touches a database that already has data, and runs inside the api start (after the migrations and `ensureAdmin`). The test login in the comment is the env admin. Any extra seeded accounts belong in the seeder's own documentation.
+The preview api seeds its empty database on start. It sets `SEED=preview`. The contract for the seeder is: `SEED=preview` seeds a realistic, deterministic dataset into an empty database only, never touches a database that already has data, and runs inside the api start (after the migrations and `ensureAdmin`). The test login in the comment is the env admin. Any extra seeded accounts belong in the seeder's own documentation.
 
 ## The extension
 

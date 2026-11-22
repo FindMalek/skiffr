@@ -17,7 +17,6 @@ import {
   gmailAccount,
   job,
   jobSource,
-  notes,
   siteProfile,
   user,
 } from "@skiffr/db"
@@ -351,18 +350,20 @@ const realUser = (id: string, email: string) => ({
 test("a real account on a seed email stops the seed, with or without reset, and keeps its data", async () => {
   await withFreshDb(async (other, authOther) => {
     await other.insert(user).values(realUser("real", "demo@skiffr.test"))
-    await other.insert(notes).values({ id: PRECIOUS, userId: "real", title: "mine", body: "keep" })
+    await other
+      .insert(answer)
+      .values({ id: PRECIOUS, userId: "real", normalizedLabel: "mine", rawLabel: "mine", value: "keep" })
     for (const reset of [false, true]) {
       await expect(seedPreview(other, authOther, { ...options, reset })).rejects.toBeInstanceOf(SeedConflictError)
       expect((await other.select().from(user)).map((row) => row.id)).toEqual(["real"])
-      expect((await other.select().from(notes)).map((row) => row.id)).toEqual([PRECIOUS])
+      expect((await other.select().from(answer)).map((row) => row.id)).toEqual([PRECIOUS])
     }
   })
 })
 
 test("a real account on a sample user email stops the seed with a conflict, not a raw sql error", async () => {
   await withFreshDb(async (other, authOther) => {
-    const sample = buildScenario(NOW, { ownerId: "x" }).users[0]!.email
+    const sample = buildScenario(NOW).users[0]!.email
     await other.insert(user).values(realUser("real", sample))
     await expect(seedPreview(other, authOther, options)).rejects.toBeInstanceOf(SeedConflictError)
     expect((await other.select().from(user)).map((row) => row.id)).toEqual(["real"])
@@ -375,12 +376,14 @@ test("reset removes only the seed's own rows, a real user with the same postings
     const [sample] = await other.select().from(job).where(eq(job.userId, DEMO_USER.id)).limit(1)
     await other.insert(user).values(realUser("real", "someone@example.com"))
     await other.insert(job).values({ ...sample!, id: crypto.randomUUID(), userId: "real" })
-    await other.insert(notes).values({ id: PRECIOUS, userId: "real", title: "mine", body: "keep" })
+    await other
+      .insert(answer)
+      .values({ id: PRECIOUS, userId: "real", normalizedLabel: "mine", rawLabel: "mine", value: "keep" })
     await seedPreview(other, authOther, { ...options, reset: true })
     expect((await other.select().from(job).where(eq(job.userId, "real"))).map((row) => row.canonicalId)).toEqual([
       sample!.canonicalId,
     ])
-    expect((await other.select().from(notes).where(eq(notes.userId, "real"))).length).toBe(1)
+    expect((await other.select().from(answer).where(eq(answer.userId, "real"))).length).toBe(1)
     expect((await other.select().from(user).where(eq(user.id, "real"))).length).toBe(1)
   })
 })

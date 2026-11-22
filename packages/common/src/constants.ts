@@ -142,7 +142,7 @@ export const CV_REJECTIONS = [
   "invented_skill",
 ] as const
 /** Shape version of the `account.export` document: bump it when a section or a field is renamed or removed. */
-export const ACCOUNT_EXPORT_VERSION = 1
+export const ACCOUNT_EXPORT_VERSION = 2
 /** Rows in one export across all sections. */
 export const ACCOUNT_EXPORT_ROWS_MAX = 100_000
 /** Size of one export in bytes (the text of the exported columns). It is built in memory and about six times that is held while it is validated and sent, so this is the real bound. */
