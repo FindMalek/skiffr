@@ -20,6 +20,42 @@ export type QueueFilters = { status: StatusFilter; source: string; q: string }
 
 export const DEFAULT_FILTERS: QueueFilters = { status: "queued", source: "", q: "" }
 
+const STATUSES: readonly StatusFilter[] = ["queued", "applied", "skipped", "all"]
+const SEARCH_MAX = 100
+const SOURCE_MAX = 200
+
+type Param = string | string[] | undefined
+
+/** The URL is anything the visitor typed: only a single, known value counts, the rest is the default view. */
+export function parseFilters(params: { status?: Param; source?: Param; q?: Param }): QueueFilters {
+  const one = (value: Param) => (typeof value === "string" ? value : "")
+  const status = STATUSES.find((s) => s === params.status)
+  return {
+    status: status ?? DEFAULT_FILTERS.status,
+    source: one(params.source).slice(0, SOURCE_MAX),
+    q: one(params.q).slice(0, SEARCH_MAX),
+  }
+}
+
+/** `parseFilters` for the browser's URLSearchParams: a repeated key is an array, as the server page receives it. */
+export function searchFilters(params: URLSearchParams): QueueFilters {
+  const param = (key: string): Param => {
+    const all = params.getAll(key)
+    return all.length > 1 ? all : all[0]
+  }
+  return parseFilters({ status: param("status"), source: param("source"), q: param("q") })
+}
+
+/** The query string for a view, defaults left out so the plain queue keeps its plain URL. */
+export function filtersQuery(filters: QueueFilters): string {
+  const params = new URLSearchParams()
+  if (filters.status !== DEFAULT_FILTERS.status) params.set("status", filters.status)
+  if (filters.source) params.set("source", filters.source)
+  if (filters.q.trim()) params.set("q", filters.q.trim())
+  const query = params.toString()
+  return query ? `?${query}` : ""
+}
+
 /** The queue is worked oldest first, every other view newest first. */
 export function listInput(filters: QueueFilters, shown: number = QUEUE_PAGE): JobListInput {
   return {

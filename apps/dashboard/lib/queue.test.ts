@@ -4,8 +4,10 @@ import {
   applyToCounts,
   applyToList,
   DEFAULT_FILTERS,
+  filtersQuery,
   type Intent,
   listInput,
+  parseFilters,
   pruneList,
   revertCounts,
   revertList,
@@ -113,4 +115,36 @@ test("source names: known sources and gmail providers read plainly, anything els
   expect(sourceLabel("gmail:somewhere")).toBe("Gmail · somewhere")
   expect(sourceLabel("watch:Acme careers")).toBe("Watched · Acme careers")
   expect(sourceLabel("<b>x</b>")).toBe("<b>x</b>")
+})
+
+test("parseFilters keeps a valid status, source and search", () => {
+  expect(parseFilters({ status: "applied", source: "greenhouse", q: "acme" })).toEqual({
+    status: "applied",
+    source: "greenhouse",
+    q: "acme",
+  })
+  expect(parseFilters({ status: "all" }).status).toBe("all")
+})
+
+test("parseFilters falls back to the defaults for anything the visitor mistyped", () => {
+  expect(parseFilters({})).toEqual(DEFAULT_FILTERS)
+  expect(parseFilters({ status: "bogus" })).toEqual(DEFAULT_FILTERS)
+  expect(parseFilters({ status: ["all", "applied"], source: ["a"], q: ["b"] })).toEqual(DEFAULT_FILTERS)
+})
+
+test("parseFilters clips an overlong search to the input's 100 characters and a source to 200", () => {
+  expect(parseFilters({ q: "a".repeat(150) }).q).toBe("a".repeat(100))
+  expect(parseFilters({ source: "s".repeat(300) }).source).toBe("s".repeat(200))
+})
+
+test("filtersQuery leaves defaults out and round-trips through parseFilters", () => {
+  expect(filtersQuery(DEFAULT_FILTERS)).toBe("")
+  expect(filtersQuery({ status: "queued", source: "", q: "  " })).toBe("")
+  expect(filtersQuery({ status: "all", source: "", q: " acme " })).toBe("?status=all&q=acme")
+  expect(filtersQuery({ status: "applied", source: "greenhouse", q: "a&b c" })).toBe(
+    "?status=applied&source=greenhouse&q=a%26b+c",
+  )
+  const filters = { status: "skipped", source: "lever", q: "a&b c" } as const
+  const params = Object.fromEntries(new URLSearchParams(filtersQuery(filters)))
+  expect(parseFilters(params)).toEqual(filters)
 })
