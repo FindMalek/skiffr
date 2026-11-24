@@ -138,7 +138,7 @@ export function CommandPalette({
     sync.mutate(undefined)
   }
   const addJob = () => {
-    if (go("/queue#add-job")) focusWhenReady("#job-url")
+    if (go("/queue?add=1")) focusWhenReady("#job-url")
   }
   /** The tab is opened first, inside the click, so a popup blocker allows it. The answer fills it in. */
   const openNext = async () => {
