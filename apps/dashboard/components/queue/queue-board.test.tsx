@@ -4,11 +4,42 @@ import { orpc } from "@skiffr/orpc/react"
 import { SidebarProvider } from "@skiffr/ui/components/sidebar"
 import { TooltipProvider } from "@skiffr/ui/components/tooltip"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { act } from "react"
+import { act, useMemo, useSyncExternalStore } from "react"
 import { createRoot, type Root } from "react-dom/client"
-import { DEFAULT_FILTERS, listInput } from "@/lib/queue"
+import { listInput, type QueueFilters, searchFilters } from "@/lib/queue"
 import { type QueueApi, QueueApiProvider } from "./queue-api"
-import { QueueBoard } from "./queue-board"
+
+/** The board reads the URL through useSearchParams: here that is location.search, re-read when history or a router push changes it. */
+const listeners = new Set<() => void>()
+const emit = () => {
+  for (const listener of listeners) listener()
+}
+const nativeReplace = history.replaceState.bind(history)
+history.replaceState = (...args) => {
+  nativeReplace(...args)
+  emit()
+}
+mock.module("next/navigation", () => ({
+  useSearchParams: () => {
+    const search = useSyncExternalStore(
+      (notify) => {
+        listeners.add(notify)
+        return () => void listeners.delete(notify)
+      },
+      () => location.search,
+      () => "",
+    )
+    return useMemo(() => new URLSearchParams(search), [search])
+  },
+}))
+const { QueueBoard } = await import("./queue-board")
+
+/** What a router.push to the same page does: the URL changes and subscribers are told. */
+const navigate = (url: string) =>
+  act(async () => {
+    nativeReplace(null, "", url)
+    emit()
+  })
 
 const cp = (...codes: number[]) => String.fromCodePoint(...codes)
 
@@ -40,6 +71,7 @@ beforeEach(() => {
 
 afterEach(() => {
   act(() => root.unmount())
+  history.replaceState(null, "", "/queue")
   host.remove()
 })
 
@@ -49,9 +81,12 @@ function counts(rows: Job[]): JobCounts {
   return { status, sources: [{ source: "manual", count: rows.length }] }
 }
 
+const seed = (filters: QueueFilters, rows: Job[]) =>
+  client.setQueryData(orpc.jobs.list.queryKey({ input: listInput(filters) }), rows)
+
 async function mount(rows: Job[], api: Partial<QueueApi> = {}) {
   client = new QueryClient({ defaultOptions: { queries: { staleTime: Number.POSITIVE_INFINITY, retry: false } } })
-  client.setQueryData(orpc.jobs.list.queryKey({ input: listInput(DEFAULT_FILTERS) }), rows)
+  seed(searchFilters(new URLSearchParams(location.search)), rows)
   client.setQueryData(orpc.jobs.counts.queryKey(), counts(rows))
   client.setQueryData(orpc.jobs.next.queryKey(), rows[0] ?? null)
   const fake = {
@@ -290,4 +325,73 @@ test("a bulk skip keeps the selection until the server answers, and a failed one
   })
   await act(async () => settle(true))
   expect(bulk()).toBeNull()
+})
+
+const searchBox = () => host.querySelector('input[type="search"]') as HTMLInputElement
+const tab = (label: string) =>
+  [...host.querySelectorAll("button[aria-pressed]")].find((b) => b.textContent?.startsWith(label)) as HTMLButtonElement
+const addToggle = () => host.querySelector('button[aria-controls="add-job"]')
+
+test("the board opens on the filters in the URL, so a shared or bookmarked view is what you see", async () => {
+  history.replaceState(null, "", "/queue?status=all&q=Acme")
+  await mount([job(1)])
+  expect(searchBox().value).toBe("Acme")
+  expect(tab("All").getAttribute("aria-pressed")).toBe("true")
+  expect(network).toEqual([])
+})
+
+test("a repeated filter in the URL is ignored like on the server, so the board shows what was prefetched", async () => {
+  history.replaceState(null, "", "/queue?status=bogus&status=all")
+  await mount([job(1)])
+  expect(tab("Queued").getAttribute("aria-pressed")).toBe("true")
+  expect(network).toEqual([])
+})
+
+test("changing a filter writes it to the URL without adding a history entry", async () => {
+  await mount([job(1)])
+  const length = history.length
+  await act(async () => tab("Applied").click())
+  expect(location.search).toBe("?status=applied")
+  expect(history.length).toBe(length)
+})
+
+test("a push to the same search the board once wrote still resets the view to it", async () => {
+  history.replaceState(null, "", "/queue?q=Acme")
+  await mount([job(1)])
+  seed({ status: "all", source: "", q: "Acme" }, [job(1)])
+  await act(async () => tab("All").click())
+  expect(location.search).toBe("?status=all&q=Acme")
+  await navigate("/queue?q=Acme")
+  expect(tab("Queued").getAttribute("aria-pressed")).toBe("true")
+  expect(tab("All").getAttribute("aria-pressed")).toBe("false")
+  expect(searchBox().value).toBe("Acme")
+})
+
+test("a search pushed from elsewhere, like the command palette, replaces what is typed", async () => {
+  await mount([job(1)])
+  seed({ status: "queued", source: "", q: "Beta" }, [job(2)])
+  await navigate("/queue?q=Beta")
+  expect(searchBox().value).toBe("Beta")
+})
+
+test("?add=1 opens the add form, also when already on the queue, and is dropped from the URL", async () => {
+  await mount([job(1)])
+  expect(addToggle()?.getAttribute("aria-expanded")).toBe("false")
+  await navigate("/queue?add=1")
+  expect(addToggle()?.getAttribute("aria-expanded")).toBe("true")
+  expect(location.search).toBe("")
+})
+
+test("typing in the search box ends in the URL after the debounce, without being overwritten on the way", async () => {
+  await mount([job(1)])
+  seed({ status: "queued", source: "", q: "Zed" }, [job(1)])
+  await act(async () => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set
+    setter?.call(searchBox(), "Zed ")
+    searchBox().dispatchEvent(new Event("input", { bubbles: true }))
+  })
+  expect(location.search).toBe("")
+  await act(async () => void (await new Promise((resolve) => setTimeout(resolve, 300))))
+  expect(location.search).toBe("?q=Zed")
+  expect(searchBox().value).toBe("Zed ")
 })

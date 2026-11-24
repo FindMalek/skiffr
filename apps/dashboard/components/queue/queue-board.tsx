@@ -20,17 +20,20 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@skiffr/ui/com
 import { Input } from "@skiffr/ui/components/input"
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query"
 import { ExternalLinkIcon, PlusIcon } from "lucide-react"
+import { useSearchParams } from "next/navigation"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 import { PageHeader } from "@/components/page-header"
 import {
   DEFAULT_FILTERS,
+  filtersQuery,
   listInput,
   QUEUE_PAGE,
   QUEUE_SHOWN_MAX,
   type QueueFilters,
   STATUS_LABEL,
   type StatusFilter,
+  searchFilters,
   sourceLabel,
 } from "@/lib/queue"
 import { AddJobForm } from "./add-job-form"
@@ -102,9 +105,16 @@ function OpenNext({ disabled }: { disabled: boolean }) {
   )
 }
 
+/** The view is written with replaceState, not pushed: filtering and typing should not flood the history. */
+const replaceUrl = (filters: QueueFilters) =>
+  window.history.replaceState(null, "", location.pathname + filtersQuery(filters))
+
 export function QueueBoard() {
-  const [filters, setFilters] = useState<QueueFilters>(DEFAULT_FILTERS)
-  const [search, setSearch] = useState("")
+  // The URL is the one source of truth, so a router push (the command palette, back, forward) moves the board too.
+  const params = useSearchParams()
+  const filters = searchFilters(params)
+  const addRequested = params.get("add")
+  const [search, setSearch] = useState(filters.q)
   const [shown, setShown] = useState(QUEUE_PAGE)
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set())
   const [confirm, setConfirm] = useState<Confirm>(null)
@@ -116,12 +126,38 @@ export function QueueBoard() {
   const trigger = useRef<Element | null>(null)
   const parkFocus = useRef(false)
 
-  const q = useDebounced(search, 250)
-  const active = useMemo(() => ({ ...filters, q }), [filters, q])
-  const input = listInput(active, shown)
+  const typed = useDebounced(search, 250)
+  const written = useRef(filters.q)
+  const input = listInput(filters, shown)
   const list = useQuery({ ...orpc.jobs.list.queryOptions({ input }), ...LIVE, placeholderData: keepPreviousData })
   const counts = useQuery({ ...orpc.jobs.counts.queryOptions(), ...LIVE })
   const actions = useQueueActions(announce)
+
+  // What was typed goes to the URL once it settles. Only a change of `typed` writes, so a search that arrives from
+  // the URL (below) is not written straight back over by the older typed value.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs when the typed text settles.
+  useEffect(() => {
+    if (typed.trim() === filters.q) return
+    written.current = typed.trim()
+    replaceUrl({ ...filters, q: typed })
+  }, [typed])
+
+  // A search the board did not write itself (a router push, back, forward) replaces the text box.
+  useEffect(() => {
+    if (filters.q === written.current) return
+    written.current = filters.q
+    setSearch(filters.q)
+    setShown(QUEUE_PAGE)
+    setSelected(new Set())
+  }, [filters.q])
+
+  // The command palette links to /queue?add=1: the form is hidden on small screens until it is opened.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs when the flag appears.
+  useEffect(() => {
+    if (!addRequested) return
+    setAddOpen(true)
+    replaceUrl(filters)
+  }, [addRequested])
 
   const rows = useMemo(() => (list.data ?? []).slice(0, shown), [list.data, shown])
   const hasMore = (list.data?.length ?? 0) > shown
@@ -130,11 +166,11 @@ export function QueueBoard() {
   const statusCounts = counts.data?.status
   const total = statusCounts ? statusCounts.queued + statusCounts.applied + statusCounts.skipped : undefined
 
-  const refilter = useCallback((change: Partial<QueueFilters>) => {
-    setFilters((f) => ({ ...f, ...change }))
+  const refilter = (change: Partial<QueueFilters>) => {
+    replaceUrl({ ...filters, ...change })
     setShown(QUEUE_PAGE)
     setSelected(new Set())
-  }, [])
+  }
 
   const select = useCallback((id: string, on: boolean) => {
     setSelected((prev) => {
@@ -193,7 +229,7 @@ export function QueueBoard() {
     }
   }
 
-  const filtering = filters.status !== DEFAULT_FILTERS.status || filters.source !== "" || q !== ""
+  const filtering = filters.status !== DEFAULT_FILTERS.status || filters.source !== "" || filters.q !== ""
   const emptyAll = total === 0 && !filtering && !list.isFetching
   const sources = counts.data?.sources ?? []
   const sourceOptions =
@@ -202,7 +238,7 @@ export function QueueBoard() {
       : sources
   const caption = `${filters.status === "all" ? "All" : STATUS_LABEL[filters.status]} jobs, ${rows.length} shown`
   const totalForView =
-    filters.source || q ? undefined : filters.status === "all" ? total : statusCounts?.[filters.status]
+    filters.source || filters.q ? undefined : filters.status === "all" ? total : statusCounts?.[filters.status]
 
   return (
     <>
