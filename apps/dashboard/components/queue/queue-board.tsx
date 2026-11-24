@@ -343,7 +343,7 @@ export function QueueBoard() {
                   aria-label="Filter by source"
                   value={filters.source}
                   onChange={(event) => refilter({ source: event.target.value })}
-                  className="h-8 max-w-full border border-input bg-transparent px-2 text-xs outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50 dark:bg-input/30"
+                  className="h-8 max-w-full border border-input bg-transparent px-2 text-xs outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50 dark:bg-input/30 [&>option]:bg-popover [&>option]:text-popover-foreground"
                 >
                   <option value="">All sources</option>
                   {sourceOptions.map((entry) => (

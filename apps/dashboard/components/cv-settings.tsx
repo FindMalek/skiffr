@@ -156,7 +156,7 @@ function BaseResume({ status }: { status: CvStatus }) {
                 id="cv-base"
                 value={selected}
                 onChange={(event) => setChoice(event.target.value)}
-                className="h-8 w-full border border-input bg-transparent px-2 text-xs outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50 dark:bg-input/30"
+                className="h-8 w-full border border-input bg-transparent px-2 text-xs outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50 dark:bg-input/30 [&>option]:bg-popover [&>option]:text-popover-foreground"
               >
                 <option value="" disabled>
                   Choose a resume
