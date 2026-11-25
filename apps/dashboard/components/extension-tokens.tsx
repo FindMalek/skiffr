@@ -196,7 +196,7 @@ export function ExtensionTokens({ apiUrl }: { apiUrl: string }) {
                     id="expires"
                     name="expires"
                     defaultValue="90"
-                    className="h-8 w-full border border-input bg-transparent px-2 text-xs outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50 dark:bg-input/30"
+                    className="h-8 w-full border border-input bg-transparent px-2 text-xs outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50 dark:bg-input/30 [&>option]:bg-popover [&>option]:text-popover-foreground"
                   >
                     {EXPIRIES.map((option) => (
                       <option key={option.label} value={option.days ?? "never"}>
